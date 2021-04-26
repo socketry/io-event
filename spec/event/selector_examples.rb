@@ -18,9 +18,35 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
+require 'event/selector'
 
-module Event
-	class Selector
+RSpec.shared_examples_for Event::Selector do
+	let(:pipe) {IO.pipe}
+	let(:output) {pipe.first}
+	let(:input) {pipe.last}
+	
+	it "can wait for an io to become readable" do
+		subject # associate with current fiber.
+		
+		fiber = Fiber.new do
+			subject.io_wait(Fiber.current, output, IO::READABLE)
+		end
+		
+		fiber.transfer
+		
+		input.puts "Hello World"
+		
+		subject.select
+	end
+	
+	it "can wait for an io to become writable" do
+		subject # associate with current fiber.
+		
+		fiber = Fiber.new do
+			subject.io_wait(Fiber.current, input, IO::WRITABLE)
+		end
+		
+		fiber.transfer
+		subject.select
 	end
 end

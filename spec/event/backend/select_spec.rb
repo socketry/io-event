@@ -18,9 +18,9 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
+require 'event/backend/select'
+require_relative '../selector_examples'
 
-module Event
-	class Selector
-	end
+RSpec.describe Event::Backend::Select do
+	it_behaves_like Event::Selector
 end
