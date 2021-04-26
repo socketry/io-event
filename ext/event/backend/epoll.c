@@ -124,6 +124,8 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 		// The file descriptor was already inserted into epoll.
 		duplicate = descriptor = dup(descriptor);
 		
+		rb_update_max_fd(duplicate);
+		
 		if (descriptor == -1)
 			rb_sys_fail("dup");
 		

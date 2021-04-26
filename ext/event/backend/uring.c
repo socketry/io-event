@@ -157,37 +157,55 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
-static
+inline static
+void resize_to_capacity(VALUE string, size_t offset, size_t length) {
+	size_t current_length = RSTRING_LEN(string);
+	long difference = (long)(offset + length) - (long)current_length;
+
+	difference += 1;
+
+	if (difference > 0) {
+		rb_str_modify_expand(string, difference);
+	} else {
+		rb_str_modify(string);
+	}
+}
+
+inline static
 void resize_to_fit(VALUE string, size_t offset, size_t length) {
 	size_t current_length = RSTRING_LEN(string);
 
 	if (current_length < (offset + length)) {
-		rb_str_resize(string, offset + length);
+		rb_str_set_len(string, offset + length);
 	}
-}	
+}
 
 VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 
-	resize_to_fit(buffer, NUM2SIZET(offset), NUM2SIZET(length));
+	resize_to_capacity(buffer, NUM2SIZET(offset), NUM2SIZET(length));
 
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	struct io_uring_sqe *sqe = io_uring_get_sqe(data->ring);
 
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
-	iovecs[0].iov_len = NUM2SIZET(offset);
+	iovecs[0].iov_len = NUM2SIZET(length);
 
 	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
-	rb_funcall(data->loop, id_transfer, 0);
+	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
 
-	rb_str_resize(buffer, offset + iovecs[0].iov_len);
+	if (result < 0) {
+		rb_syserr_fail(-result, strerror(-result));
+	}
 
-	return SIZET2NUM(iovecs[0].iov_len);
+	resize_to_fit(buffer, NUM2SIZET(offset), (size_t)result);
+
+	return INT2NUM(result);
 }
 
 VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
@@ -203,15 +221,19 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
-	iovecs[0].iov_len = NUM2SIZET(offset);
+	iovecs[0].iov_len = NUM2SIZET(length);
 
 	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
-	rb_funcall(data->loop, id_transfer, 0);
+	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
 
-	return SIZET2NUM(iovecs[0].iov_len);
+	if (result < 0) {
+		rb_syserr_fail(-result, strerror(-result));
+	}
+
+	return INT2NUM(result);
 }
 
 VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
@@ -227,8 +249,7 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		if (result == -ETIME) {
 			// Timeout.
 		} else if (result < 0) {
-			errno = -result;
-			rb_sys_fail("io_uring_wait_cqe_timeout");
+			rb_syserr_fail(-result, strerror(-result));
 		}
 	}
 	
@@ -240,10 +261,11 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)io_uring_cqe_get_data(cqes[i]);
-		
-		rb_funcall(fiber, id_transfer, 0);
+		VALUE result = INT2NUM(cqes[i]->res);
 
 		io_uring_cqe_seen(data->ring, cqes[i]);
+		
+		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
 	return INT2NUM(count);
