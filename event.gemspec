@@ -13,6 +13,7 @@ Gem::Specification.new do |spec|
 	
 	spec.files = Dir.glob('{lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
 	
+	spec.add_development_dependency "bake"
 	spec.add_development_dependency "bundler"
 	spec.add_development_dependency "covered"
 	spec.add_development_dependency "rspec", "~> 3.0"
