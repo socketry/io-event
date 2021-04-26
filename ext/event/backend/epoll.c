@@ -84,7 +84,15 @@ VALUE Event_Backend_EPoll_initialize(VALUE self, VALUE loop) {
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
 	data->loop = loop;
-	data->descriptor = epoll_create(1);
+	int result = epoll_create1(EPOLL_CLOEXEC);
+	
+	if (result == -1) {
+		rb_sys_fail("epoll_create");
+	} else {
+		data->descriptor = result;
+		
+		rb_update_max_fd(data->descriptor);
+	}
 	
 	return self;
 }

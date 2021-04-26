@@ -21,6 +21,7 @@
 #include "kqueue.h"
 
 #include <sys/event.h>
+#include <sys/ioctl.h>
 #include <time.h>
 
 static VALUE Event_Backend_KQueue = Qnil;
@@ -83,7 +84,16 @@ VALUE Event_Backend_KQueue_initialize(VALUE self, VALUE loop) {
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
 	data->loop = loop;
-	data->descriptor = kqueue();
+	int result = kqueue();
+	
+	if (result == -1) {
+		rb_sys_fail("kqueue");
+	} else {
+		ioctl(result, FIOCLEX);
+		data->descriptor = result;
+		
+		rb_update_max_fd(data->descriptor);
+	}
 	
 	return self;
 }
