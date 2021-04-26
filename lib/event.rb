@@ -21,4 +21,9 @@
 require "event/version"
 
 require_relative 'event/backend/select'
-require_relative '../ext/event'
+
+begin
+	require_relative '../ext/event'
+rescue LoadError
+	# Ignore.
+end
