@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include <ruby.h>
+
 #define EVENT_BACKEND_URING
 
 void Init_Event_Backend_URing(VALUE Event_Backend);

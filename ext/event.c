@@ -33,7 +33,7 @@ void Init_event()
 	Event_Backend = rb_define_module_under(Event, "Backend");
 	
 	#ifdef EVENT_BACKEND_URING
-	Init_Event_Backend_IOUring(Event_Backend);
+	Init_Event_Backend_URing(Event_Backend);
 	#endif
 	
 	#ifdef EVENT_BACKEND_EPOLL

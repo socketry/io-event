@@ -18,19 +18,18 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "kqueue.h"
+#include "uring.h"
 
-#include <sys/event.h>
+#include <liburing.h>
 #include <time.h>
 
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
 
-const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
+static const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
 
-#include <liburing.h>
-const int URING_ENTRIES = 1024;
-const int URING_MAX_EVENTS = 1024;
+static const int URING_ENTRIES = 1024;
+static const int URING_MAX_EVENTS = 1024;
 
 struct Event_Backend_URing {
 	VALUE loop;
@@ -108,19 +107,19 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	short flags = 0;
 	
 	if (mask & READABLE) {
-		flags |= POLLIN;
+		flags |= POLL_IN;
 	}
 	
 	if (mask & PRIORITY) {
-		flags |= POLLPRI;
+		flags |= POLL_PRI;
 	}
 	
 	if (mask & WRITABLE) {
-		flags |= POLLOUT;
+		flags |= POLL_OUT;
 	}
-	
+
 	io_uring_prep_poll_add(sqe, descriptor, flags);
-	io_uring_sqe_set_data(sqe, fiber);
+	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
 	rb_funcall(data->loop, id_transfer, 0);
@@ -129,7 +128,7 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 }
 
 static
-struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
+struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec *storage) {
 	if (duration == Qnil) {
 		return NULL;
 	}
@@ -159,17 +158,20 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	struct io_uring_cqe *cqes[URING_MAX_EVENTS];
-	struct timespec storage;
+	struct __kernel_timespec storage;
+
+	if (duration != Qnil) {
+		io_uring_wait_cqe_timeout(data->ring, cqes, make_timeout(duration, &storage));
+	}
 	
-	io_uring_wait_cqe_timeout(data->ring, cqes, make_timeout(duration, storage));
-	int count = io_uring_peek_batch_cqe(ring, cqes, URING_MAX_EVENTS);
-		
+	int count = io_uring_peek_batch_cqe(data->ring, cqes, URING_MAX_EVENTS);
+	
 	if (count == -1) {
-		rb_sys_fail("kevent");
+		rb_sys_fail("io_uring_peek_batch_cqe");
 	}
 	
 	for (int i = 0; i < count; i += 1) {
-		VALUE fiber = io_uring_cqe_get_data(cqes[i]);
+		VALUE fiber = (VALUE)io_uring_cqe_get_data(cqes[i]);
 		io_uring_cqe_seen(data->ring, cqes[i]);
 		
 		rb_funcall(fiber, id_transfer, 0);

@@ -27,9 +27,9 @@
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
 
-const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
+static const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
 
-const unsigned EPOLL_MAX_EVENTS = 1024;
+static const unsigned EPOLL_MAX_EVENTS = 1024;
 
 struct Event_Backend_EPoll {
 	VALUE loop;
