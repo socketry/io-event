@@ -94,6 +94,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	struct epoll_event event = {0};
 
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int duplicate = -1;
 	
 	int mask = NUM2INT(events);
 	
@@ -110,17 +111,32 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	}
 	
 	event.events |= EPOLLRDHUP;
+	event.events |= EPOLLONESHOT;
 	
 	event.data.ptr = (void*)fiber;
 	
 	// A better approach is to batch all changes:
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
 	
+	if (result == -1 && errno == EEXIST) {
+		// The file descriptor was already inserted into epoll.
+		duplicate = descriptor = dup(descriptor);
+		
+		if (descriptor == -1)
+			rb_sys_fail("dup");
+		
+		epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
+	}
+	
 	if (result == -1) {
 		rb_sys_fail("epoll_ctl");
 	}
 	
 	rb_funcall(data->loop, id_transfer, 0);
+	
+	if (duplicate >= 0) {
+		close(duplicate);
+	}
 	
 	return Qnil;
 }
