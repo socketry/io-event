@@ -64,6 +64,7 @@ RSpec.shared_examples_for Event::Selector do
 			fiber.transfer
 			
 			events << :select
+			remote.puts "Hello World"
 			subject.select(1)
 			
 			expect(events).to be == [

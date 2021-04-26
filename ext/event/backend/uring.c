@@ -118,10 +118,14 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 		flags |= POLL_OUT;
 	}
 
+	// fprintf(stderr, "poll_add(%p, %d, %d)\n", sqe, descriptor, flags);
+
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
+	// fprintf(stderr, "count = %d, errno = %d\n", count, errno);
+
 	rb_funcall(data->loop, id_transfer, 0);
 	
 	return Qnil;
@@ -161,7 +165,14 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	struct __kernel_timespec storage;
 
 	if (duration != Qnil) {
-		io_uring_wait_cqe_timeout(data->ring, cqes, make_timeout(duration, &storage));
+		int result = io_uring_wait_cqe_timeout(data->ring, cqes, make_timeout(duration, &storage));
+		
+		if (result == -ETIME) {
+			// Timeout.
+		} else if (result < 0) {
+			errno = -result;
+			rb_sys_fail("io_uring_wait_cqe_timeout");
+		}
 	}
 	
 	int count = io_uring_peek_batch_cqe(data->ring, cqes, URING_MAX_EVENTS);
