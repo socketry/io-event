@@ -72,6 +72,7 @@ VALUE Event_Backend_EPoll_allocate(VALUE self) {
 	struct Event_Backend_EPoll *data = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
+	data->loop = Qnil;
 	data->descriptor = -1;
 	
 	return instance;
@@ -92,7 +93,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
 	struct epoll_event event = {0};
-
+	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	int duplicate = -1;
 	

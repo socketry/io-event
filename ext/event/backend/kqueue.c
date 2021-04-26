@@ -72,6 +72,7 @@ VALUE Event_Backend_KQueue_allocate(VALUE self) {
 	struct Event_Backend_KQueue *data = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
+	data->loop = Qnil;
 	data->descriptor = -1;
 	
 	return instance;
@@ -93,7 +94,7 @@ VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 	
 	struct kevent event;
 	u_short flags = 0;
-
+	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	
 	int mask = NUM2INT(events);
