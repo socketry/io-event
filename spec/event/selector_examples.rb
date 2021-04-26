@@ -23,14 +23,15 @@ require 'socket'
 
 RSpec.shared_examples_for Event::Selector do
 	describe '#io_wait' do
+		let!(:loop) {Fiber.current}
+		subject{described_class.new(loop)}
+		
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
 		
 		it "can wait for an io to become readable" do
-			subject # associate with current fiber.
-			
 			fiber = Fiber.new do
 				events << :wait_readable
 				subject.io_wait(Fiber.current, local, IO::READABLE)
@@ -43,7 +44,8 @@ RSpec.shared_examples_for Event::Selector do
 			remote.puts "Hello World"
 			
 			events << :select
-			subject.select
+			
+			subject.select(1)
 			
 			expect(events).to be == [
 				:transfer, :wait_readable,
@@ -52,8 +54,6 @@ RSpec.shared_examples_for Event::Selector do
 		end
 		
 		it "can wait for an io to become writable" do
-			subject # associate with current fiber.
-			
 			fiber = Fiber.new do
 				events << :wait_writable
 				subject.io_wait(Fiber.current, local, IO::WRITABLE)
@@ -64,7 +64,7 @@ RSpec.shared_examples_for Event::Selector do
 			fiber.transfer
 			
 			events << :select
-			subject.select
+			subject.select(1)
 			
 			expect(events).to be == [
 				:transfer, :wait_writable,
@@ -73,18 +73,18 @@ RSpec.shared_examples_for Event::Selector do
 		end
 		
 		it "can read and write from two different fibers" do
-			subject # associate with current fiber.
+			readable = writable = false
 			
 			read_fiber = Fiber.new do
 				events << :wait_readable
 				subject.io_wait(Fiber.current, local, IO::READABLE)
-				events << :readable
+				readable = true
 			end
 			
 			write_fiber = Fiber.new do
 				events << :wait_writable
 				subject.io_wait(Fiber.current, local, IO::WRITABLE)
-				events << :writable
+				writable = true
 			end
 			
 			events << :transfer
@@ -93,12 +93,15 @@ RSpec.shared_examples_for Event::Selector do
 			
 			remote.puts "Hello World"
 			events << :select
-			subject.select
+			subject.select(1)
 			
 			expect(events).to be == [
 				:transfer, :wait_readable, :wait_writable,
-				:select, :readable, :writable
+				:select
 			]
+			
+			expect(readable).to be true
+			expect(writable).to be true
 		end
 	end
 end

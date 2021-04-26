@@ -23,7 +23,7 @@ require "event/version"
 module Event
 	module Backend
 		class Select
-			def initialize(loop = Fiber.current)
+			def initialize(loop)
 				@loop = loop
 				
 				@readable = {}

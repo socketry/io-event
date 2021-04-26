@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 # Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -18,7 +20,30 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
+require 'mkmf'
 
-require_relative 'event/backend/select'
-require_relative '../ext/event'
+gem_name = File.basename(__dir__)
+extension_name = 'event'
+
+# The destination
+dir_config(extension_name)
+
+$srcs = ["event.c"]
+$VPATH << "$(srcdir)/event/backend"
+
+if have_library('uring') and have_header('liburing.h')
+	$srcs << "event/backend/uring.c"
+end
+
+if have_header('sys/epoll.h')
+	$srcs << "event/backend/epoll.c"
+end
+
+if have_header('sys/event.h')
+	$srcs << "event/backend/kqueue.c"
+end
+
+create_header
+
+# Generate the makefile to compile the native binary into `lib`:
+create_makefile(File.join(gem_name, extension_name))

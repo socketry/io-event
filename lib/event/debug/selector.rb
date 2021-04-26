@@ -21,8 +21,8 @@
 require "event/version"
 
 module Event
-	module Backend
-		class Debug
+	module Debug
+		class Selector
 			def initialize(selector)
 				@selector = selector
 				

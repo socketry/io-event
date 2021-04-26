@@ -18,11 +18,12 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event/backend/debug'
+require 'event/debug/selector'
 require_relative '../selector_examples'
 
-RSpec.describe Event::Backend::Debug do
-	subject {described_class.new(Event::Backend::Select.new)}
+RSpec.describe Event::Debug::Selector do
+	let!(:loop) {Fiber.current}
+	subject {described_class.new(Event::Backend::Select.new(loop))}
 	
 	describe '#io_wait' do
 		let(:events) {Array.new}
@@ -31,8 +32,6 @@ RSpec.describe Event::Backend::Debug do
 		let(:remote) {sockets.last}
 		
 		it "cannot have two fibers reading from the same io" do
-			subject # associate with current fiber.
-			
 			fiber1 = Fiber.new do
 				events << :wait_readable1
 				subject.io_wait(Fiber.current, local, IO::READABLE)

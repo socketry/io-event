@@ -18,9 +18,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event/backend/select'
-require_relative '../selector_examples'
+require 'event'
+require_relative 'selector_examples'
 
-RSpec.describe Event::Backend::Select do
-	it_behaves_like Event::Selector
+Event::Backend.constants.each do |name|
+	backend = Event::Backend.const_get(name)
+	
+	RSpec.describe backend do
+		it_behaves_like Event::Selector
+	end
 end
