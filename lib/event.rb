@@ -22,6 +22,14 @@ require "event/version"
 
 require_relative 'event/backend/select'
 
+module Event
+	# These constants are the same as those defined in IO.
+	
+	READABLE = 1
+	PRIORITY = 2
+	WRITABLE = 4
+end
+
 begin
 	require_relative '../ext/event'
 rescue LoadError

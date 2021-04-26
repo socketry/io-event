@@ -34,7 +34,7 @@ RSpec.shared_examples_for Event::Selector do
 		it "can wait for an io to become readable" do
 			fiber = Fiber.new do
 				events << :wait_readable
-				subject.io_wait(Fiber.current, local, IO::READABLE)
+				subject.io_wait(Fiber.current, local, Event::READABLE)
 				events << :readable
 			end
 			
@@ -56,7 +56,7 @@ RSpec.shared_examples_for Event::Selector do
 		it "can wait for an io to become writable" do
 			fiber = Fiber.new do
 				events << :wait_writable
-				subject.io_wait(Fiber.current, local, IO::WRITABLE)
+				subject.io_wait(Fiber.current, local, Event::WRITABLE)
 				events << :writable
 			end
 			
@@ -77,13 +77,13 @@ RSpec.shared_examples_for Event::Selector do
 			
 			read_fiber = Fiber.new do
 				events << :wait_readable
-				subject.io_wait(Fiber.current, local, IO::READABLE)
+				subject.io_wait(Fiber.current, local, Event::READABLE)
 				readable = true
 			end
 			
 			write_fiber = Fiber.new do
 				events << :wait_writable
-				subject.io_wait(Fiber.current, local, IO::WRITABLE)
+				subject.io_wait(Fiber.current, local, Event::WRITABLE)
 				writable = true
 			end
 			

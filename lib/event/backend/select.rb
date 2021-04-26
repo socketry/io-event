@@ -31,11 +31,11 @@ module Event
 			end
 			
 			def io_wait(fiber, io, events)
-				if (events & IO::READABLE) > 0 or (events & IO::PRIORITY) > 0
+				if (events & READABLE) > 0 or (events & PRIORITY) > 0
 					@readable[io] = fiber
 				end
 				
-				if (events & IO::WRITABLE) > 0
+				if (events & WRITABLE) > 0
 					@writable[io] = fiber
 				end
 				
