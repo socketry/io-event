@@ -11,7 +11,9 @@ Gem::Specification.new do |spec|
 	
 	spec.homepage = "https://github.com/socketry/event"
 	
-	spec.files = Dir.glob('{lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
+	spec.files = Dir.glob('{ext,lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
+	
+	spec.extensions = ["ext/event/extconf.rb"]
 	
 	spec.add_development_dependency "bake"
 	spec.add_development_dependency "bundler"

@@ -30,7 +30,7 @@ module Event
 end
 
 begin
-	require_relative '../ext/event'
+	require_relative '../ext/event/event'
 rescue LoadError
 	# Ignore.
 end

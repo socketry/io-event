@@ -29,18 +29,18 @@ extension_name = 'event'
 dir_config(extension_name)
 
 $srcs = ["event.c"]
-$VPATH << "$(srcdir)/event/backend"
+$VPATH << "$(srcdir)/backend"
 
 if have_library('uring') and have_header('liburing.h')
-	$srcs << "event/backend/uring.c"
+	$srcs << "backend/uring.c"
 end
 
 if have_header('sys/epoll.h')
-	$srcs << "event/backend/epoll.c"
+	$srcs << "backend/epoll.c"
 end
 
 if have_header('sys/event.h')
-	$srcs << "event/backend/kqueue.c"
+	$srcs << "backend/kqueue.c"
 end
 
 create_header
