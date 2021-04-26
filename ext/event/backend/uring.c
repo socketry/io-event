@@ -157,6 +157,63 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
+static
+void resize_to_fit(VALUE string, size_t offset, size_t length) {
+	size_t current_length = RSTRING_LEN(string);
+
+	if (current_length < (offset + length)) {
+		rb_str_resize(string, offset + length);
+	}
+}	
+
+VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+
+	resize_to_fit(buffer, NUM2SIZET(offset), NUM2SIZET(length));
+
+	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	struct io_uring_sqe *sqe = io_uring_get_sqe(data->ring);
+
+	struct iovec iovecs[1];
+	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
+	iovecs[0].iov_len = NUM2SIZET(offset);
+
+	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
+	io_uring_sqe_set_data(sqe, (void*)fiber);
+	io_uring_submit(data->ring);
+	
+	rb_funcall(data->loop, id_transfer, 0);
+
+	rb_str_resize(buffer, offset + iovecs[0].iov_len);
+
+	return SIZET2NUM(iovecs[0].iov_len);
+}
+
+VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+
+	if ((size_t)RSTRING_LEN(buffer) < NUM2SIZET(offset) + NUM2SIZET(length)) {
+		rb_raise(rb_eRuntimeError, "invalid offset/length exceeds bounds of buffer");
+	}
+
+	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	struct io_uring_sqe *sqe = io_uring_get_sqe(data->ring);
+
+	struct iovec iovecs[1];
+	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
+	iovecs[0].iov_len = NUM2SIZET(offset);
+
+	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
+	io_uring_sqe_set_data(sqe, (void*)fiber);
+	io_uring_submit(data->ring);
+	
+	rb_funcall(data->loop, id_transfer, 0);
+
+	return SIZET2NUM(iovecs[0].iov_len);
+}
+
 VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
@@ -183,9 +240,10 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)io_uring_cqe_get_data(cqes[i]);
-		io_uring_cqe_seen(data->ring, cqes[i]);
 		
 		rb_funcall(fiber, id_transfer, 0);
+
+		io_uring_cqe_seen(data->ring, cqes[i]);
 	}
 	
 	return INT2NUM(count);
@@ -202,4 +260,7 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_URing, "io_wait", Event_Backend_URing_io_wait, 3);
 	rb_define_method(Event_Backend_URing, "select", Event_Backend_URing_select, 1);
+
+	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
+	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
 }
