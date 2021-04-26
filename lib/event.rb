@@ -18,8 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
-
+require_relative 'event/version'
 require_relative 'event/backend/select'
 
 module Event
