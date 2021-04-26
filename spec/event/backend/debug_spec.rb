@@ -18,86 +18,49 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event/selector'
-require 'socket'
+require 'event/backend/debug'
+require_relative '../selector_examples'
 
-RSpec.shared_examples_for Event::Selector do
+RSpec.describe Event::Backend::Debug do
+	subject {described_class.new(Event::Backend::Select.new)}
+	
 	describe '#io_wait' do
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
 		
-		it "can wait for an io to become readable" do
+		it "cannot have two fibers reading from the same io" do
 			subject # associate with current fiber.
 			
-			fiber = Fiber.new do
-				events << :wait_readable
+			fiber1 = Fiber.new do
+				events << :wait_readable1
 				subject.io_wait(Fiber.current, local, IO::READABLE)
-				events << :readable
+				events << :readable1
+			rescue
+				events << :error1
 			end
 			
-			events << :transfer
-			fiber.transfer
-			
-			remote.puts "Hello World"
-			
-			events << :select
-			subject.select
-			
-			expect(events).to be == [
-				:transfer, :wait_readable,
-				:select, :readable
-			]
-		end
-		
-		it "can wait for an io to become writable" do
-			subject # associate with current fiber.
-			
-			fiber = Fiber.new do
-				events << :wait_writable
-				subject.io_wait(Fiber.current, local, IO::WRITABLE)
-				events << :writable
-			end
-			
-			events << :transfer
-			fiber.transfer
-			
-			events << :select
-			subject.select
-			
-			expect(events).to be == [
-				:transfer, :wait_writable,
-				:select, :writable
-			]
-		end
-		
-		it "can read and write from two different fibers" do
-			subject # associate with current fiber.
-			
-			read_fiber = Fiber.new do
-				events << :wait_readable
+			fiber2 = Fiber.new do
+				events << :wait_readable2
 				subject.io_wait(Fiber.current, local, IO::READABLE)
-				events << :readable
-			end
-			
-			write_fiber = Fiber.new do
-				events << :wait_writable
-				subject.io_wait(Fiber.current, local, IO::WRITABLE)
-				events << :writable
+				events << :readable2
+			rescue
+				events << :error2
 			end
 			
 			events << :transfer
-			read_fiber.transfer
-			write_fiber.transfer
+			fiber1.transfer
+			fiber2.transfer
 			
 			remote.puts "Hello World"
 			events << :select
-			subject.select
+			subject.select(1)
 			
 			expect(events).to be == [
-				:transfer, :wait_readable, :wait_writable,
-				:select, :readable, :writable
+				:transfer, :wait_readable1, :wait_readable2,
+				:error2,
+				:select, :readable1
 			]
 		end
 	end

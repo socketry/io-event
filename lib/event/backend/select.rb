@@ -47,12 +47,12 @@ module Event
 				
 				ready = {}
 				
-				readable.each do |io|
+				readable&.each do |io|
 					fiber = @readable.delete(io)
 					ready[fiber] = true
 				end
 				
-				writable.each do |io|
+				writable&.each do |io|
 					fiber = @writable.delete(io)
 					ready[fiber] = true
 				end
