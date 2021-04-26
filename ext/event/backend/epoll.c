@@ -22,6 +22,7 @@
 
 #include <sys/epoll.h>
 #include <time.h>
+#include <errno.h>
 
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
@@ -126,7 +127,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 		if (descriptor == -1)
 			rb_sys_fail("dup");
 		
-		epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
+		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
 	}
 	
 	if (result == -1) {
