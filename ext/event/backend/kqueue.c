@@ -35,9 +35,10 @@ struct Event_Backend_KQueue {
 	int descriptor;
 };
 
-void Event_Backend_KQueue_Type_mark(void *data)
+void Event_Backend_KQueue_Type_mark(void *_data)
 {
-	// rb_gc_mark(...);
+	struct Event_Backend_KQueue *data = _data;
+	rb_gc_mark(data->loop);
 }
 
 void Event_Backend_KQueue_Type_free(void *_data)
@@ -132,18 +133,21 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 	if (FIXNUM_P(duration)) {
 		storage->tv_sec = NUM2TIMET(duration);
 		storage->tv_nsec = 0;
+		
+		return storage;
 	}
+	
 	else if (RB_FLOAT_TYPE_P(duration)) {
 		double value = RFLOAT_VALUE(duration);
 		time_t seconds = duration;
 		
 		storage->tv_sec = seconds;
 		storage->tv_nsec = (value - seconds) * 1000000000L;
-	} else {
-		return NULL;
+		
+		return storage;
 	}
 	
-	return storage;
+	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
 VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
@@ -154,6 +158,10 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	struct timespec storage;
 	
 	int count = kevent(data->descriptor, NULL, 0, events, KQUEUE_MAX_EVENTS, make_timeout(duration, &storage));
+	
+	if (count == -1) {
+		rb_sys_fail("kevent");
+	}
 	
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)events[i].udata;
