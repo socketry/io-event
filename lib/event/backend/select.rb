@@ -43,20 +43,20 @@ module Event
 			def select(duration = nil)
 				readable, writable, _ = IO.select(@readable.keys, @writable.keys, nil, duration)
 				
-				ready = {}
+				ready = Hash.new(0)
 				
 				readable&.each do |io|
 					fiber = @readable.delete(io)
-					ready[fiber] = true
+					ready[fiber] |= READABLE
 				end
 				
 				writable&.each do |io|
 					fiber = @writable.delete(io)
-					ready[fiber] = true
+					ready[fiber] |= WRITABLE
 				end
 				
-				ready.each_key do |fiber|
-					fiber.transfer
+				ready.each do |fiber, events|
+					fiber.transfer(events)
 				end
 			end
 		end

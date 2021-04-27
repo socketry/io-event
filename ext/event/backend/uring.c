@@ -19,14 +19,14 @@
 // THE SOFTWARE.
 
 #include "uring.h"
+#include "backend.h"
 
 #include <liburing.h>
+#include <poll.h>
 #include <time.h>
 
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
-
-static const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
 
 static const int URING_ENTRIES = 1024;
 static const int URING_MAX_EVENTS = 1024;
@@ -96,6 +96,31 @@ VALUE Event_Backend_URing_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+static inline
+short poll_flags_from_events(int events) {
+	short flags = 0;
+	
+	if (events & READABLE) flags |= POLLIN;
+	if (events & PRIORITY) flags |= POLLPRI;
+	if (events & WRITABLE) flags |= POLLOUT;
+	
+	flags |= POLLERR;
+	flags |= POLLHUP;
+	
+	return flags;
+}
+
+static inline
+int events_from_poll_flags(short flags) {
+	int events = 0;
+	
+	if (flags & POLLIN) events |= READABLE;
+	if (flags & POLLPRI) events |= PRIORITY;
+	if (flags & POLLOUT) events |= WRITABLE;
+	
+	return events;
+}
+
 VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
@@ -103,32 +128,21 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	struct io_uring_sqe *sqe = io_uring_get_sqe(data->ring);
 	
-	int mask = NUM2INT(events);
-	short flags = 0;
+	short flags = poll_flags_from_events(NUM2INT(events));
 	
-	if (mask & READABLE) {
-		flags |= POLL_IN;
-	}
-	
-	if (mask & PRIORITY) {
-		flags |= POLL_PRI;
-	}
-	
-	if (mask & WRITABLE) {
-		flags |= POLL_OUT;
-	}
-
 	// fprintf(stderr, "poll_add(%p, %d, %d)\n", sqe, descriptor, flags);
-
+	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
-	// fprintf(stderr, "count = %d, errno = %d\n", count, errno);
-
-	rb_funcall(data->loop, id_transfer, 0);
+	VALUE result = rb_funcall(data->loop, id_transfer, 0);
 	
-	return Qnil;
+	// We explicitly filter the resulting events based on the requested events.
+	// In some cases, poll will report events we didn't ask for.
+	flags &= NUM2INT(result);
+	
+	return INT2NUM(events_from_poll_flags(flags));
 }
 
 static
@@ -196,7 +210,9 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
-	
+
+	// fprintf(stderr, "prep_readv(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
+
 	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
 
 	if (result < 0) {
@@ -227,6 +243,8 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(data->ring);
 	
+	// fprintf(stderr, "prep_writev(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
+	
 	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
 
 	if (result < 0) {
@@ -242,33 +260,37 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	
 	struct io_uring_cqe *cqes[URING_MAX_EVENTS];
 	struct __kernel_timespec storage;
-
-	if (duration != Qnil) {
-		int result = io_uring_wait_cqe_timeout(data->ring, cqes, make_timeout(duration, &storage));
+	
+	int result = io_uring_peek_batch_cqe(data->ring, cqes, URING_MAX_EVENTS);
+	
+	// fprintf(stderr, "result = %d\n", result);
+	
+	if (result < 0) {
+		rb_syserr_fail(-result, strerror(-result));
+	} else if (result == 0) {
+		result = io_uring_wait_cqes(data->ring, cqes, 1, make_timeout(duration, &storage), NULL);
+		
+		// fprintf(stderr, "result (timeout) = %d\n", result);
 		
 		if (result == -ETIME) {
-			// Timeout.
+			result = 0;
 		} else if (result < 0) {
 			rb_syserr_fail(-result, strerror(-result));
 		}
 	}
 	
-	int count = io_uring_peek_batch_cqe(data->ring, cqes, URING_MAX_EVENTS);
-	
-	if (count == -1) {
-		rb_sys_fail("io_uring_peek_batch_cqe");
-	}
-	
-	for (int i = 0; i < count; i += 1) {
+	for (int i = 0; i < result; i += 1) {
 		VALUE fiber = (VALUE)io_uring_cqe_get_data(cqes[i]);
 		VALUE result = INT2NUM(cqes[i]->res);
-
+		
+		// fprintf(stderr, "cqes[i]->res = %d\n", cqes[i]->res);
+		
 		io_uring_cqe_seen(data->ring, cqes[i]);
 		
 		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
-	return INT2NUM(count);
+	return INT2NUM(result);
 }
 
 void Init_Event_Backend_URing(VALUE Event_Backend) {

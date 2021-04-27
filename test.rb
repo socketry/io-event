@@ -23,4 +23,5 @@ end
 f1.transfer
 f2.transfer
 
-selector.select(1)
+pp ["select", selector.select(1)]
+

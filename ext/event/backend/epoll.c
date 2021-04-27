@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 #include "kqueue.h"
+#include "backend.h"
 
 #include <sys/epoll.h>
 #include <time.h>
@@ -26,8 +27,6 @@
 
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
-
-static const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
 
 static const unsigned EPOLL_MAX_EVENTS = 1024;
 
@@ -97,6 +96,56 @@ VALUE Event_Backend_EPoll_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+static inline
+uint32_t epoll_flags_from_events(int events) {
+	uint32_t flags = 0;
+	
+	if (events & READABLE) flags |= EPOLLIN;
+	if (events & PRIORITY) flags |= EPOLLPRI;
+	if (events & WRITABLE) flags |= EPOLLOUT;
+	
+	flags |= EPOLLRDHUP;
+	flags |= EPOLLONESHOT;
+	
+	return flags;
+}
+
+static inline
+int events_from_epoll_flags(uint32_t flags) {
+	int events = 0;
+	
+	if (flags & EPOLLIN) events |= READABLE;
+	if (flags & EPOLLPRI) events |= PRIORITY;
+	if (flags & EPOLLOUT) events |= WRITABLE;
+	
+	return events;
+}
+
+struct io_wait_arguments {
+	struct Event_Backend_EPoll *data;
+	int duplicate;
+};
+
+static
+VALUE io_wait_ensure(VALUE _arguments) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	
+	if (arguments->duplicate >= 0) {
+		close(arguments->duplicate);
+	}
+	
+	return Qnil;
+};
+
+static
+VALUE io_wait_transfer(VALUE _arguments) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	
+	VALUE result = rb_funcall(arguments->data->loop, id_transfer, 0);
+	
+	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
+};
+
 VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
@@ -106,23 +155,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	int duplicate = -1;
 	
-	int mask = NUM2INT(events);
-	
-	if (mask & READABLE) {
-		event.events |= EPOLLIN;
-	}
-	
-	if (mask & PRIORITY) {
-		event.events |= EPOLLPRI;
-	}
-	
-	if (mask & WRITABLE) {
-		event.events |= EPOLLOUT;
-	}
-	
-	event.events |= EPOLLRDHUP;
-	event.events |= EPOLLONESHOT;
-	
+	event.events = epoll_flags_from_events(NUM2INT(events));
 	event.data.ptr = (void*)fiber;
 	
 	// A better approach is to batch all changes:
@@ -144,13 +177,12 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 		rb_sys_fail("epoll_ctl");
 	}
 	
-	rb_funcall(data->loop, id_transfer, 0);
+	struct io_wait_arguments io_wait_arguments = {
+		.data = data,
+		.duplicate = duplicate
+	};
 	
-	if (duplicate >= 0) {
-		close(duplicate);
-	}
-	
-	return Qnil;
+	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
 static
@@ -186,7 +218,9 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)events[i].data.ptr;
-		rb_funcall(fiber, id_transfer, 0);
+		VALUE result = INT2NUM(events[i].events);
+		
+		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
 	return INT2NUM(count);

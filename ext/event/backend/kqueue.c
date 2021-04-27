@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 #include "kqueue.h"
+#include "backend.h"
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
@@ -27,7 +28,12 @@
 static VALUE Event_Backend_KQueue = Qnil;
 static ID id_fileno, id_transfer;
 
-static const int READABLE = 1, PRIORITY = 2, WRITABLE = 4;
+static const int
+	READABLE = 1,
+	PRIORITY = 2,
+	WRITABLE = 4,
+	ERROR = 8,
+	HANGUP = 16;
 
 static const unsigned KQUEUE_MAX_EVENTS = 1024;
 
@@ -98,30 +104,40 @@ VALUE Event_Backend_KQueue_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+static inline
+u_short kqueue_filter_from_events(int events) {
+	u_short filter = 0;
+	
+	if (events & READABLE) filter |= EVFILT_READ;
+	if (events & PRIORITY) filter |= EV_OOBAND;
+	if (events & WRITABLE) filter |= EVFILT_WRITE;
+	
+	return filter;
+}
+
+static inline
+int events_from_kqueue_filter(u_short filter) {
+	int events = 0;
+	
+	if (filter & EVFILT_READ) events |= READABLE;
+	if (filter & EV_OOBAND) events |= PRIORITY;
+	if (filter & EVFILT_WRITE) events |= WRITABLE;
+	
+	return INT2NUM(events);
+}
+
 VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	struct kevent event;
-	u_short flags = 0;
+	struct kevent event = {0};
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	
-	int mask = NUM2INT(events);
-	
-	if (mask & READABLE) {
-		flags |= EVFILT_READ;
-	}
-	
-	if (mask & PRIORITY) {
-		flags |= EV_OOBAND;
-	}
-	
-	if (mask & WRITABLE) {
-		flags |= EVFILT_WRITE;
-	}
-
-	EV_SET(&event, descriptor, flags, EV_ADD|EV_ENABLE|EV_ONESHOT, 0, 0, (void*)fiber);
+	event.ident = descriptor;
+	event.filter = kqueue_filters_from_events(events);
+	event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+	event.udata = (void*)fiber;
 	
 	// A better approach is to batch all changes:
 	int result = kevent(data->descriptor, &event, 1, NULL, 0, NULL);
@@ -130,9 +146,8 @@ VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 		rb_sys_fail("kevent");
 	}
 	
-	rb_funcall(data->loop, id_transfer, 0);
-	
-	return Qnil;
+	VALUE result = rb_funcall(data->loop, id_transfer, 0);
+	return INT2NUM(events_from_kqueue_filter(NUM2INT(result)));
 }
 
 static
@@ -176,7 +191,8 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)events[i].udata;
-		rb_funcall(fiber, id_transfer, 0);
+		VALUE result = INT2NUM(events[i].filter);
+		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
 	return INT2NUM(count);
