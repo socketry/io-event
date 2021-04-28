@@ -28,14 +28,7 @@
 static VALUE Event_Backend_KQueue = Qnil;
 static ID id_fileno, id_transfer;
 
-static const int
-	READABLE = 1,
-	PRIORITY = 2,
-	WRITABLE = 4,
-	ERROR = 8,
-	HANGUP = 16;
-
-static const unsigned KQUEUE_MAX_EVENTS = 1024;
+static const unsigned KQUEUE_MAX_EVENTS = 64;
 
 struct Event_Backend_KQueue {
 	VALUE loop;

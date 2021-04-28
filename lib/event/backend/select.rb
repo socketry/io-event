@@ -41,7 +41,7 @@ module Event
 			end
 			
 			def select(duration = nil)
-				readable, writable, _ = IO.select(@readable.keys, @writable.keys, nil, duration)
+				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
 				
 				ready = Hash.new(0)
 				

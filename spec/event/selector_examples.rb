@@ -22,6 +22,14 @@ require 'event/selector'
 require 'socket'
 
 RSpec.shared_examples_for Event::Selector do
+	describe '.new' do
+		it "can create multiple selectors" do
+			64.times.map do |i|
+				described_class.new(Fiber.current)
+			end
+		end
+	end
+	
 	describe '#io_wait' do
 		let!(:loop) {Fiber.current}
 		subject{described_class.new(loop)}

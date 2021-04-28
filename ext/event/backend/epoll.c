@@ -28,7 +28,7 @@
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
 
-static const unsigned EPOLL_MAX_EVENTS = 1024;
+static const unsigned EPOLL_MAX_EVENTS = 64;
 
 struct Event_Backend_EPoll {
 	VALUE loop;
@@ -123,6 +123,7 @@ int events_from_epoll_flags(uint32_t flags) {
 
 struct io_wait_arguments {
 	struct Event_Backend_EPoll *data;
+	int descriptor;
 	int duplicate;
 };
 
@@ -131,7 +132,11 @@ VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
 	if (arguments->duplicate >= 0) {
+		epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->duplicate, NULL);
+		
 		close(arguments->duplicate);
+	} else {
+		epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
 	}
 	
 	return Qnil;
@@ -158,8 +163,10 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	event.events = epoll_flags_from_events(NUM2INT(events));
 	event.data.ptr = (void*)fiber;
 	
+	// fprintf(stderr, "<- fiber=%p descriptor=%d\n", (void*)fiber, descriptor);
+	
 	// A better approach is to batch all changes:
-	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
+	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	
 	if (result == -1 && errno == EEXIST) {
 		// The file descriptor was already inserted into epoll.
@@ -170,7 +177,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 		if (descriptor == -1)
 			rb_sys_fail("dup");
 		
-		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);;
+		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	}
 	
 	if (result == -1) {
@@ -179,6 +186,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.data = data,
+		.descriptor = descriptor,
 		.duplicate = duplicate
 	};
 	
@@ -219,6 +227,8 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	for (int i = 0; i < count; i += 1) {
 		VALUE fiber = (VALUE)events[i].data.ptr;
 		VALUE result = INT2NUM(events[i].events);
+		
+		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
 		rb_funcall(fiber, id_transfer, 1, result);
 	}
