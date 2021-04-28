@@ -29,15 +29,23 @@ module Event
 			end
 			
 			def io_wait(fiber, io, events)
+				remove_readable = remove_writable = false
+				
 				if (events & READABLE) > 0 or (events & PRIORITY) > 0
 					@readable[io] = fiber
+					remove_readable = true
 				end
 				
 				if (events & WRITABLE) > 0
 					@writable[io] = fiber
+					remove_writable = true
 				end
 				
 				@loop.transfer
+				
+			ensure
+				@readable.delete(io) if remove_readable
+				@writable.delete(io) if remove_writable
 			end
 			
 			def select(duration = nil)

@@ -127,5 +127,36 @@ RSpec.shared_examples_for Event::Selector do
 			expect(readable).to be true
 			expect(writable).to be true
 		end
+		
+		it "can handle exception during wait" do
+			fiber = Fiber.new do
+				events << :wait_readable
+				
+				expect do
+					while true
+						subject.io_wait(Fiber.current, local, Event::READABLE)
+						events << :readable
+					end
+				end.to raise_exception(RuntimeError, /Boom/)
+				
+				events << :error
+			end
+			
+			events << :transfer
+			fiber.transfer
+			
+			events << :select
+			subject.select(0)
+			fiber.raise(RuntimeError.new("Boom"))
+			
+			events << :puts
+			remote.puts "Hello World"
+			subject.select(0)
+			
+			expect(events).to be == [
+				:transfer, :wait_readable,
+				:select, :error, :puts
+			]
+		end
 	end
 end

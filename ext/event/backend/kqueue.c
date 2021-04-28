@@ -170,7 +170,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	
 	io_remove_filters(arguments->data->descriptor, arguments->descriptor, arguments->events);
 	
-	return Qnil;
+	rb_exc_raise(exception);
 };
 
 static inline
