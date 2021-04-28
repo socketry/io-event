@@ -11,3 +11,8 @@
 .rspec_status
 
 /gems.locked
+
+/ext/event/Makefile
+/ext/event/mkmf.log
+/ext/event/extconf.h
+/ext/event/**/*.o
