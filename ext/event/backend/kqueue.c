@@ -97,50 +97,112 @@ VALUE Event_Backend_KQueue_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
-static inline
-u_short kqueue_filter_from_events(int events) {
-	u_short filter = 0;
+static
+int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
+	int count = 0;
+	struct kevent kevents[2] = {0};
 	
-	if (events & READABLE) filter |= EVFILT_READ;
-	if (events & PRIORITY) filter |= EV_OOBAND;
-	if (events & WRITABLE) filter |= EVFILT_WRITE;
+	if (events & READABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_READ;
+		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].udata = (void*)fiber;
+		
+#ifdef EV_OOBAND
+		if (events & PRIORITY) {
+			kevents[count].flags |= EV_OOBAND;
+		}
+#endif
+		
+		count++;
+	}
 	
-	return filter;
-}
-
-static inline
-int events_from_kqueue_filter(u_short filter) {
-	int events = 0;
+	if (events & WRITABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_WRITE;
+		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].udata = (void*)fiber;
+		count++;
+	}
 	
-	if (filter & EVFILT_READ) events |= READABLE;
-	if (filter & EV_OOBAND) events |= PRIORITY;
-	if (filter & EVFILT_WRITE) events |= WRITABLE;
-	
-	return INT2NUM(events);
-}
-
-VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
-	struct Event_Backend_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
-	
-	struct kevent event = {0};
-	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	
-	event.ident = descriptor;
-	event.filter = kqueue_filters_from_events(events);
-	event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
-	event.udata = (void*)fiber;
-	
-	// A better approach is to batch all changes:
-	int result = kevent(data->descriptor, &event, 1, NULL, 0, NULL);
+	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
 		rb_sys_fail("kevent");
 	}
 	
-	VALUE result = rb_funcall(data->loop, id_transfer, 0);
+	return events;
+}
+
+static
+void io_remove_filters(int descriptor, int ident, int events) {
+	int count = 0;
+	struct kevent kevents[2] = {0};
+	
+	if (events & READABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_READ;
+		kevents[count].flags = EV_DELETE;
+		
+		count++;
+	}
+	
+	if (events & WRITABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_WRITE;
+		kevents[count].flags = EV_DELETE;
+		count++;
+	}
+	
+	// Ignore the result.
+	kevent(descriptor, kevents, count, NULL, 0, NULL);
+}
+
+struct io_wait_arguments {
+	struct Event_Backend_KQueue *data;
+	int events;
+	int descriptor;
+};
+
+static
+VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	
+	io_remove_filters(arguments->data->descriptor, arguments->descriptor, arguments->events);
+	
+	return Qnil;
+};
+
+static inline
+int events_from_kqueue_filter(int filter) {
+	if (filter == EVFILT_READ) return READABLE;
+	if (filter == EVFILT_WRITE) return WRITABLE;
+	
+	return 0;
+}
+
+static
+VALUE io_wait_transfer(VALUE _arguments) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	
+	VALUE result = rb_funcall(arguments->data->loop, id_transfer, 0);
+	
 	return INT2NUM(events_from_kqueue_filter(NUM2INT(result)));
+};
+
+VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	struct io_wait_arguments io_wait_arguments = {
+		.events = io_add_filters(data->descriptor, descriptor, NUM2INT(events), fiber),
+		.data = data,
+		.descriptor = descriptor,
+	};
+	
+	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
 static
