@@ -122,6 +122,39 @@ int events_from_poll_flags(short flags) {
 	return events;
 }
 
+struct io_wait_arguments {
+	struct Event_Backend_KQueue *data;
+	VALUE fiber;
+	short flags;
+};
+
+static
+VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	struct Event_Backend_URing *data = arguments->data;
+	
+	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	
+	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
+	io_uring_submit(&data->ring);
+	
+	return Qnil;
+};
+
+static
+VALUE io_wait_transfer(VALUE _arguments) {
+	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
+	struct Event_Backend_URing *data = arguments->data;
+	
+	VALUE result = rb_funcall(data->loop, id_transfer, 0);
+	
+	// We explicitly filter the resulting events based on the requested events.
+	// In some cases, poll will report events we didn't ask for.
+	short flags = arguments->flags & NUM2INT(result);
+	
+	return INT2NUM(events_from_poll_flags(flags));
+};
+
 VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
@@ -137,13 +170,13 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
-	VALUE result = rb_funcall(data->loop, id_transfer, 0);
+	struct io_wait_arguments io_wait_arguments = {
+		.data = data,
+		.fiber = fiber,
+		.flags = flags
+	};
 	
-	// We explicitly filter the resulting events based on the requested events.
-	// In some cases, poll will report events we didn't ask for.
-	flags &= NUM2INT(result);
-	
-	return INT2NUM(events_from_poll_flags(flags));
+	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
 inline static
