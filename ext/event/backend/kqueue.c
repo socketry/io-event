@@ -108,11 +108,11 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
 		kevents[count].udata = (void*)fiber;
 		
-#ifdef EV_OOBAND
-		if (events & PRIORITY) {
-			kevents[count].flags |= EV_OOBAND;
-		}
-#endif
+// #ifdef EV_OOBAND
+// 		if (events & PRIORITY) {
+// 			kevents[count].flags |= EV_OOBAND;
+// 		}
+// #endif
 		
 		count++;
 	}
