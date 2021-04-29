@@ -334,6 +334,7 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE pid, VALUE flags) {
 	int state = 0;
 
 	if (flags & WNOHANG > 0) {
+		// WNOHANG is nonblock by default.
 		return PIDT2NUM(waitpid(pidv, &state, options));
 	}
 
