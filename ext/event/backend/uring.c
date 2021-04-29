@@ -328,6 +328,18 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	return INT2NUM(result);
 }
 
+VALUE rb_process_status_new(rb_pid_t pid, int status, int error) {
+    VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
+
+    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
+    data->pid = pid;
+    data->status = status;
+    data->error = error;
+
+    rb_obj_freeze(last_status);
+    return last_status;
+}
+
 VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
 	pid_t pidv = NUM2PIDT(pid);
 	int options = NUM2INT(flags);
