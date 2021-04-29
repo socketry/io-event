@@ -342,7 +342,7 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
-	int descriptor = pidfd = pidfd_open(pidv, 0);
+	int descriptor = pidfd_open(pidv, 0);
 	short poll_flags = POLLIN | POLLRDNORM;
 	io_uring_prep_poll_add(sqe, descriptor, poll_flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);

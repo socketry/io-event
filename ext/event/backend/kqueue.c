@@ -266,7 +266,7 @@ VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	int descriptor = pidfd = pidfd_open(pidv, 0);
+	int descriptor = pidfd_open(pidv, 0);
 	short poll_flags = POLLIN | POLLRDNORM;
 
 	struct io_wait_arguments io_wait_arguments = {
