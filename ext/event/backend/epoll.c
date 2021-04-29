@@ -25,6 +25,7 @@
 #include <time.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
