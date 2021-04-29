@@ -23,7 +23,10 @@
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <errno.h>
 
 static VALUE Event_Backend_KQueue = Qnil;
 static ID id_fileno, id_transfer;
@@ -332,6 +335,50 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	return INT2NUM(arguments.count);
 }
 
+VALUE rb_process_status_new(rb_pid_t pid, int status, int error) {
+    VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
+
+    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
+    data->pid = pid;
+    data->status = status;
+    data->error = error;
+
+    rb_obj_freeze(last_status);
+    return last_status;
+}
+
+VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	pid_t pidv = NUM2PIDT(pid);
+	int options = NUM2INT(flags);
+	int state = 0;
+	int err = 0;
+
+	if ((flags & WNOHANG) > 0) {
+		// WNOHANG is nonblock by default.
+		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+		if (ret == -1) err = errno;
+		return rb_process_status_new(pidv, state, err);
+	}
+
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	int descriptor = pidfd_open(pidv, 0);
+	short poll_flags = POLLIN | POLLRDNORM;
+
+	struct io_wait_arguments io_wait_arguments = {
+		.events = io_add_filters(data->descriptor, descriptor, poll_flags, fiber),
+		.data = data,
+		.descriptor = descriptor,
+	};
+	
+	rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
+	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+	if (ret == -1) err = errno;
+	return rb_process_status_new(pidv, state, err);
+}
+
+
 void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
 	id_transfer = rb_intern("transfer");
@@ -344,4 +391,5 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_KQueue, "io_wait", Event_Backend_KQueue_io_wait, 3);
 	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
+	rb_define_method(Event_Backend_KQueue, "process_wait", Event_Backend_KQueue_process_wait, 3);
 }

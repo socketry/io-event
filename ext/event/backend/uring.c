@@ -24,6 +24,9 @@
 #include <liburing.h>
 #include <poll.h>
 #include <time.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <errno.h>
 
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
@@ -417,6 +420,47 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	return INT2NUM(result);
 }
 
+VALUE rb_process_status_new(rb_pid_t pid, int status, int error) {
+    VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
+
+    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
+    data->pid = pid;
+    data->status = status;
+    data->error = error;
+
+    rb_obj_freeze(last_status);
+    return last_status;
+}
+
+VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	pid_t pidv = NUM2PIDT(pid);
+	int options = NUM2INT(flags);
+	int state = 0;
+	int err = 0;
+
+	if ((flags & WNOHANG) > 0) {
+		// WNOHANG is nonblock by default.
+		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+		if (ret == -1) err = errno;
+		return rb_process_status_new(pidv, state, err);
+	}
+
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	
+	int descriptor = pidfd_open(pidv, 0);
+	short poll_flags = POLLIN | POLLRDNORM;
+	io_uring_prep_poll_add(sqe, descriptor, poll_flags);
+	io_uring_sqe_set_data(sqe, (void*)fiber);
+	io_uring_submit(&data->ring);
+	
+	rb_funcall(data->loop, id_transfer, 0);
+	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+	if (ret == -1) err = errno;
+	return rb_process_status_new(pidv, state, err);
+}
+
 void Init_Event_Backend_URing(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
 	id_transfer = rb_intern("transfer");
@@ -432,4 +476,5 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
+	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }
