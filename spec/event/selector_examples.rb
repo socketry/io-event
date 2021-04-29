@@ -166,6 +166,7 @@ RSpec.shared_examples_for Event::Selector do
 
 		it "can wait for an process to terminate" do
 			result = nil
+			events = []
 
 			fiber = Fiber.new do
 				pid = Process.spawn("true")
