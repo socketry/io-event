@@ -23,7 +23,9 @@
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <time.h>
+#include <errno.h>
 
 static VALUE Event_Backend_KQueue = Qnil;
 static ID id_fileno, id_transfer;
@@ -271,7 +273,7 @@ VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	int state = 0;
 	int err = 0;
 
-	if (flags & WNOHANG > 0) {
+	if ((flags & WNOHANG) > 0) {
 		// WNOHANG is nonblock by default.
 		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
 		if (ret == -1) err = errno;
