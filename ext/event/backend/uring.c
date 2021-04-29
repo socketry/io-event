@@ -328,7 +328,7 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	return INT2NUM(result);
 }
 
-VALUE Event_Backend_URing_process_wait(VALUE self, VALUE pid, VALUE flags) {
+VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
 	pid_t pidv = NUM2PIDT(pid);
 	int options = NUM2INT(flags);
 	int state = 0;
@@ -366,5 +366,5 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
-	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait,2);
+	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }
