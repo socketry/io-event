@@ -257,10 +257,13 @@ VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	pid_t pidv = NUM2PIDT(pid);
 	int options = NUM2INT(flags);
 	int state = 0;
+	int err = 0;
 
 	if (flags & WNOHANG > 0) {
 		// WNOHANG is nonblock by default.
-		return PIDT2NUM(waitpid(pidv, &state, options));
+		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+		if (ret == -1) err = errno;
+		return rb_process_status_new(pidv, state, err);
 	}
 
 	struct Event_Backend_KQueue *data = NULL;
@@ -276,7 +279,9 @@ VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	};
 	
 	rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
-	return PIDT2NUM(waitpid(pidv, &state, options));
+	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
+	if (ret == -1) err = errno;
+	return rb_process_status_new(pidv, state, err);
 }
 
 
