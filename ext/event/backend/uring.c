@@ -24,6 +24,7 @@
 #include <liburing.h>
 #include <poll.h>
 #include <time.h>
+#include <sys/wait.h>
 
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
@@ -327,6 +328,29 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	return INT2NUM(result);
 }
 
+VALUE Event_Backend_URing_process_wait(VALUE self, VALUE pid, VALUE flags) {
+	pid_t pidv = NUM2PIDT(pid);
+	int options = NUM2INT(flags);
+	int state = 0;
+
+	if (flags & WNOHANG > 0) {
+		return PIDT2NUM(waitpid(pidv, &state, options));
+	}
+
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	
+	int descriptor = pidfd = pidfd_open(pidv, 0);
+	short poll_flags = POLLIN | POLLRDNORM;
+	io_uring_prep_poll_add(sqe, descriptor, poll_flags);
+	io_uring_sqe_set_data(sqe, (void*)fiber);
+	io_uring_submit(&data->ring);
+	
+	rb_funcall(data->loop, id_transfer, 0);
+	return PIDT2NUM(waitpid(pidv, &state, options));
+}
+
 void Init_Event_Backend_URing(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
 	id_transfer = rb_intern("transfer");
@@ -341,4 +365,5 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
+	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait,2);
 }
