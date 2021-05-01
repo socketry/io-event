@@ -128,7 +128,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
-		rb_sys_fail("kevent");
+		rb_sys_fail("kevent(register)");
 	}
 	
 	return events;
@@ -220,7 +220,7 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 	
 	else if (RB_FLOAT_TYPE_P(duration)) {
 		double value = RFLOAT_VALUE(duration);
-		time_t seconds = duration;
+		time_t seconds = value;
 		
 		storage->tv_sec = seconds;
 		storage->tv_nsec = (value - seconds) * 1000000000L;
@@ -241,7 +241,7 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	int count = kevent(data->descriptor, NULL, 0, events, KQUEUE_MAX_EVENTS, make_timeout(duration, &storage));
 	
 	if (count == -1) {
-		rb_sys_fail("kevent");
+		rb_sys_fail("kevent(select)");
 	}
 	
 	for (int i = 0; i < count; i += 1) {

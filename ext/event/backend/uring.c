@@ -277,7 +277,7 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 	
 	else if (RB_FLOAT_TYPE_P(duration)) {
 		double value = RFLOAT_VALUE(duration);
-		time_t seconds = duration;
+		time_t seconds = value;
 		
 		storage->tv_sec = seconds;
 		storage->tv_nsec = (value - seconds) * 1000000000L;

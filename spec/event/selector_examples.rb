@@ -22,6 +22,9 @@ require 'event/selector'
 require 'socket'
 
 RSpec.shared_examples_for Event::Selector do
+	let!(:loop) {Fiber.current}
+	subject{described_class.new(loop)}
+	
 	describe '.new' do
 		it "can create multiple selectors" do
 			64.times.map do |i|
@@ -30,10 +33,29 @@ RSpec.shared_examples_for Event::Selector do
 		end
 	end
 	
-	describe '#io_wait' do
-		let!(:loop) {Fiber.current}
-		subject{described_class.new(loop)}
+	describe '.select' do
+		let(:quantum) {0.1}
 		
+		def now
+			Process.clock_gettime(Process::CLOCK_MONOTONIC)
+		end
+		
+		it "can select with 0s timeout" do
+			start_time = now
+			subject.select(0)
+			
+			expect(now - start_time).to be < quantum
+		end
+		
+		it "can select with 1s timeout" do
+			start_time = now
+			subject.select(1)
+			
+			expect(now - start_time).to be_within(quantum).of(1.0)
+		end
+	end
+	
+	describe '#io_wait' do
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
 		let(:local) {sockets.first}
