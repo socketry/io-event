@@ -34,7 +34,7 @@ RSpec.shared_examples_for Event::Selector do
 	end
 	
 	describe '.select' do
-		let(:quantum) {0.1}
+		let(:quantum) {0.2}
 		
 		def now
 			Process.clock_gettime(Process::CLOCK_MONOTONIC)
