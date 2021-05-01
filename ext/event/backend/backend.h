@@ -25,3 +25,5 @@ enum Event {
 	ERROR = 8,
 	HANGUP = 16
 };
+
+#include <ruby/thread.h>

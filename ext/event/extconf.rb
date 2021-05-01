@@ -28,6 +28,8 @@ extension_name = 'event'
 # The destination
 dir_config(extension_name)
 
+$CFLAGS << " -Wall"
+
 $srcs = ["event.c"]
 $VPATH << "$(srcdir)/backend"
 

@@ -28,7 +28,7 @@
 static VALUE Event_Backend_KQueue = Qnil;
 static ID id_fileno, id_transfer;
 
-static const unsigned KQUEUE_MAX_EVENTS = 64;
+enum {KQUEUE_MAX_EVENTS = 64};
 
 struct Event_Backend_KQueue {
 	VALUE loop;
@@ -231,26 +231,89 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
+static
+int timeout_nonblocking(struct timespec * timespec) {
+	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
+}
+
+struct select_arguments {
+	struct Event_Backend_KQueue *data;
+	
+	int count;
+	struct kevent events[KQUEUE_MAX_EVENTS];
+	
+	struct timespec storage;
+	struct timespec *timeout;
+};
+
+static
+void * select_internal(void *_arguments) {
+	struct select_arguments * arguments = (struct select_arguments *)_arguments;
+	
+	arguments->count = kevent(arguments->data->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
+	
+	return NULL;
+}
+
+static
+void select_internal_without_gvl(struct select_arguments *arguments) {
+	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	
+	if (arguments->count == -1) {
+		rb_sys_fail("select_internal_without_gvl:kevent");
+	}
+}
+
+static
+void select_internal_with_gvl(struct select_arguments *arguments) {
+	select_internal((void *)arguments);
+	
+	if (arguments->count == -1) {
+		rb_sys_fail("select_internal_with_gvl:kevent");
+	}
+}
+
 VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	struct kevent events[KQUEUE_MAX_EVENTS];
-	struct timespec storage;
+	struct select_arguments arguments = {
+		.data = data,
+		.count = KQUEUE_MAX_EVENTS,
+		.storage = {
+			.tv_sec = 0,
+			.tv_nsec = 0
+		}
+	};
 	
-	int count = kevent(data->descriptor, NULL, 0, events, KQUEUE_MAX_EVENTS, make_timeout(duration, &storage));
+	// We break this implementation into two parts.
+	// (1) count = kevent(..., timeout = 0)
+	// (2) without gvl: kevent(..., timeout = 0) if count == 0 and timeout != 0
+	// This allows us to avoid releasing and reacquiring the GVL.
+	// Non-comprehensive testing shows this gives a 1.5x speedup.
+	arguments.timeout = &arguments.storage;
 	
-	if (count == -1) {
-		rb_sys_fail("kevent(select)");
+	// First do the syscall with no timeout to get any immediately available events:
+	select_internal_with_gvl(&arguments);
+	
+	// If there were no pending events, if we have a timeout, wait for more events:
+	if (arguments.count == 0) {
+		arguments.timeout = make_timeout(duration, &arguments.storage);
+		
+		if (!timeout_nonblocking(arguments.timeout)) {
+			arguments.count = KQUEUE_MAX_EVENTS;
+			
+			select_internal_without_gvl(&arguments);
+		}
 	}
 	
-	for (int i = 0; i < count; i += 1) {
-		VALUE fiber = (VALUE)events[i].udata;
-		VALUE result = INT2NUM(events[i].filter);
+	for (int i = 0; i < arguments.count; i += 1) {
+		VALUE fiber = (VALUE)arguments.events[i].udata;
+		VALUE result = INT2NUM(arguments.events[i].filter);
 		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
-	return INT2NUM(count);
+	return INT2NUM(arguments.count);
 }
 
 void Init_Event_Backend_KQueue(VALUE Event_Backend) {

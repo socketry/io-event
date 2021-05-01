@@ -28,8 +28,8 @@
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
 
-static const int URING_ENTRIES = 64;
-static const int URING_MAX_EVENTS = 64;
+enum {URING_ENTRIES = 64};
+enum {URING_MAX_EVENTS = 64};
 
 struct Event_Backend_URing {
 	VALUE loop;
@@ -123,7 +123,7 @@ int events_from_poll_flags(short flags) {
 }
 
 struct io_wait_arguments {
-	struct Event_Backend_KQueue *data;
+	struct Event_Backend_URing *data;
 	VALUE fiber;
 	short flags;
 };
@@ -288,28 +288,73 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
+static
+int timeout_nonblocking(struct __kernel_timespec *timespec) {
+	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
+}
+
+struct select_arguments {
+	struct Event_Backend_URing *data;
+	
+	int count;
+	struct io_uring_cqe *cqes;
+	
+	struct timespec storage;
+	struct timespec *timeout;
+};
+
+static
+void * select_internal(void *_arguments) {
+	struct select_arguments * arguments = (struct select_arguments *)_arguments;
+	
+	arguments->count = io_uring_wait_cqes(&data->ring, cqes, 1, arguments->timeout, NULL);
+	
+	// If waiting resulted in a timeout, there are 0 events.
+	if (arguments->count == -ETIME) {
+		arguments->count = 0;
+	}
+	
+	return NULL;
+}
+
+static
+int select_internal_without_gvl(struct select_arguments *arguments) {
+	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	
+	if (arguments->count < 0) {
+		rb_syserr_fail(-arguments->count, "select_internal_without_gvl:io_uring_wait_cqes");
+	}
+	
+	return arguments->count;
+}
+
 VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	struct io_uring_cqe *cqes[URING_MAX_EVENTS];
-	struct __kernel_timespec storage;
 	
+	// This is a non-blocking operation:
 	int result = io_uring_peek_batch_cqe(&data->ring, cqes, URING_MAX_EVENTS);
 	
 	// fprintf(stderr, "result = %d\n", result);
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, strerror(-result));
-	} else if (result == 0 && duration != Qnil) {
-		result = io_uring_wait_cqes(&data->ring, cqes, 1, make_timeout(duration, &storage), NULL);
+	} else if (result == 0) {
+		// We might need to wait for events:
+		struct select_arguments arguments = {
+			.data = data,
+			.cqes = cqes,
+			.timeout = NULL,
+		};
 		
-		// fprintf(stderr, "result (timeout) = %d\n", result);
+		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (result == -ETIME) {
-			result = 0;
-		} else if (result < 0) {
-			rb_syserr_fail(-result, strerror(-result));
+		// Was a non-blocking timeout provided?
+		if (timeout_nonblocking(arguments.timeout)) {
+			// This is potentially a blocking operation:
+			result = select_internal_without_gvl(&arguments);
 		}
 	}
 	

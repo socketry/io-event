@@ -28,7 +28,7 @@
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno, id_transfer;
 
-static const unsigned EPOLL_MAX_EVENTS = 64;
+enum {EPOLL_MAX_EVENTS = 64};
 
 struct Event_Backend_EPoll {
 	VALUE loop;
@@ -212,28 +212,71 @@ int make_timeout(VALUE duration) {
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
+struct select_arguments {
+	struct Event_Backend_EPoll *data;
+	
+	int count;
+	struct epoll_event events[EPOLL_MAX_EVENTS];
+	
+	int timeout;
+};
+
+static
+void * select_internal(void *_arguments) {
+	struct select_arguments * arguments = (struct select_arguments *)_arguments;
+	
+	arguments->count = epoll_wait(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout);
+	
+	return NULL;
+}
+
+static
+void select_internal_without_gvl(struct select_arguments *arguments) {
+	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	
+	if (arguments->count == -1) {
+		rb_sys_fail("select_internal_without_gvl:epoll_wait");
+	}
+}
+
+static
+void select_internal_with_gvl(struct select_arguments *arguments) {
+	select_internal((void *)arguments);
+	
+	if (arguments->count == -1) {
+		rb_sys_fail("select_internal_with_gvl:epoll_wait");
+	}
+}
+
 VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	struct Event_Backend_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
-	struct epoll_event events[EPOLL_MAX_EVENTS];
+	struct select_arguments arguments = {
+		.data = data,
+		.timeout = 0
+	};
 	
-	int count = epoll_wait(data->descriptor, events, EPOLL_MAX_EVENTS, make_timeout(duration));
+	select_internal_without_gvl(&arguments);
 	
-	if (count == -1) {
-		rb_sys_fail("epoll_wait");
+	if (arguments.count == 0) {
+		arguments.timeout = make_timeout(duration);
+		
+		if (arguments.timeout != 0) {
+			select_internal_with_gvl(&arguments);
+		}
 	}
 	
-	for (int i = 0; i < count; i += 1) {
-		VALUE fiber = (VALUE)events[i].data.ptr;
-		VALUE result = INT2NUM(events[i].events);
+	for (int i = 0; i < arguments.count; i += 1) {
+		VALUE fiber = (VALUE)arguments.events[i].data.ptr;
+		VALUE result = INT2NUM(arguments.events[i].events);
 		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
 		rb_funcall(fiber, id_transfer, 1, result);
 	}
 	
-	return INT2NUM(count);
+	return INT2NUM(arguments.count);
 }
 
 void Init_Event_Backend_EPoll(VALUE Event_Backend) {
