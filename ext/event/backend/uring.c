@@ -133,7 +133,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct Event_Backend_URing *data = arguments->data;
 	
-	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
 	
 	// fprintf(stderr, "poll_remove(%p, %p)\n", sqe, (void*)arguments->fiber);
 	
@@ -157,12 +157,25 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	return INT2NUM(events_from_poll_flags(flags));
 };
 
+struct io_uring_sqe *Event_Backend_URing_io_uring_get_sqe(struct Event_Backend_URing *data) {
+	struct io_uring_sqe *sqe = NULL;
+
+	while (true) {
+		sqe = io_uring_get_sqe(&data->ring);
+		if (sqe != NULL) {
+			return sqe;
+		}
+		// The sqe is full, we need to poll before submitting more events.
+		Event_Backend_URing_select(self, INT2NUM(0));
+	}
+}
+
 VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
@@ -211,7 +224,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 	resize_to_capacity(buffer, NUM2SIZET(offset), NUM2SIZET(length));
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
 	
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
@@ -243,7 +256,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	}
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
 	
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
