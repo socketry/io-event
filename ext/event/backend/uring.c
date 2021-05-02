@@ -135,10 +135,12 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
+	// fprintf(stderr, "poll_remove(%p, %p)\n", sqe, (void*)arguments->fiber);
+	
 	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
 	io_uring_submit(&data->ring);
 	
-	return Qnil;
+	rb_exc_raise(exception);
 };
 
 static
@@ -164,7 +166,7 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
-	// fprintf(stderr, "poll_add(%p, %d, %d)\n", sqe, descriptor, flags);
+	// fprintf(stderr, "poll_add(%p, %d, %d, %p)\n", sqe, descriptor, flags, (void*)fiber);
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
@@ -297,17 +299,17 @@ struct select_arguments {
 	struct Event_Backend_URing *data;
 	
 	int count;
-	struct io_uring_cqe *cqes;
+	struct io_uring_cqe **cqes;
 	
-	struct timespec storage;
-	struct timespec *timeout;
+	struct __kernel_timespec storage;
+	struct __kernel_timespec *timeout;
 };
 
 static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->count = io_uring_wait_cqes(&data->ring, cqes, 1, arguments->timeout, NULL);
+	arguments->count = io_uring_wait_cqes(&arguments->data->ring, arguments->cqes, 1, arguments->timeout, NULL);
 	
 	// If waiting resulted in a timeout, there are 0 events.
 	if (arguments->count == -ETIME) {
@@ -337,8 +339,6 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	// This is a non-blocking operation:
 	int result = io_uring_peek_batch_cqe(&data->ring, cqes, URING_MAX_EVENTS);
 	
-	// fprintf(stderr, "result = %d\n", result);
-	
 	if (result < 0) {
 		rb_syserr_fail(-result, strerror(-result));
 	} else if (result == 0) {
@@ -351,18 +351,23 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		// Was a non-blocking timeout provided?
-		if (timeout_nonblocking(arguments.timeout)) {
-			// This is potentially a blocking operation:
+		if (!timeout_nonblocking(arguments.timeout)) {
 			result = select_internal_without_gvl(&arguments);
 		}
 	}
 	
+	// fprintf(stderr, "cqes count=%d\n", result);
+	
 	for (int i = 0; i < result; i += 1) {
+		// If the operation was cancelled, or the operation has no user data (fiber):
+		if (cqes[i]->res == -ECANCELED || cqes[i]->user_data == 0) {
+			continue;
+		}
+		
 		VALUE fiber = (VALUE)io_uring_cqe_get_data(cqes[i]);
 		VALUE result = INT2NUM(cqes[i]->res);
 		
-		// fprintf(stderr, "cqes[i]->res = %d\n", cqes[i]->res);
+		// fprintf(stderr, "cqes[i] res=%d user_data=%p\n", cqes[i]->res, (void*)cqes[i]->user_data);
 		
 		io_uring_cqe_seen(&data->ring, cqes[i]);
 		
