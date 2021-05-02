@@ -25,3 +25,4 @@
 #define EVENT_BACKEND_URING
 
 void Init_Event_Backend_URing(VALUE Event_Backend);
+VALUE Event_Backend_URing_select(VALUE self, VALUE duration);
