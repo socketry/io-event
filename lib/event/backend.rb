@@ -18,19 +18,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'event/version'
-require_relative 'event/backend'
+require_relative 'backend/select'
 
 module Event
-	# These constants are the same as those defined in IO.
-	
-	READABLE = 1
-	PRIORITY = 2
-	WRITABLE = 4
-end
-
-begin
-	require_relative '../ext/event/event'
-rescue LoadError
-	# Ignore.
+	module Backend
+		def self.default(env = ENV)
+			if backend = env['EVENT_BACKEND']&.to_sym
+				if Event::Backend.const_defined?(backend)
+					return Event::Backend.const_get(backend)
+				else
+					warn "Could not find EVENT_BACKEND=#{backend}!"
+				end
+			end
+			
+			if self.const_defined?(:URing)
+				return Event::Backend::URing
+			elsif self.const_defined?(:KQueue)
+				return Event::Backend::KQueue
+			elsif self.const_defined?(:EPoll)
+				return Event::Backend::EPoll
+			else
+				return Event::Backend::Select
+			end
+		end
+		
+		def self.new(...)
+			default.new(...)
+		end
+	end
 end
