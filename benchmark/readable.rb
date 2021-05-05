@@ -2,37 +2,38 @@
 
 require 'benchmark/ips'
 require 'fiber'
+require 'console'
 
 require_relative '../lib/event'
 
-Benchmark.ips do |x|
-	input, output = IO.pipe
+Event::Backend.constants.each do |name|
+	backend = Event::Backend.const_get(name).new(Fiber.current)
 	
-	output.puts "Hello World"
-	
-	Event::Backend.constants.each do |name|
-		x.report(name) do |times|
-			i = 0
-			
-			backend = Event::Backend.const_get(name).new(Fiber.current)
-			
-			fiber = Fiber.new do
-				while true
-					backend.io_wait(fiber, input, Event::READABLE)
-				end
+	fibers = 256.times.map do |index|
+		input, output = IO.pipe
+		output.puts "Hello World"
+		
+		fiber = Fiber.new do
+			while true
+				backend.io_wait(fiber, input, Event::READABLE)
 			end
-			
-			# Start initial wait:
-			fiber.transfer
-			
-			while i < times
-				backend.select(1)
-				
-				i += 1
-			end
+		rescue RuntimeError
+			# Ignore.
+		ensure
+			input.close
+			output.close
 		end
 	end
 	
-	# Compare the iterations per second of the various reports!
-	x.compare!
+	# Start initial wait:
+	fibers.each(&:transfer)
+	
+	Console.logger.measure(backend) do
+		i = 10_000
+		while (i -= 1) > 0
+			backend.select(0)
+		end
+	end
+	
+	fibers.each{|fiber| fiber.raise("Stop")}
 end
