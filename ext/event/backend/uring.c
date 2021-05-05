@@ -28,8 +28,8 @@
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno, id_transfer;
 
-enum {URING_ENTRIES = 64};
-enum {URING_MAX_EVENTS = 64};
+enum {URING_ENTRIES = 128};
+enum {URING_MAX_EVENTS = 128};
 
 struct Event_Backend_URing {
 	VALUE loop;
@@ -42,14 +42,19 @@ void Event_Backend_URing_Type_mark(void *_data)
 	rb_gc_mark(data->loop);
 }
 
-void Event_Backend_URing_Type_free(void *_data)
-{
-	struct Event_Backend_URing *data = _data;
-	
+static
+void close_internal(struct Event_Backend_URing *data) {
 	if (data->ring.ring_fd >= 0) {
 		io_uring_queue_exit(&data->ring);
 		data->ring.ring_fd = -1;
 	}
+}
+
+void Event_Backend_URing_Type_free(void *_data)
+{
+	struct Event_Backend_URing *data = _data;
+	
+	close_internal(data);
 	
 	free(data);
 }
@@ -97,6 +102,15 @@ VALUE Event_Backend_URing_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+VALUE Event_Backend_URing_close(VALUE self) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	
+	close_internal(data);
+	
+	return Qnil;
+}
+
 static inline
 short poll_flags_from_events(int events) {
 	short flags = 0;
@@ -128,12 +142,22 @@ struct io_wait_arguments {
 	short flags;
 };
 
+struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
+	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
+	
+	while (sqe == NULL) {
+		sqe = io_uring_get_sqe(&data->ring);
+	}
+	
+	return sqe;
+}
+
 static
 VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct Event_Backend_URing *data = arguments->data;
 	
-	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
+	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
 	// fprintf(stderr, "poll_remove(%p, %p)\n", sqe, (void*)arguments->fiber);
 	
@@ -157,25 +181,14 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	return INT2NUM(events_from_poll_flags(flags));
 };
 
-struct io_uring_sqe *Event_Backend_URing_io_uring_get_sqe(struct Event_Backend_URing *data) {
-	struct io_uring_sqe *sqe = NULL;
-
-	while (true) {
-		sqe = io_uring_get_sqe(&data->ring);
-		if (sqe != NULL) {
-			return sqe;
-		}
-		// The sqe is full, we need to poll before submitting more events.
-		Event_Backend_URing_select(self, INT2NUM(0));
-	}
-}
-
 VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
+	struct io_uring_sqe *sqe = io_get_sqe(data);
+	
+	if (!sqe) return INT2NUM(0);
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
@@ -224,7 +237,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 	resize_to_capacity(buffer, NUM2SIZET(offset), NUM2SIZET(length));
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
+	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
@@ -256,7 +269,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	}
 	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
-	struct io_uring_sqe *sqe = Event_Backend_URing_io_uring_get_sqe(data);
+	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
 	struct iovec iovecs[1];
 	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
@@ -398,6 +411,7 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_URing, Event_Backend_URing_allocate);
 	rb_define_method(Event_Backend_URing, "initialize", Event_Backend_URing_initialize, 1);
+	rb_define_method(Event_Backend_URing, "close", Event_Backend_URing_close, 0);
 	
 	rb_define_method(Event_Backend_URing, "io_wait", Event_Backend_URing_io_wait, 3);
 	rb_define_method(Event_Backend_URing, "select", Event_Backend_URing_select, 1);

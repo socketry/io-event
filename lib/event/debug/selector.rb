@@ -31,6 +31,15 @@ module Event
 				@priority = {}
 			end
 			
+			def close
+				if @selector.nil?
+					raise "Selector already closed!"
+				end
+				
+				@selector.close
+				@selector = nil
+			end
+			
 			def io_wait(fiber, io, events)
 				register_readable(fiber, io, events)
 			end

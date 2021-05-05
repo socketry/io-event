@@ -28,6 +28,12 @@ module Event
 				@writable = {}
 			end
 			
+			def close
+				@loop = nil
+				@readable = nil
+				@writable = nil
+			end
+			
 			def io_wait(fiber, io, events)
 				remove_readable = remove_writable = false
 				
@@ -42,7 +48,6 @@ module Event
 				end
 				
 				@loop.transfer
-				
 			ensure
 				@readable.delete(io) if remove_readable
 				@writable.delete(io) if remove_writable

@@ -25,11 +25,15 @@ RSpec.shared_examples_for Event::Selector do
 	let!(:loop) {Fiber.current}
 	subject{described_class.new(loop)}
 	
+	after do
+		subject.close
+	end
+	
 	describe '.new' do
 		it "can create multiple selectors" do
-			64.times.map do |i|
+			8.times.map do |i|
 				described_class.new(Fiber.current)
-			end
+			end.each(&:close)
 		end
 	end
 	

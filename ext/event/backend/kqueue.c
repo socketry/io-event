@@ -41,13 +41,19 @@ void Event_Backend_KQueue_Type_mark(void *_data)
 	rb_gc_mark(data->loop);
 }
 
+static
+void close_internal(struct Event_Backend_KQueue *data) {
+	if (data->descriptor >= 0) {
+		close(data->descriptor);
+		data->descriptor = -1;
+	}
+}
+
 void Event_Backend_KQueue_Type_free(void *_data)
 {
 	struct Event_Backend_KQueue *data = _data;
 	
-	if (data->descriptor >= 0) {
-		close(data->descriptor);
-	}
+	close_internal(data);
 	
 	free(data);
 }
@@ -95,6 +101,15 @@ VALUE Event_Backend_KQueue_initialize(VALUE self, VALUE loop) {
 	}
 	
 	return self;
+}
+
+VALUE Event_Backend_KQueue_close(VALUE self) {
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	close_internal(data);
+	
+	return Qnil;
 }
 
 static
@@ -324,6 +339,7 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);
 	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_initialize, 1);
+	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_close, 0);
 	
 	rb_define_method(Event_Backend_KQueue, "io_wait", Event_Backend_KQueue_io_wait, 3);
 	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
