@@ -272,13 +272,13 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 		.timeout = 0
 	};
 	
-	select_internal_without_gvl(&arguments);
+	select_internal_with_gvl(&arguments);
 	
 	if (arguments.count == 0) {
 		arguments.timeout = make_timeout(duration);
 		
 		if (arguments.timeout != 0) {
-			select_internal_with_gvl(&arguments);
+			select_internal_without_gvl(&arguments);
 		}
 	}
 	
