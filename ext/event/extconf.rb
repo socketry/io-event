@@ -30,7 +30,7 @@ dir_config(extension_name)
 
 $CFLAGS << " -Wall"
 
-$srcs = ["event.c"]
+$srcs = ["event.c", "backend/backend.c"]
 $VPATH << "$(srcdir)/backend"
 
 if have_library('uring') and have_header('liburing.h')

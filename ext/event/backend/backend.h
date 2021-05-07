@@ -18,6 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#include <ruby.h>
+#include <ruby/thread.h>
+
 enum Event {
 	READABLE = 1,
 	PRIORITY = 2,
@@ -26,4 +29,8 @@ enum Event {
 	HANGUP = 16
 };
 
-#include <ruby/thread.h>
+void
+Init_Event_Backend();
+
+VALUE
+Event_Backend_resume_safe(VALUE fiber, VALUE argument);

@@ -69,7 +69,7 @@ module Event
 				end
 				
 				ready.each do |fiber, events|
-					fiber.transfer(events)
+					fiber.transfer(events) if fiber.alive?
 				end
 			end
 		end

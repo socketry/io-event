@@ -18,32 +18,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "event.h"
-#include "backend/backend.h"
+#include "backend.h"
 
-VALUE Event = Qnil;
-VALUE Event_Backend = Qnil;
+static ID id_transfer, id_alive_p;
 
-void Init_event()
-{
-	#ifdef HAVE_RB_EXT_RACTOR_SAFE
-	rb_ext_ractor_safe(true);
-	#endif
+void Init_Event_Backend(VALUE Event_Backend) {
+	id_transfer = rb_intern("transfer");
+	id_alive_p = rb_intern("alive?");
+}
+
+VALUE
+Event_Backend_resume_safe(VALUE fiber, VALUE result) {
+	VALUE alive = rb_funcall(fiber, id_alive_p, 0);
 	
-	Event = rb_define_module("Event");
-	Event_Backend = rb_define_module_under(Event, "Backend");
-	
-	Init_Event_Backend(Event_Backend);
-	
-	#ifdef EVENT_BACKEND_URING
-	Init_Event_Backend_URing(Event_Backend);
-	#endif
-	
-	#ifdef EVENT_BACKEND_EPOLL
-	Init_Event_Backend_EPoll(Event_Backend);
-	#endif
-	
-	#ifdef EVENT_BACKEND_KQUEUE
-	Init_Event_Backend_KQueue(Event_Backend);
-	#endif
+	if (RTEST(alive)) {
+		return rb_funcall(fiber, id_transfer, 1, result);
+	} else {
+		return Qnil;
+	}
 }

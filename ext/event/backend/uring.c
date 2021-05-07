@@ -397,7 +397,7 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		
 		io_uring_cqe_seen(&data->ring, cqes[i]);
 		
-		rb_funcall(fiber, id_transfer, 1, result);
+		Event_Backend_resume_safe(fiber, result);
 	}
 	
 	return INT2NUM(result);

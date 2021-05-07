@@ -325,7 +325,8 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	for (int i = 0; i < arguments.count; i += 1) {
 		VALUE fiber = (VALUE)arguments.events[i].udata;
 		VALUE result = INT2NUM(arguments.events[i].filter);
-		rb_funcall(fiber, id_transfer, 1, result);
+		
+		Event_Backend_resume_safe(fiber, result);
 	}
 	
 	return INT2NUM(arguments.count);
