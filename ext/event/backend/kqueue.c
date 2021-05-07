@@ -339,7 +339,7 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);
 	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_initialize, 1);
-	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_close, 0);
+	rb_define_method(Event_Backend_KQueue, "close", Event_Backend_KQueue_close, 0);
 	
 	rb_define_method(Event_Backend_KQueue, "io_wait", Event_Backend_KQueue_io_wait, 3);
 	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
