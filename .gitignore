@@ -18,3 +18,5 @@
 /ext/event/**/*.o
 /ext/event/**/*.so
 /ext/event/**/*.bundle
+
+/benchmark/server/compiled
