@@ -2,7 +2,10 @@ source 'https://rubygems.org'
 
 gemspec
 
-gem "bake"
+group :test do
+	gem "async"
+	gem "libev_scheduler"
+end
 
 group :maintenance, optional: true do
 	gem "bake-bundler"

@@ -4,8 +4,6 @@ require_relative '../../lib/event'
 require 'socket'
 require 'fiber'
 
-PORT = Integer(ARGV.pop || 9090)
-
 class Scheduler
 	def initialize(selector = nil)
 		@selector = selector || Event::Backend.new(Fiber.current)
@@ -43,9 +41,10 @@ end
 
 Fiber.set_scheduler(Scheduler.new)
 
+port = Integer(ARGV.pop || 9090)
+
 Fiber.schedule do
-	server = TCPServer.new('localhost', PORT)
-	server.listen(Socket::SOMAXCONN)
+	server = TCPServer.new('localhost', port)
 	
 	loop do
 		peer, address = server.accept
