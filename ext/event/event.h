@@ -26,14 +26,14 @@
 
 void Init_event();
 
-#if HAVE_LIBURING_H
+#ifdef HAVE_LIBURING_H
 #include "backend/uring.h"
 #endif
 
-#if HAVE_SYS_EPOLL_H
+#ifdef HAVE_SYS_EPOLL_H
 #include "backend/epoll.h"
 #endif
 
-#if HAVE_SYS_EVENT_H
+#ifdef HAVE_SYS_EVENT_H
 #include "backend/kqueue.h"
 #endif
