@@ -4,7 +4,6 @@ gemspec
 
 group :test do
 	gem "async"
-	gem "libev_scheduler"
 end
 
 group :maintenance, optional: true do
