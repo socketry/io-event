@@ -1,0 +1,39 @@
+name: Benchmark
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ${{matrix.os}}-latest
+    
+    strategy:
+      matrix:
+        os:
+          - ubuntu
+        
+        ruby:
+          - head
+    
+    steps:
+    - uses: actions/checkout@v2
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{matrix.ruby}}
+        bundler-cache: true
+    
+    - name: Build extensions
+      timeout-minutes: 5
+      run: bundle exec bake build
+    
+    - name: Install packages
+      timeout-minutes: 5
+      run: |
+        git clone https://github.com/ioquatix/wrk
+        cd wrk
+        make
+    
+    - name: Run benchmarks
+      timeout-minutes: 5
+      env:
+        WRK: ./wrk/wrk
+      run: bundle exec bake -b benchmark/server/bake.rb
