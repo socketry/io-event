@@ -1,5 +1,5 @@
 
-SERVERS = ["compiled", "event.rb", "async.rb", "fork.rb", "thread.rb"]
+SERVERS = ["compiled", "event.rb", "async.rb", "thread.rb", "libev.rb", "fork.rb"]
 
 def default
 	build
