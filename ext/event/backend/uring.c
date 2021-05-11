@@ -196,7 +196,8 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	io_uring_submit(&data->ring);
+	// fprintf(stderr, "io_uring_submit\n");
+	// io_uring_submit(&data->ring);
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.data = data,
@@ -335,11 +336,18 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->count = io_uring_wait_cqes(&arguments->data->ring, arguments->cqes, 1, arguments->timeout, NULL);
+	io_uring_submit(&arguments->data->ring);
 	
-	// If waiting resulted in a timeout, there are 0 events.
-	if (arguments->count == -ETIME) {
+	int result = io_uring_wait_cqes(&arguments->data->ring, arguments->cqes, 1, arguments->timeout, NULL);
+	
+	if (result == -ETIME) {
+		// If waiting resulted in a timeout, there are 0 events.
 		arguments->count = 0;
+	} else if (result == 0) {
+		// Otherwise, there was no error, at least 1 event was reported. So we ask for them all.
+		arguments->count = io_uring_peek_batch_cqe(&arguments->data->ring, arguments->cqes, URING_MAX_EVENTS);
+	} else {
+		arguments->count = result;
 	}
 	
 	return NULL;
@@ -379,6 +387,9 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
 			result = select_internal_without_gvl(&arguments);
+		} else {
+			io_uring_submit(&data->ring);
+			result = io_uring_peek_batch_cqe(&data->ring, cqes, URING_MAX_EVENTS);
 		}
 	}
 	
