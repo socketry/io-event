@@ -54,8 +54,21 @@ module Event
 			end
 
 			def process_wait(fiber, pid, flags)
-				val = Process::Status.wait(pid, flags)
-				fiber.transfer(val)
+				r, w = IO.pipe
+				
+				thread = Thread.new do
+					Process::Status.wait(pid, flags)
+				ensure
+					w.close
+				end
+				
+				self.io_wait(fiber, r, READABLE)
+				
+				return thread.value
+			ensure
+				r.close
+				w.close
+				thread&.kill
 			end
 			
 			def select(duration = nil)

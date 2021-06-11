@@ -34,3 +34,5 @@ Init_Event_Backend();
 
 VALUE Event_Backend_transfer(VALUE fiber);
 VALUE Event_Backend_transfer_result(VALUE fiber, VALUE argument);
+
+VALUE Event_Backend_process_status_wait(rb_pid_t pid);

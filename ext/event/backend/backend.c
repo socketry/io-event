@@ -20,18 +20,22 @@
 
 #include "backend.h"
 
-static ID id_transfer, id_alive_p;
-
-void Init_Event_Backend(VALUE Event_Backend) {
-	id_transfer = rb_intern("transfer");
-	id_alive_p = rb_intern("alive?");
-}
-
+// On macOS
 #if HAVE_RB_FIBER_TRANSFER_KW
 #define HAVE_RB_FIBER_TRANSFER 1
 #else
 #define HAVE_RB_FIBER_TRANSFER 0
 #endif
+
+static ID id_transfer, id_wait;
+static VALUE rb_Process_Status = Qnil;
+
+void Init_Event_Backend(VALUE Event_Backend) {
+	id_transfer = rb_intern("transfer");
+	id_wait = rb_intern("wait");
+	// id_alive_p = rb_intern("alive?");
+	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
+}
 
 VALUE
 Event_Backend_transfer(VALUE fiber) {
@@ -53,4 +57,9 @@ Event_Backend_transfer_result(VALUE fiber, VALUE result) {
 #else
 	return rb_funcall(fiber, id_transfer, 1, result);
 #endif
+}
+
+VALUE Event_Backend_process_status_wait(rb_pid_t pid)
+{
+	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(WNOHANG));
 }

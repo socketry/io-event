@@ -33,6 +33,7 @@ $CFLAGS << " -Wall"
 $srcs = ["event.c", "backend/backend.c"]
 $VPATH << "$(srcdir)/backend"
 
+# have_func('rb_fiber_transfer')
 have_func('rb_fiber_transfer_kw')
 
 if have_library('uring') and have_header('liburing.h')

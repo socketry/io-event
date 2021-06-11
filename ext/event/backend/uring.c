@@ -29,7 +29,7 @@
 #include <errno.h>
 
 static VALUE Event_Backend_URing = Qnil;
-static ID id_fileno, id_transfer;
+static ID id_fileno;
 
 enum {URING_ENTRIES = 128};
 enum {URING_MAX_EVENTS = 128};
@@ -420,18 +420,6 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	return INT2NUM(result);
 }
 
-VALUE rb_process_status_new(rb_pid_t pid, int status, int error) {
-    VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
-
-    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
-    data->pid = pid;
-    data->status = status;
-    data->error = error;
-
-    rb_obj_freeze(last_status);
-    return last_status;
-}
-
 VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
 	pid_t pidv = NUM2PIDT(pid);
 	int options = NUM2INT(flags);
@@ -442,7 +430,7 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 		// WNOHANG is nonblock by default.
 		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
 		if (ret == -1) err = errno;
-		return rb_process_status_new(pidv, state, err);
+		return Event_Backend_process_status(pidv, state, err);
 	}
 
 	struct Event_Backend_URing *data = NULL;
@@ -455,15 +443,14 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
-	rb_funcall(data->loop, id_transfer, 0);
+	Event_Backend_transfer(data->loop);
 	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
 	if (ret == -1) err = errno;
-	return rb_process_status_new(pidv, state, err);
+	return Event_Backend_process_status(pidv, state, err);
 }
 
 void Init_Event_Backend_URing(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
-	id_transfer = rb_intern("transfer");
 	
 	Event_Backend_URing = rb_define_class_under(Event_Backend, "URing", rb_cObject);
 	

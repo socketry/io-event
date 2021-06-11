@@ -28,7 +28,7 @@
 #include <sys/wait.h>
 
 static VALUE Event_Backend_EPoll = Qnil;
-static ID id_fileno, id_transfer;
+static ID id_fileno;
 
 enum {EPOLL_MAX_EVENTS = 64};
 
@@ -163,7 +163,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = rb_funcall(arguments->data->loop, id_transfer, 0);
+	VALUE result = Event_Backend_transfer(arguments->data->loop);
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
@@ -296,31 +296,19 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	return INT2NUM(arguments.count);
 }
 
-VALUE rb_process_status_new(rb_pid_t pid, int status, int error) {
-    VALUE last_status = rb_process_status_allocate(rb_cProcessStatus);
-
-    struct rb_process_status *data = RTYPEDDATA_DATA(last_status);
-    data->pid = pid;
-    data->status = status;
-    data->error = error;
-
-    rb_obj_freeze(last_status);
-    return last_status;
-}
-
 VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
 	pid_t pidv = NUM2PIDT(pid);
 	int options = NUM2INT(flags);
 	int state = 0;
 	int err = 0;
-
+	
 	if ((flags & WNOHANG) > 0) {
 		// WNOHANG is nonblock by default.
 		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
 		if (ret == -1) err = errno;
-		return rb_process_status_new(pidv, state, err);
+		return Event_Backend_process_status(pidv, state, err);
 	}
-
+	
 	struct Event_Backend_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
@@ -331,7 +319,7 @@ VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	
 	event.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT;
 	event.data.ptr = (void*)fiber;
-
+	
 	// A better approach is to batch all changes:
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	
@@ -360,12 +348,11 @@ VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
 	if (ret == -1) err = errno;
-	return rb_process_status_new(pidv, state, err);
+	return Event_Backend_process_status(pidv, state, err);
 }
 
 void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
-	id_transfer = rb_intern("transfer");
 	
 	Event_Backend_EPoll = rb_define_class_under(Event_Backend, "EPoll", rb_cObject);
 	

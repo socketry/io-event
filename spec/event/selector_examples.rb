@@ -185,23 +185,47 @@ RSpec.shared_examples_for Event::Selector do
 			]
 		end
 	end
-
+	
 	describe '#process_wait' do
 		let!(:loop) {Fiber.current}
 		subject{described_class.new(loop)}
-
-		it "can wait for an process to terminate" do
+		
+		it "can wait for a process which has terminated already" do
 			result = nil
 			events = []
-
+			
 			fiber = Fiber.new do
 				pid = Process.spawn("true")
+				sleep(1)
+				
 				result = subject.process_wait(Fiber.current, pid, 0)
+				pp result
 				events << :process_finished
 			end
-
+			
 			fiber.transfer
-			subject.select(0)
+			
+			subject.select(1)
+			
+			expect(events).to be == [:process_finished]
+			expect(result.success?).to be == true
+		end
+		
+		it "can wait for a process to terminate" do
+			result = nil
+			events = []
+			
+			fiber = Fiber.new do
+				pid = Process.spawn("sleep 1")
+				result = subject.process_wait(Fiber.current, pid, 0)
+				pp result
+				events << :process_finished
+			end
+			
+			fiber.transfer
+			
+			subject.select(2)
+			
 			expect(events).to be == [:process_finished]
 			expect(result.success?).to be == true
 		end
