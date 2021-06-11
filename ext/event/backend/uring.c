@@ -171,8 +171,8 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct Event_Backend_URing *data = arguments->data;
-	
-	VALUE result = rb_funcall(data->loop, id_transfer, 0);
+
+	VALUE result = Event_Backend_transfer(data->loop);
 	
 	// We explicitly filter the resulting events based on the requested events.
 	// In some cases, poll will report events we didn't ask for.
@@ -250,7 +250,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 	
 	// fprintf(stderr, "prep_readv(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
 	
-	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
+	int result = NUM2INT(Event_Backend_transfer(data->loop));
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, strerror(-result));
@@ -282,7 +282,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	
 	// fprintf(stderr, "prep_writev(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
 	
-	int result = NUM2INT(rb_funcall(data->loop, id_transfer, 0));
+	int result = NUM2INT(Event_Backend_transfer(data->loop));
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, strerror(-result));

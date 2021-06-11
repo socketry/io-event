@@ -28,11 +28,25 @@ void Init_Event_Backend(VALUE Event_Backend) {
 }
 
 VALUE
+Event_Backend_transfer(VALUE fiber) {
+#ifdef HAVE_RB_FIBER_TRANSFER
+	return rb_fiber_transfer(fiber, 0, NULL);
+#else
+	return rb_funcall(fiber, id_transfer, 0);
+#endif
+}
+
+VALUE
 Event_Backend_resume_safe(VALUE fiber, VALUE result) {
-	VALUE alive = rb_funcall(fiber, id_alive_p, 0);
+	// VALUE alive = rb_funcall(fiber, id_alive_p, 0);
+	VALUE alive = rb_fiber_alive_p(fiber);
 	
 	if (RTEST(alive)) {
+#ifdef HAVE_RB_FIBER_TRANSFER
+		return rb_fiber_transfer(fiber, 1, &result);
+#else
 		return rb_funcall(fiber, id_transfer, 1, result);
+#endif
 	} else {
 		return Qnil;
 	}

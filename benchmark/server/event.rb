@@ -6,8 +6,10 @@ require 'fiber'
 
 class Scheduler
 	def initialize(selector = nil)
-		@selector = selector || Event::Backend.new(Fiber.current)
+		@fiber = Fiber.current
+		@selector = selector || Event::Backend.new(@fiber)
 		@ready = []
+		@pending = []
 		@waiting = {}
 	end
 	
@@ -18,14 +20,20 @@ class Scheduler
 	ensure
 		@waiting.delete(fiber)
 	end
-	
+
+	def kernel_sleep(duration)
+		@ready << Fiber.current
+		@fiber.transfer
+	end
+
 	def close
 		while @ready.any? || @waiting.any?
-			while fiber = @ready.pop
+			@pending, @ready = @ready, @pending
+			while fiber = @pending.pop
 				fiber.transfer
 			end
-			
-			@selector.select(nil)
+
+			@selector.select(@ready.any? ? 0 : nil)
 		end
 	end
 	
