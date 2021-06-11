@@ -326,7 +326,7 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 		VALUE fiber = (VALUE)arguments.events[i].udata;
 		VALUE result = INT2NUM(arguments.events[i].filter);
 		
-		Event_Backend_resume_safe(fiber, result);
+		Event_Backend_transfer_result(fiber, result);
 	}
 	
 	return INT2NUM(arguments.count);

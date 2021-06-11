@@ -184,19 +184,5 @@ RSpec.shared_examples_for Event::Selector do
 				:select, :error, :puts
 			]
 		end
-		
-		it "ignores dead fibers" do
-			remote.puts "Hello World"
-			
-			fiber = Fiber.new do
-				subject.io_wait(fiber, local, Event::READABLE)
-			end
-			
-			fiber.transfer
-			
-			expect(fiber).to receive(:alive?).and_return(false)
-			
-			subject.select(0)
-		end
 	end
 end

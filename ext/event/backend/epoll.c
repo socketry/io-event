@@ -288,7 +288,7 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
-		Event_Backend_resume_safe(fiber, result);
+		Event_Backend_transfer_result(fiber, result);
 	}
 	
 	return INT2NUM(arguments.count);

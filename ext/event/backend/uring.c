@@ -378,7 +378,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 			
 			// fprintf(stderr, "cqes[i] res=%d user_data=%p\n", cqes[i]->res, (void*)cqes[i]->user_data);
 			
-			Event_Backend_resume_safe(fiber, result);
+			Event_Backend_transfer_result(fiber, result);
 	}
 	
 	if (completed) {

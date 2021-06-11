@@ -33,4 +33,4 @@ void
 Init_Event_Backend();
 
 VALUE Event_Backend_transfer(VALUE fiber);
-VALUE Event_Backend_resume_safe(VALUE fiber, VALUE argument);
+VALUE Event_Backend_transfer_result(VALUE fiber, VALUE argument);
