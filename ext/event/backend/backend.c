@@ -20,7 +20,6 @@
 
 #include "backend.h"
 
-// On macOS
 #if HAVE_RB_FIBER_TRANSFER_KW
 #define HAVE_RB_FIBER_TRANSFER 1
 #else

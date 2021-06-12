@@ -24,8 +24,6 @@
 #include <sys/epoll.h>
 #include <time.h>
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
 #include "pidfd.c"
 

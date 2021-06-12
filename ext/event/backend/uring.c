@@ -24,9 +24,6 @@
 #include <liburing.h>
 #include <poll.h>
 #include <time.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <errno.h>
 
 #include "pidfd.c"
 
@@ -421,24 +418,24 @@ unsigned select_process_completions(struct io_uring *ring) {
 	unsigned head;
 	struct io_uring_cqe *cqe;
 	
-	io_uring_for_each_cqe(ring, head, cqe)  {
-			++completed;
-			
-			// If the operation was cancelled, or the operation has no user data (fiber):
-			if (cqe->res == -ECANCELED || cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
-				continue;
-			}
-			
-			VALUE fiber = (VALUE)cqe->user_data;
-			VALUE result = INT2NUM(cqe->res);
-			
-			// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
-			
-			Event_Backend_transfer_result(fiber, result);
+	io_uring_for_each_cqe(ring, head, cqe) {
+		++completed;
+		
+		// If the operation was cancelled, or the operation has no user data (fiber):
+		if (cqe->res == -ECANCELED || cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
+			continue;
+		}
+		
+		VALUE fiber = (VALUE)cqe->user_data;
+		VALUE result = INT2NUM(cqe->res);
+		
+		// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
+		
+		Event_Backend_transfer_result(fiber, result);
 	}
 	
 	if (completed) {
-			io_uring_cq_advance(ring, completed);
+		io_uring_cq_advance(ring, completed);
 	}
 	
 	return completed;
