@@ -23,8 +23,6 @@
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <errno.h>
 
