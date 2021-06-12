@@ -27,6 +27,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+#include "pidfd.c"
+
 static VALUE Event_Backend_EPoll = Qnil;
 static ID id_fileno;
 
@@ -111,6 +113,60 @@ VALUE Event_Backend_EPoll_close(VALUE self) {
 	close_internal(data);
 	
 	return Qnil;
+}
+
+struct process_wait_arguments {
+	struct Event_Backend_EPoll *data;
+	pid_t pid;
+	int flags;
+	int descriptor;
+};
+
+static
+VALUE process_wait_transfer(VALUE _arguments) {
+	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
+	
+	Event_Backend_transfer(arguments->data->loop);
+	
+	return Event_Backend_process_status_wait(arguments->pid);
+}
+
+static
+VALUE process_wait_ensure(VALUE _arguments) {
+	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
+	
+	// epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
+	
+	close(arguments->descriptor);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+
+	struct process_wait_arguments process_wait_arguments = {
+		.data = data,
+		.pid = NUM2PIDT(pid),
+		.flags = NUM2INT(flags),
+	};
+	
+	process_wait_arguments.descriptor = pidfd_open(process_wait_arguments.pid, 0);
+	rb_update_max_fd(process_wait_arguments.descriptor);
+	
+	struct epoll_event event = {
+		.events = EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,
+		.data = {.ptr = (void*)fiber},
+	};
+	
+	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
+	
+	if (result == -1) {
+		rb_sys_fail("epoll_ctl(process_wait)");
+	}
+	
+	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
 static inline
@@ -294,61 +350,6 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	}
 	
 	return INT2NUM(arguments.count);
-}
-
-VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
-	pid_t pidv = NUM2PIDT(pid);
-	int options = NUM2INT(flags);
-	int state = 0;
-	int err = 0;
-	
-	if ((flags & WNOHANG) > 0) {
-		// WNOHANG is nonblock by default.
-		pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
-		if (ret == -1) err = errno;
-		return Event_Backend_process_status(pidv, state, err);
-	}
-	
-	struct Event_Backend_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
-	
-	struct epoll_event event = {0};
-	
-	int descriptor = pidfd_open(pidv, 0);
-	int duplicate = -1;
-	
-	event.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT;
-	event.data.ptr = (void*)fiber;
-	
-	// A better approach is to batch all changes:
-	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
-	
-	if (result == -1 && errno == EEXIST) {
-		// The file descriptor was already inserted into epoll.
-		duplicate = descriptor = dup(descriptor);
-		
-		rb_update_max_fd(duplicate);
-		
-		if (descriptor == -1)
-			rb_sys_fail("dup");
-		
-		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
-	}
-	
-	if (result == -1) {
-		rb_sys_fail("epoll_ctl");
-	}
-	
-	struct io_wait_arguments io_wait_arguments = {
-		.data = data,
-		.descriptor = descriptor,
-		.duplicate = duplicate
-	};
-	
-	rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
-	pid_t ret = PIDT2NUM(waitpid(pidv, &state, options));
-	if (ret == -1) err = errno;
-	return Event_Backend_process_status(pidv, state, err);
 }
 
 void Init_Event_Backend_EPoll(VALUE Event_Backend) {
