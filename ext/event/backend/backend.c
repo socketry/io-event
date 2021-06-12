@@ -20,12 +20,6 @@
 
 #include "backend.h"
 
-#if HAVE_RB_FIBER_TRANSFER_KW
-#define HAVE_RB_FIBER_TRANSFER 1
-#else
-#define HAVE_RB_FIBER_TRANSFER 0
-#endif
-
 static ID id_transfer, id_wait;
 static VALUE rb_Process_Status = Qnil;
 
@@ -38,7 +32,7 @@ void Init_Event_Backend(VALUE Event_Backend) {
 
 VALUE
 Event_Backend_transfer(VALUE fiber) {
-#if HAVE_RB_FIBER_TRANSFER
+#ifdef HAVE__RB_FIBER_TRANSFER
 	return rb_fiber_transfer(fiber, 0, NULL);
 #else
 	return rb_funcall(fiber, id_transfer, 0);
@@ -51,7 +45,7 @@ Event_Backend_transfer_result(VALUE fiber, VALUE result) {
 	// 	return Qnil;
 	// }
 	
-#if HAVE_RB_FIBER_TRANSFER
+#ifdef HAVE__RB_FIBER_TRANSFER
 	return rb_fiber_transfer(fiber, 1, &result);
 #else
 	return rb_funcall(fiber, id_transfer, 1, result);
