@@ -120,8 +120,11 @@ struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
 	while (sqe == NULL) {
+		io_uring_submit(&data->ring);
 		sqe = io_uring_get_sqe(&data->ring);
 	}
+	
+	// fprintf(stderr, "io_get_sqe -> %p\n", sqe);
 	
 	return sqe;
 }
@@ -154,7 +157,7 @@ VALUE process_wait_ensure(VALUE _arguments) {
 VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
-
+	
 	struct process_wait_arguments process_wait_arguments = {
 		.data = data,
 		.pid = NUM2PIDT(pid),
@@ -422,14 +425,14 @@ unsigned select_process_completions(struct io_uring *ring) {
 			++completed;
 			
 			// If the operation was cancelled, or the operation has no user data (fiber):
-			if (cqe->res == -ECANCELED || cqe->user_data == 0) {
+			if (cqe->res == -ECANCELED || cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
 				continue;
 			}
 			
 			VALUE fiber = (VALUE)cqe->user_data;
 			VALUE result = INT2NUM(cqe->res);
 			
-			// fprintf(stderr, "cqes[i] res=%d user_data=%p\n", cqes[i]->res, (void*)cqes[i]->user_data);
+			// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
 			
 			Event_Backend_transfer_result(fiber, result);
 	}
