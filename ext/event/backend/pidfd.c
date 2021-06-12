@@ -18,21 +18,19 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include <ruby.h>
-#include <ruby/thread.h>
+#include <sys/types.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#include <poll.h>
+#include <stdlib.h>
+#include <stdio.h>
 
-enum Event {
-	READABLE = 1,
-	PRIORITY = 2,
-	WRITABLE = 4,
-	ERROR = 8,
-	HANGUP = 16
-};
+#ifndef __NR_pidfd_open
+#define __NR_pidfd_open 434   /* System call # on most architectures */
+#endif
 
-void
-Init_Event_Backend();
-
-VALUE Event_Backend_transfer(VALUE fiber);
-VALUE Event_Backend_transfer_result(VALUE fiber, VALUE argument);
-
-VALUE Event_Backend_process_status_wait(rb_pid_t pid);
+static int
+pidfd_open(pid_t pid, unsigned int flags)
+{
+	return syscall(__NR_pidfd_open, pid, flags);
+}

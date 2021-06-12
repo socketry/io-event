@@ -52,6 +52,24 @@ module Event
 				@readable.delete(io) if remove_readable
 				@writable.delete(io) if remove_writable
 			end
+
+			def process_wait(fiber, pid, flags)
+				r, w = IO.pipe
+				
+				thread = Thread.new do
+					Process::Status.wait(pid, flags)
+				ensure
+					w.close
+				end
+				
+				self.io_wait(fiber, r, READABLE)
+				
+				return thread.value
+			ensure
+				r.close
+				w.close
+				thread&.kill
+			end
 			
 			def select(duration = nil)
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)

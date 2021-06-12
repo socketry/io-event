@@ -25,8 +25,10 @@
 #include <time.h>
 #include <errno.h>
 
+#include "pidfd.c"
+
 static VALUE Event_Backend_EPoll = Qnil;
-static ID id_fileno, id_transfer;
+static ID id_fileno;
 
 enum {EPOLL_MAX_EVENTS = 64};
 
@@ -111,6 +113,60 @@ VALUE Event_Backend_EPoll_close(VALUE self) {
 	return Qnil;
 }
 
+struct process_wait_arguments {
+	struct Event_Backend_EPoll *data;
+	pid_t pid;
+	int flags;
+	int descriptor;
+};
+
+static
+VALUE process_wait_transfer(VALUE _arguments) {
+	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
+	
+	Event_Backend_transfer(arguments->data->loop);
+	
+	return Event_Backend_process_status_wait(arguments->pid);
+}
+
+static
+VALUE process_wait_ensure(VALUE _arguments) {
+	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
+	
+	// epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
+	
+	close(arguments->descriptor);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+
+	struct process_wait_arguments process_wait_arguments = {
+		.data = data,
+		.pid = NUM2PIDT(pid),
+		.flags = NUM2INT(flags),
+	};
+	
+	process_wait_arguments.descriptor = pidfd_open(process_wait_arguments.pid, 0);
+	rb_update_max_fd(process_wait_arguments.descriptor);
+	
+	struct epoll_event event = {
+		.events = EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,
+		.data = {.ptr = (void*)fiber},
+	};
+	
+	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
+	
+	if (result == -1) {
+		rb_sys_fail("epoll_ctl(process_wait)");
+	}
+	
+	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
+}
+
 static inline
 uint32_t epoll_flags_from_events(int events) {
 	uint32_t flags = 0;
@@ -161,7 +217,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = rb_funcall(arguments->data->loop, id_transfer, 0);
+	VALUE result = Event_Backend_transfer(arguments->data->loop);
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
@@ -296,7 +352,6 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 
 void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	id_fileno = rb_intern("fileno");
-	id_transfer = rb_intern("transfer");
 	
 	Event_Backend_EPoll = rb_define_class_under(Event_Backend, "EPoll", rb_cObject);
 	
@@ -306,4 +361,5 @@ void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	
 	rb_define_method(Event_Backend_EPoll, "io_wait", Event_Backend_EPoll_io_wait, 3);
 	rb_define_method(Event_Backend_EPoll, "select", Event_Backend_EPoll_select, 1);
+	rb_define_method(Event_Backend_EPoll, "process_wait", Event_Backend_EPoll_process_wait, 3);
 }
