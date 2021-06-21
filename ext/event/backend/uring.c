@@ -573,4 +573,5 @@ static int io_uring_wait_for_events(struct io_uring *ring, struct io_uring_cqe *
 	
 	// It should return current pending events.
 	ret = __io_uring_get_cqe_with_availables(ring, cqe_ptr, to_submit, 1, NULL, nr_available);
+	return ret;
 }
