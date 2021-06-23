@@ -11,8 +11,18 @@ class Scheduler
 		@ready = []
 		@pending = []
 		@waiting = {}
+
+		@mutex = Mutex.new
 	end
-	
+
+	def block(blocker, timeout)
+		raise NotImplementedError
+	end
+
+	def unblock(blocker, fiber)
+		raise NotImplementedError
+	end
+
 	def io_wait(io, events, timeout)
 		fiber = Fiber.current
 		@waiting[fiber] = io
