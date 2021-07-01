@@ -271,7 +271,7 @@ int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char 
 	
 	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	io_uring_submit(&data->ring);
+	// io_uring_submit(&data->ring);
 	
 	return NUM2INT(Event_Backend_transfer(data->loop));
 }
@@ -319,7 +319,7 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	
 	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	io_uring_submit(&data->ring);
+	// io_uring_submit(&data->ring);
 	
 	return NUM2INT(Event_Backend_transfer(data->loop));
 }
