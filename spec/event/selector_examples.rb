@@ -186,6 +186,83 @@ RSpec.shared_examples_for Event::Selector do
 		end
 	end
 	
+	describe '#io_read' do
+		let(:message) {"Hello World"}
+		let(:events) {Array.new}
+		let(:sockets) {UNIXSocket.pair}
+		let(:local) {sockets.first}
+		let(:remote) {sockets.last}
+		
+		it "can read a single message" do
+			fiber = Fiber.new do
+				buffer = String.new
+				events << :io_read
+				subject.io_read(Fiber.current, local, buffer, 0, message.bytesize)
+				expect(buffer).to be == message
+			end
+			
+			fiber.transfer
+			
+			events << :write
+			remote.write(message)
+			
+			subject.select(1)
+			
+			expect(events).to be == [
+				:io_read, :write
+			]
+		end
+		
+		it "can handle partial reads" do
+			fiber = Fiber.new do
+				buffer = String.new
+				events << :io_read
+				subject.io_read(Fiber.current, local, buffer, 0, message.bytesize)
+				expect(buffer).to be == message
+			end
+			
+			fiber.transfer
+			
+			events << :write
+			remote.write(message[0...5])
+			subject.select(1)
+			remote.write(message[5...message.bytesize])
+			subject.select(1)
+			
+			expect(events).to be == [
+				:io_read, :write
+			]
+		end
+	end
+	
+	describe '#io_write' do
+		let(:message) {"Hello World"}
+		let(:events) {Array.new}
+		let(:sockets) {UNIXSocket.pair}
+		let(:local) {sockets.first}
+		let(:remote) {sockets.last}
+		
+		it "can write a single message" do
+			fiber = Fiber.new do
+				events << :io_write
+				result = subject.io_write(Fiber.current, local, message, 0, message.bytesize)
+				expect(result).to be == message.bytesize
+				local.close
+			end
+			
+			fiber.transfer
+			
+			subject.select(1)
+			
+			events << :read
+			expect(remote.read).to be == message
+			
+			expect(events).to be == [
+				:io_write, :read
+			]
+		end
+	end
+	
 	describe '#process_wait' do
 		let!(:loop) {Fiber.current}
 		subject{described_class.new(loop)}

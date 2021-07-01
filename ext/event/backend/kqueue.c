@@ -181,7 +181,7 @@ VALUE Event_Backend_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	struct process_wait_arguments process_wait_arguments = {
 		.data = data,
 		.pid = NUM2PIDT(pid),
-		.flags = NUM2INT(flags),
+		.flags = RB_NUM2INT(flags),
 	};
 	
 	int waiting = process_add_filters(data->descriptor, process_wait_arguments.pid, fiber);
@@ -267,7 +267,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	io_remove_filters(arguments->data->descriptor, arguments->descriptor, arguments->events);
 	
 	rb_exc_raise(exception);
-};
+}
 
 static inline
 int events_from_kqueue_filter(int filter) {
@@ -283,22 +283,170 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	
 	VALUE result = Event_Backend_transfer(arguments->data->loop);
 	
-	return INT2NUM(events_from_kqueue_filter(NUM2INT(result)));
-};
+	return INT2NUM(events_from_kqueue_filter(RB_NUM2INT(result)));
+}
 
 VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
 	
 	struct io_wait_arguments io_wait_arguments = {
-		.events = io_add_filters(data->descriptor, descriptor, NUM2INT(events), fiber),
+		.events = io_add_filters(data->descriptor, descriptor, RB_NUM2INT(events), fiber),
 		.data = data,
 		.descriptor = descriptor,
 	};
 	
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
+}
+
+struct io_read_arguments {
+	VALUE self;
+	VALUE fiber;
+	VALUE io;
+	
+	int flags;
+	
+	int descriptor;
+	
+	VALUE buffer;
+	size_t offset;
+	size_t length;
+};
+
+static
+VALUE io_read_loop(VALUE _arguments) {
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	
+	size_t offset = arguments->offset;
+	size_t length = arguments->length;
+	size_t total = 0;
+	
+	while (length > 0) {
+		char *buffer = Event_Backend_resize_to_capacity(arguments->buffer, offset, length);
+		ssize_t result = read(arguments->descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			offset += result;
+			length -= result;
+			total += result;
+		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			Event_Backend_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(READABLE));
+		} else {
+			rb_sys_fail("Event_Backend_KQueue_io_read");
+		}
+	}
+	
+	Event_Backend_resize_to_fit(arguments->buffer, arguments->offset, arguments->length);
+	
+	return SIZET2NUM(total);
+}
+
+static
+VALUE io_read_ensure(VALUE _arguments) {
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	
+	Event_Backend_nonblock_restore(arguments->descriptor, arguments->flags);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _offset, VALUE _length) {
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	struct io_read_arguments io_read_arguments = {
+		.self = self,
+		.fiber = fiber,
+		.io = io,
+		
+		.flags = Event_Backend_nonblock_set(descriptor),
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.offset = offset,
+		.length = length,
+	};
+	
+	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
+}
+
+struct io_write_arguments {
+	VALUE self;
+	VALUE fiber;
+	VALUE io;
+	
+	int flags;
+	
+	int descriptor;
+	
+	VALUE buffer;
+	size_t offset;
+	size_t length;
+};
+
+static
+VALUE io_write_loop(VALUE _arguments) {
+	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
+	
+	size_t offset = arguments->offset;
+	size_t length = arguments->length;
+	size_t total = 0;
+	
+	while (length > 0) {
+		char *buffer = Event_Backend_verify_size(arguments->buffer, offset, length);
+		ssize_t result = write(arguments->descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			length -= result;
+			offset += result;
+			total += result;
+		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			Event_Backend_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(WRITABLE));
+		} else {
+			rb_sys_fail("Event_Backend_KQueue_io_write");
+		}
+	}
+	
+	return SIZET2NUM(total);
+};
+
+static
+VALUE io_write_ensure(VALUE _arguments) {
+	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
+	
+	Event_Backend_nonblock_restore(arguments->descriptor, arguments->flags);
+	
+	return Qnil;
+};
+
+VALUE Event_Backend_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _offset, VALUE _length) {
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	struct io_write_arguments io_write_arguments = {
+		.self = self,
+		.fiber = fiber,
+		.io = io,
+		
+		.flags = Event_Backend_nonblock_set(descriptor),
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.offset = offset,
+		.length = length,
+	};
+	
+	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
 
 static
@@ -420,9 +568,12 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);
 	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_initialize, 1);
+	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
 	rb_define_method(Event_Backend_KQueue, "close", Event_Backend_KQueue_close, 0);
 	
 	rb_define_method(Event_Backend_KQueue, "io_wait", Event_Backend_KQueue_io_wait, 3);
-	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
+	rb_define_method(Event_Backend_KQueue, "io_read", Event_Backend_KQueue_io_read, 5);
+	rb_define_method(Event_Backend_KQueue, "io_write", Event_Backend_KQueue_io_write, 5);
+	
 	rb_define_method(Event_Backend_KQueue, "process_wait", Event_Backend_KQueue_process_wait, 3);
 }

@@ -260,88 +260,98 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-inline static
-void resize_to_capacity(VALUE string, size_t offset, size_t length) {
-	size_t current_length = RSTRING_LEN(string);
-	long difference = (long)(offset + length) - (long)current_length;
-	
-	difference += 1;
-	
-	if (difference > 0) {
-		rb_str_modify_expand(string, difference);
-	} else {
-		rb_str_modify(string);
-	}
-}
-
-inline static
-void resize_to_fit(VALUE string, size_t offset, size_t length) {
-	size_t current_length = RSTRING_LEN(string);
-	
-	if (current_length < (offset + length)) {
-		rb_str_set_len(string, offset + length);
-	}
-}
-
-VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
-	struct Event_Backend_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
-	
-	resize_to_capacity(buffer, NUM2SIZET(offset), NUM2SIZET(length));
-	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+static
+int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
 	struct iovec iovecs[1];
-	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
-	iovecs[0].iov_len = NUM2SIZET(length);
+	iovecs[0].iov_base = buffer;
+	iovecs[0].iov_len = length;
 	
 	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
-	// fprintf(stderr, "prep_readv(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
-	
-	int result = NUM2INT(Event_Backend_transfer(data->loop));
-	
-	if (result < 0) {
-		rb_syserr_fail(-result, strerror(-result));
-	}
-	
-	resize_to_fit(buffer, NUM2SIZET(offset), (size_t)result);
-	
-	return INT2NUM(result);
+	return NUM2INT(Event_Backend_transfer(data->loop));
 }
 
-VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE offset, VALUE length) {
+VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _offset, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	if ((size_t)RSTRING_LEN(buffer) < NUM2SIZET(offset) + NUM2SIZET(length)) {
-		rb_raise(rb_eRuntimeError, "invalid offset/length exceeds bounds of buffer");
+	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	size_t start = offset;
+	size_t total = 0;
+	
+	while (length > 0) {
+		char *buffer = Event_Backend_resize_to_capacity(_buffer, offset, length);
+		int result = io_read(data, fiber, descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			offset += result;
+			length -= result;
+			total += result;
+		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
+			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(READABLE));
+		} else {
+			rb_syserr_fail(-result, strerror(-result));
+		}
 	}
 	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	Event_Backend_resize_to_fit(_buffer, start, total);
+	
+	return SIZET2NUM(total);
+}
+
+static
+int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
+	assert(sqe);
 	
 	struct iovec iovecs[1];
-	iovecs[0].iov_base = RSTRING_PTR(buffer) + NUM2SIZET(offset);
-	iovecs[0].iov_len = NUM2SIZET(length);
+	iovecs[0].iov_base = buffer;
+	iovecs[0].iov_len = length;
 	
 	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
-	// fprintf(stderr, "prep_writev(%p, %d, %ld)\n", sqe, descriptor, iovecs[0].iov_len);
+	return NUM2INT(Event_Backend_transfer(data->loop));
+}
+
+VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _offset, VALUE _length) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int result = NUM2INT(Event_Backend_transfer(data->loop));
+	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
 	
-	if (result < 0) {
-		rb_syserr_fail(-result, strerror(-result));
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	char *buffer = Event_Backend_verify_size(_buffer, offset, length);
+	
+	size_t total = 0;
+	
+	while (length > 0) {
+		int result = io_write(data, fiber, descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			length -= result;
+			offset += result;
+			total += result;
+		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
+			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(WRITABLE));
+		} else {
+			rb_syserr_fail(-result, strerror(-result));
+		}
 	}
 	
-	return INT2NUM(result);
+	return SIZET2NUM(total);
 }
 
 static
@@ -477,12 +487,12 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_URing, Event_Backend_URing_allocate);
 	rb_define_method(Event_Backend_URing, "initialize", Event_Backend_URing_initialize, 1);
+	rb_define_method(Event_Backend_URing, "select", Event_Backend_URing_select, 1);
 	rb_define_method(Event_Backend_URing, "close", Event_Backend_URing_close, 0);
 	
 	rb_define_method(Event_Backend_URing, "io_wait", Event_Backend_URing_io_wait, 3);
-	rb_define_method(Event_Backend_URing, "select", Event_Backend_URing_select, 1);
-	
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
+	
 	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }

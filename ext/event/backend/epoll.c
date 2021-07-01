@@ -264,6 +264,155 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
+struct io_read_arguments {
+	VALUE self;
+	VALUE fiber;
+	VALUE io;
+	
+	int flags;
+	
+	int descriptor;
+	
+	VALUE buffer;
+	size_t offset;
+	size_t length;
+};
+
+static
+VALUE io_read_loop(VALUE _arguments) {
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	
+	size_t offset = arguments->offset;
+	size_t length = arguments->length;
+	size_t total = 0;
+	
+	while (length > 0) {
+		char *buffer = Event_Backend_resize_to_capacity(arguments->buffer, offset, length);
+		ssize_t result = read(arguments->descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			offset += result;
+			length -= result;
+			total += result;
+		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			Event_Backend_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(READABLE));
+		} else {
+			rb_sys_fail("Event_Backend_EPoll_io_read");
+		}
+	}
+	
+	Event_Backend_resize_to_fit(arguments->buffer, arguments->offset, arguments->length);
+	
+	return SIZET2NUM(total);
+}
+
+static
+VALUE io_read_ensure(VALUE _arguments) {
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	
+	Event_Backend_nonblock_restore(arguments->descriptor, arguments->flags);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _offset, VALUE _length) {
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+	
+	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	
+	struct io_read_arguments io_read_arguments = {
+		.self = self,
+		.fiber = fiber,
+		.io = io,
+		
+		.flags = Event_Backend_nonblock_set(descriptor),
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.offset = offset,
+		.length = length,
+	};
+	
+	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
+}
+
+struct io_write_arguments {
+	VALUE self;
+	VALUE fiber;
+	VALUE io;
+	
+	int flags;
+	
+	int descriptor;
+	
+	VALUE buffer;
+	size_t offset;
+	size_t length;
+};
+
+static
+VALUE io_write_loop(VALUE _arguments) {
+	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
+	
+	size_t offset = arguments->offset;
+	size_t length = arguments->length;
+	size_t total = 0;
+	
+	while (length > 0) {
+		char *buffer = Event_Backend_verify_size(arguments->buffer, offset, length);
+		ssize_t result = write(arguments->descriptor, buffer+offset, length);
+		
+		if (result >= 0) {
+			length -= result;
+			offset += result;
+			total += result;
+		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			Event_Backend_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(WRITABLE));
+		} else {
+			rb_sys_fail("Event_Backend_EPoll_io_write");
+		}
+	}
+	
+	return SIZET2NUM(total);
+};
+
+static
+VALUE io_write_ensure(VALUE _arguments) {
+	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
+	
+	Event_Backend_nonblock_restore(arguments->descriptor, arguments->flags);
+	
+	return Qnil;
+};
+
+VALUE Event_Backend_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _offset, VALUE _length) {
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+	
+	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	
+	size_t offset = NUM2SIZET(_offset);
+	size_t length = NUM2SIZET(_length);
+	
+	struct io_write_arguments io_write_arguments = {
+		.self = self,
+		.fiber = fiber,
+		.io = io,
+		
+		.flags = Event_Backend_nonblock_set(descriptor),
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.offset = offset,
+		.length = length,
+	};
+	
+	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
+}
+
 static
 int make_timeout(VALUE duration) {
 	if (duration == Qnil) {
@@ -357,9 +506,12 @@ void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_EPoll, Event_Backend_EPoll_allocate);
 	rb_define_method(Event_Backend_EPoll, "initialize", Event_Backend_EPoll_initialize, 1);
+	rb_define_method(Event_Backend_EPoll, "select", Event_Backend_EPoll_select, 1);
 	rb_define_method(Event_Backend_EPoll, "close", Event_Backend_EPoll_close, 0);
 	
 	rb_define_method(Event_Backend_EPoll, "io_wait", Event_Backend_EPoll_io_wait, 3);
-	rb_define_method(Event_Backend_EPoll, "select", Event_Backend_EPoll_select, 1);
+	rb_define_method(Event_Backend_EPoll, "io_read", Event_Backend_EPoll_io_read, 5);
+	rb_define_method(Event_Backend_EPoll, "io_write", Event_Backend_EPoll_io_write, 5);
+	
 	rb_define_method(Event_Backend_EPoll, "process_wait", Event_Backend_EPoll_process_wait, 3);
 }

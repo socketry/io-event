@@ -52,7 +52,50 @@ module Event
 				@readable.delete(io) if remove_readable
 				@writable.delete(io) if remove_writable
 			end
-
+			
+			def io_read(fiber, io, buffer, offset, length)
+				buffer.force_encoding(Encoding::BINARY)
+				
+				while length > 0
+					case result = io.read_nonblock(length, exception: false)
+					when :wait_readable
+						self.io_wait(fiber, io, READABLE)
+					when :wait_writable
+						self.io_wait(fiber, io, WRITABLE)
+					else
+						result.force_encoding(Encoding::BINARY)
+						buffer[offset, result.bytesize] = result
+						
+						offset += result.bytesize
+						length -= result.bytesize
+					end
+				end
+			rescue EOFError
+				return nil
+			end
+			
+			def io_write(fiber, io, buffer, offset, length)
+				buffer.force_encoding(Encoding::BINARY)
+				
+				total = 0
+				
+				while length > 0
+					chunk = buffer[offset, length]
+					case result = io.write_nonblock(chunk, exception: false)
+					when :wait_readable
+						self.io_wait(fiber, io, READABLE)
+					when :wait_writable
+						self.io_wait(fiber, io, WRITABLE)
+					else
+						offset += result
+						length -= result
+						total += result
+					end
+				end
+				
+				return total
+			end
+			
 			def process_wait(fiber, pid, flags)
 				r, w = IO.pipe
 				

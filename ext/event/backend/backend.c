@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 #include "backend.h"
+#include <fcntl.h>
 
 static ID id_transfer, id_wait;
 static VALUE rb_Process_Status = Qnil;
@@ -55,4 +56,53 @@ Event_Backend_transfer_result(VALUE fiber, VALUE result) {
 VALUE Event_Backend_process_status_wait(rb_pid_t pid)
 {
 	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(WNOHANG));
+}
+
+char* Event_Backend_verify_size(VALUE buffer, size_t offset, size_t length) {
+	if ((size_t)RSTRING_LEN(buffer) < offset + length) {
+		rb_raise(rb_eRuntimeError, "invalid offset/length exceeds bounds of buffer");
+	}
+	
+	return RSTRING_PTR(buffer);
+}
+
+char* Event_Backend_resize_to_capacity(VALUE string, size_t offset, size_t length) {
+	size_t current_length = RSTRING_LEN(string);
+	long difference = (long)(offset + length) - (long)current_length;
+	
+	difference += 1;
+	
+	if (difference > 0) {
+		rb_str_modify_expand(string, difference);
+	} else {
+		rb_str_modify(string);
+	}
+	
+	return RSTRING_PTR(string);
+}
+
+void Event_Backend_resize_to_fit(VALUE string, size_t offset, size_t length) {
+	size_t current_length = RSTRING_LEN(string);
+	
+	if (current_length < (offset + length)) {
+		rb_str_set_len(string, offset + length);
+	}
+}
+
+int Event_Backend_nonblock_set(int file_descriptor)
+{
+	int flags = fcntl(file_descriptor, F_GETFL, 0);
+	
+	if (!(flags & O_NONBLOCK)) {
+		fcntl(file_descriptor, F_SETFL, flags | O_NONBLOCK);
+	}
+	
+	return flags;
+}
+
+void Event_Backend_nonblock_restore(int file_descriptor, int flags)
+{
+	if (!(flags & O_NONBLOCK)) {
+		fcntl(file_descriptor, F_SETFL, flags & ~flags);
+	}
 }
