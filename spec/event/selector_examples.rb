@@ -193,12 +193,13 @@ RSpec.shared_examples_for Event::Selector do
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
 		
+		let(:buffer) {IO::Buffer.new(1024, IO::Buffer::MAPPED)}
+		
 		it "can read a single message" do
 			fiber = Fiber.new do
-				buffer = String.new
 				events << :io_read
-				subject.io_read(Fiber.current, local, buffer, 0, message.bytesize)
-				expect(buffer).to be == message
+				offset = subject.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.to_str(0, offset)).to be == message
 			end
 			
 			fiber.transfer
@@ -215,10 +216,9 @@ RSpec.shared_examples_for Event::Selector do
 		
 		it "can handle partial reads" do
 			fiber = Fiber.new do
-				buffer = String.new
 				events << :io_read
-				subject.io_read(Fiber.current, local, buffer, 0, message.bytesize)
-				expect(buffer).to be == message
+				offset = subject.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.to_str(0, offset)).to be == message
 			end
 			
 			fiber.transfer
@@ -245,7 +245,8 @@ RSpec.shared_examples_for Event::Selector do
 		it "can write a single message" do
 			fiber = Fiber.new do
 				events << :io_write
-				result = subject.io_write(Fiber.current, local, message, 0, message.bytesize)
+				buffer = IO::Buffer.for(message)
+				result = subject.io_write(Fiber.current, local, buffer, buffer.size)
 				expect(result).to be == message.bytesize
 				local.close
 			end

@@ -66,29 +66,6 @@ char* Event_Backend_verify_size(VALUE buffer, size_t offset, size_t length) {
 	return RSTRING_PTR(buffer);
 }
 
-char* Event_Backend_resize_to_capacity(VALUE string, size_t offset, size_t length) {
-	size_t current_length = RSTRING_LEN(string);
-	long difference = (long)(offset + length) - (long)current_length;
-	
-	difference += 1;
-	
-	if (difference > 0) {
-		rb_str_modify_expand(string, difference);
-	} else {
-		rb_str_modify(string);
-	}
-	
-	return RSTRING_PTR(string);
-}
-
-void Event_Backend_resize_to_fit(VALUE string, size_t offset, size_t length) {
-	size_t current_length = RSTRING_LEN(string);
-	
-	if (current_length < (offset + length)) {
-		rb_str_set_len(string, offset + length);
-	}
-}
-
 int Event_Backend_nonblock_set(int file_descriptor)
 {
 	int flags = fcntl(file_descriptor, F_GETFL, 0);

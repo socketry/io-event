@@ -37,9 +37,5 @@ VALUE Event_Backend_transfer_result(VALUE fiber, VALUE argument);
 
 VALUE Event_Backend_process_status_wait(rb_pid_t pid);
 
-char* Event_Backend_verify_size(VALUE buffer, size_t offset, size_t length);
-char* Event_Backend_resize_to_capacity(VALUE string, size_t offset, size_t length);
-void Event_Backend_resize_to_fit(VALUE string, size_t offset, size_t length);
-
 int Event_Backend_nonblock_set(int file_descriptor);
 void Event_Backend_nonblock_restore(int file_descriptor, int flags);

@@ -53,34 +53,37 @@ module Event
 				@writable.delete(io) if remove_writable
 			end
 			
-			def io_read(fiber, io, buffer, offset, length)
-				buffer.force_encoding(Encoding::BINARY)
+			def io_read(fiber, io, buffer, length)
+				offset = 0
 				
 				while length > 0
-					case result = io.read_nonblock(length, exception: false)
+					# The maximum size we can read:
+					maximum_size = buffer.size - offset
+					
+					case result = io.read_nonblock(maximum_size, exception: false)
 					when :wait_readable
 						self.io_wait(fiber, io, READABLE)
 					when :wait_writable
 						self.io_wait(fiber, io, WRITABLE)
 					else
-						result.force_encoding(Encoding::BINARY)
-						buffer[offset, result.bytesize] = result
+						break if result.empty?
+						
+						buffer.copy(result, offset)
 						
 						offset += result.bytesize
 						length -= result.bytesize
 					end
 				end
-			rescue EOFError
-				return nil
+				
+				return offset
 			end
 			
-			def io_write(fiber, io, buffer, offset, length)
-				buffer.force_encoding(Encoding::BINARY)
-				
-				total = 0
+			def io_write(fiber, io, buffer, length)
+				offset = 0
 				
 				while length > 0
-					chunk = buffer[offset, length]
+					# From offset until the end:
+					chunk = buffer.to_str(offset, length)
 					case result = io.write_nonblock(chunk, exception: false)
 					when :wait_readable
 						self.io_wait(fiber, io, READABLE)
@@ -89,11 +92,10 @@ module Event
 					else
 						offset += result
 						length -= result
-						total += result
 					end
 				end
 				
-				return total
+				return offset
 			end
 			
 			def process_wait(fiber, pid, flags)

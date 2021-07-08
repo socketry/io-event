@@ -27,6 +27,8 @@
 
 #include "pidfd.c"
 
+#include <ruby/io/buffer.h>
+
 static VALUE Event_Backend_URing = Qnil;
 static ID id_fileno;
 
@@ -276,26 +278,30 @@ int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char 
 	return NUM2INT(Event_Backend_transfer(data->loop));
 }
 
-VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _offset, VALUE _length) {
+VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
 	
-	size_t offset = NUM2SIZET(_offset);
+	void *base;
+	size_t size;
+	rb_io_buffer_get_mutable(arguments->buffer, &base, &size);
+	
+	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
 	
 	size_t start = offset;
-	size_t total = 0;
 	
 	while (length > 0) {
-		char *buffer = Event_Backend_resize_to_capacity(_buffer, offset, length);
-		int result = io_read(data, fiber, descriptor, buffer+offset, length);
+		size_t maximum_size = size - offset;
+		int result = io_read(data, fiber, descriptor, (char*)base+offset, maximum_size);
 		
-		if (result >= 0) {
+		if (result == 0) {
+			break;
+		} else if (result > 0) {
 			offset += result;
 			length -= result;
-			total += result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(READABLE));
 		} else {
@@ -303,9 +309,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buff
 		}
 	}
 	
-	Event_Backend_resize_to_fit(_buffer, start, total);
-	
-	return SIZET2NUM(total);
+	return SIZET2NUM(offset);
 }
 
 static
@@ -324,26 +328,29 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	return NUM2INT(Event_Backend_transfer(data->loop));
 }
 
-VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _offset, VALUE _length) {
+VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
 	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
 	
-	size_t offset = NUM2SIZET(_offset);
+	const void *base;
+	size_t size;
+	rb_io_buffer_get_immutable(arguments->buffer, &base, &size);
+	
+	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
 	
-	char *buffer = Event_Backend_verify_size(_buffer, offset, length);
-	
-	size_t total = 0;
+	if (length > size) {
+		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
 	
 	while (length > 0) {
-		int result = io_write(data, fiber, descriptor, buffer+offset, length);
+		int result = io_write(data, fiber, descriptor, (char*)base+offset, length);
 		
 		if (result >= 0) {
 			length -= result;
 			offset += result;
-			total += result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(WRITABLE));
 		} else {
@@ -351,7 +358,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buf
 		}
 	}
 	
-	return SIZET2NUM(total);
+	return SIZET2NUM(offset);
 }
 
 static
@@ -491,8 +498,8 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_URing, "close", Event_Backend_URing_close, 0);
 	
 	rb_define_method(Event_Backend_URing, "io_wait", Event_Backend_URing_io_wait, 3);
-	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 5);
-	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 5);
+	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 4);
+	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 4);
 	
 	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }
