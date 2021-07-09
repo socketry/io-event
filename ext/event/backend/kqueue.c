@@ -303,6 +303,8 @@ VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
+#ifdef HAVE_RUBY_IO_BUFFER_H
+
 struct io_read_arguments {
 	VALUE self;
 	VALUE fiber;
@@ -452,6 +454,8 @@ VALUE Event_Backend_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
 
+#endif
+
 static
 struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 	if (duration == Qnil) {
@@ -575,8 +579,11 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_KQueue, "close", Event_Backend_KQueue_close, 0);
 	
 	rb_define_method(Event_Backend_KQueue, "io_wait", Event_Backend_KQueue_io_wait, 3);
+	
+#ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(Event_Backend_KQueue, "io_read", Event_Backend_KQueue_io_read, 4);
 	rb_define_method(Event_Backend_KQueue, "io_write", Event_Backend_KQueue_io_write, 4);
+#endif
 	
 	rb_define_method(Event_Backend_KQueue, "process_wait", Event_Backend_KQueue_process_wait, 3);
 }

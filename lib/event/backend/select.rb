@@ -53,49 +53,51 @@ module Event
 				@writable.delete(io) if remove_writable
 			end
 			
-			def io_read(fiber, io, buffer, length)
-				offset = 0
-				
-				while length > 0
-					# The maximum size we can read:
-					maximum_size = buffer.size - offset
+			if IO.const_defined?(:Buffer)
+				def io_read(fiber, io, buffer, length)
+					offset = 0
 					
-					case result = io.read_nonblock(maximum_size, exception: false)
-					when :wait_readable
-						self.io_wait(fiber, io, READABLE)
-					when :wait_writable
-						self.io_wait(fiber, io, WRITABLE)
-					else
-						break if result.empty?
+					while length > 0
+						# The maximum size we can read:
+						maximum_size = buffer.size - offset
 						
-						buffer.copy(result, offset)
-						
-						offset += result.bytesize
-						length -= result.bytesize
+						case result = io.read_nonblock(maximum_size, exception: false)
+						when :wait_readable
+							self.io_wait(fiber, io, READABLE)
+						when :wait_writable
+							self.io_wait(fiber, io, WRITABLE)
+						else
+							break if result.empty?
+							
+							buffer.copy(result, offset)
+							
+							offset += result.bytesize
+							length -= result.bytesize
+						end
 					end
+					
+					return offset
 				end
 				
-				return offset
-			end
-			
-			def io_write(fiber, io, buffer, length)
-				offset = 0
-				
-				while length > 0
-					# From offset until the end:
-					chunk = buffer.to_str(offset, length)
-					case result = io.write_nonblock(chunk, exception: false)
-					when :wait_readable
-						self.io_wait(fiber, io, READABLE)
-					when :wait_writable
-						self.io_wait(fiber, io, WRITABLE)
-					else
-						offset += result
-						length -= result
+				def io_write(fiber, io, buffer, length)
+					offset = 0
+					
+					while length > 0
+						# From offset until the end:
+						chunk = buffer.to_str(offset, length)
+						case result = io.write_nonblock(chunk, exception: false)
+						when :wait_readable
+							self.io_wait(fiber, io, READABLE)
+						when :wait_writable
+							self.io_wait(fiber, io, WRITABLE)
+						else
+							offset += result
+							length -= result
+						end
 					end
+					
+					return offset
 				end
-				
-				return offset
 			end
 			
 			def process_wait(fiber, pid, flags)

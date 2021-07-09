@@ -262,8 +262,9 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-static
-int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
+#ifdef HAVE_RUBY_IO_BUFFER_H
+
+static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
@@ -360,6 +361,8 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	
 	return SIZET2NUM(offset);
 }
+
+#endif
 
 static
 struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec *storage) {
@@ -498,8 +501,11 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_URing, "close", Event_Backend_URing_close, 0);
 	
 	rb_define_method(Event_Backend_URing, "io_wait", Event_Backend_URing_io_wait, 3);
+	
+#ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 4);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 4);
+#endif
 	
 	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }

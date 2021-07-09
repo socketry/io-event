@@ -47,6 +47,8 @@ if have_header('sys/event.h')
 	$srcs << "backend/kqueue.c"
 end
 
+have_header('ruby/io/buffer.h')
+
 create_header
 
 # Generate the makefile to compile the native binary into `lib`:

@@ -266,6 +266,8 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
+#ifdef HAVE_RUBY_IO_BUFFER_H
+
 struct io_read_arguments {
 	VALUE self;
 	VALUE fiber;
@@ -409,6 +411,8 @@ VALUE Event_Backend_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
 
+#endif
+
 static
 int make_timeout(VALUE duration) {
 	if (duration == Qnil) {
@@ -506,8 +510,11 @@ void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_EPoll, "close", Event_Backend_EPoll_close, 0);
 	
 	rb_define_method(Event_Backend_EPoll, "io_wait", Event_Backend_EPoll_io_wait, 3);
+	
+#ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(Event_Backend_EPoll, "io_read", Event_Backend_EPoll_io_read, 4);
 	rb_define_method(Event_Backend_EPoll, "io_write", Event_Backend_EPoll_io_write, 4);
+#endif
 	
 	rb_define_method(Event_Backend_EPoll, "process_wait", Event_Backend_EPoll_process_wait, 3);
 }

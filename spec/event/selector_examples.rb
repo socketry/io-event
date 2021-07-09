@@ -186,7 +186,7 @@ RSpec.shared_examples_for Event::Selector do
 		end
 	end
 	
-	describe '#io_read' do
+	describe '#io_read', if: IO.const_defined?(:Buffer) do
 		let(:message) {"Hello World"}
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
@@ -235,7 +235,7 @@ RSpec.shared_examples_for Event::Selector do
 		end
 	end
 	
-	describe '#io_write' do
+	describe '#io_write', if: IO.const_defined?(:Buffer) do
 		let(:message) {"Hello World"}
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
