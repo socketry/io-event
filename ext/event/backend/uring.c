@@ -273,12 +273,13 @@ int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char 
 	
 	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	// io_uring_submit(&data->ring);
-	
-	return NUM2INT(Event_Backend_transfer(data->loop));
+	io_uring_submit(&data->ring);
+
+	VALUE result = Event_Backend_transfer(data->loop);
+	return RB_NUM2INT(result);
 }
 
-VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _length) {
+VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
@@ -286,12 +287,10 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buff
 	
 	void *base;
 	size_t size;
-	rb_io_buffer_get_mutable(arguments->buffer, &base, &size);
+	rb_io_buffer_get_mutable(buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
-	
-	size_t start = offset;
 	
 	while (length > 0) {
 		size_t maximum_size = size - offset;
@@ -301,6 +300,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE _buff
 			break;
 		} else if (result > 0) {
 			offset += result;
+			if ((size_t)result > length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(READABLE));
@@ -323,12 +323,12 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	
 	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	// io_uring_submit(&data->ring);
+	io_uring_submit(&data->ring);
 	
 	return NUM2INT(Event_Backend_transfer(data->loop));
 }
 
-VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buffer, VALUE _length) {
+VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
@@ -336,7 +336,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE _buf
 	
 	const void *base;
 	size_t size;
-	rb_io_buffer_get_immutable(arguments->buffer, &base, &size);
+	rb_io_buffer_get_immutable(buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
@@ -447,7 +447,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 		VALUE result = INT2NUM(cqe->res);
 		
 		// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
-		
+
 		Event_Backend_transfer_result(fiber, result);
 	}
 	

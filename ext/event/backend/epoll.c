@@ -319,9 +319,6 @@ VALUE io_read_ensure(VALUE _arguments) {
 }
 
 VALUE Event_Backend_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	struct Event_Backend_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
-	
 	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
 	
 	size_t length = NUM2SIZET(_length);
@@ -394,9 +391,6 @@ VALUE io_write_ensure(VALUE _arguments) {
 };
 
 VALUE Event_Backend_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	struct Event_Backend_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
-	
 	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
 	
 	size_t length = NUM2SIZET(_length);

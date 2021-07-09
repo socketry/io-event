@@ -26,7 +26,23 @@ class Scheduler
 	def io_wait(io, events, timeout)
 		fiber = Fiber.current
 		@waiting[fiber] = io
-		@selector.io_wait(Fiber.current, io, events)
+		@selector.io_wait(fiber, io, events)
+	ensure
+		@waiting.delete(fiber)
+	end
+
+	def io_read(io, buffer, length)
+		fiber = Fiber.current
+		@waiting[fiber] = io
+		result = @selector.io_read(fiber, io, buffer, length)
+	ensure
+		@waiting.delete(fiber)
+	end
+
+	def io_write(io, buffer, length)
+		fiber = Fiber.current
+		@waiting[fiber] = io
+		@selector.io_write(fiber, io, buffer, length)
 	ensure
 		@waiting.delete(fiber)
 	end
@@ -57,9 +73,12 @@ class Scheduler
 	end
 end
 
-Fiber.set_scheduler(Scheduler.new)
+scheduler = Scheduler.new
+Fiber.set_scheduler(scheduler)
 
 port = Integer(ARGV.pop || 9090)
+
+RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 
 Fiber.schedule do
 	server = TCPServer.new('localhost', port)
@@ -68,8 +87,8 @@ Fiber.schedule do
 		peer, address = server.accept
 		
 		Fiber.schedule do
-			peer.recv(1024)
-			peer.send("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n", 0)
+			peer.gets
+			peer.write(RESPONSE)
 			peer.close
 		end
 	end
