@@ -20,6 +20,11 @@
 
 #include <ruby.h>
 #include <ruby/thread.h>
+#include <ruby/io.h>
+
+#ifdef HAVE_RUBY_IO_BUFFER_H
+#include <ruby/io/buffer.h>
+#endif
 
 enum Event {
 	READABLE = 1,
@@ -29,13 +34,28 @@ enum Event {
 	HANGUP = 16
 };
 
-void
-Init_Event_Backend();
+void Init_Event_Backend();
 
-VALUE Event_Backend_transfer(VALUE fiber);
-VALUE Event_Backend_transfer_result(VALUE fiber, VALUE argument);
+#ifdef HAVE__RB_FIBER_TRANSFER
+#define Event_Backend_fiber_transfer(fiber) rb_fiber_transfer(fiber, 0, NULL)
+#define Event_Backend_fiber_transfer_result(fiber, argument) rb_fiber_transfer(fiber, 1, &argument)
+#else
+VALUE Event_Backend_fiber_transfer(VALUE fiber);
+VALUE Event_Backend_fiber_transfer_result(VALUE fiber, VALUE argument);
+#endif
 
+#ifdef HAVE_RB_IO_DESCRIPTOR
+#define Event_Backend_io_descriptor(io) rb_io_descriptor(io)
+#else
+int Event_Backend_io_descriptor(VALUE io);
+#endif
+
+#ifdef HAVE_RB_PROCESS_STATUS_WAIT
+#define Event_Backend_process_status_wait(pid) rb_process_status_wait(pid)
+#else
 VALUE Event_Backend_process_status_wait(rb_pid_t pid);
+#endif
 
 int Event_Backend_nonblock_set(int file_descriptor);
 void Event_Backend_nonblock_restore(int file_descriptor, int flags);
+

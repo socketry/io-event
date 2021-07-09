@@ -30,7 +30,6 @@
 #include <ruby/io/buffer.h>
 
 static VALUE Event_Backend_URing = Qnil;
-static ID id_fileno;
 
 enum {URING_ENTRIES = 128};
 enum {URING_MAX_EVENTS = 128};
@@ -139,7 +138,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_transfer(arguments->data->loop);
+	Event_Backend_fiber_transfer(arguments->data->loop);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -227,7 +226,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct Event_Backend_URing *data = arguments->data;
 
-	VALUE result = Event_Backend_transfer(data->loop);
+	VALUE result = Event_Backend_fiber_transfer(data->loop);
 	
 	// We explicitly filter the resulting events based on the requested events.
 	// In some cases, poll will report events we didn't ask for.
@@ -240,7 +239,7 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
@@ -272,7 +271,7 @@ static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 
-	VALUE result = Event_Backend_transfer(data->loop);
+	VALUE result = Event_Backend_fiber_transfer(data->loop);
 	return RB_NUM2INT(result);
 }
 
@@ -280,7 +279,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	void *base;
 	size_t size;
@@ -318,14 +317,14 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
-	return NUM2INT(Event_Backend_transfer(data->loop));
+	return NUM2INT(Event_Backend_fiber_transfer(data->loop));
 }
 
 VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int descriptor = Event_Backend_descriptor(io);
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	const void *base;
 	size_t size;
@@ -443,7 +442,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 		
 		// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
 
-		Event_Backend_transfer_result(fiber, result);
+		Event_Backend_fiber_transfer_result(fiber, result);
 	}
 	
 	if (completed) {
@@ -483,8 +482,6 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 }
 
 void Init_Event_Backend_URing(VALUE Event_Backend) {
-	id_fileno = rb_intern("fileno");
-	
 	Event_Backend_URing = rb_define_class_under(Event_Backend, "URing", rb_cObject);
 	
 	rb_define_alloc_func(Event_Backend_URing, Event_Backend_URing_allocate);

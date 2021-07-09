@@ -21,50 +21,37 @@
 #include "backend.h"
 #include <fcntl.h>
 
-static ID id_transfer, id_wait;
-static VALUE rb_Process_Status = Qnil;
-
-void Init_Event_Backend(VALUE Event_Backend) {
-	id_transfer = rb_intern("transfer");
-	id_wait = rb_intern("wait");
-	// id_alive_p = rb_intern("alive?");
-	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
-}
+#ifndef HAVE__RB_FIBER_TRANSFER
+static ID id_transfer;
 
 VALUE
-Event_Backend_transfer(VALUE fiber) {
-#ifdef HAVE__RB_FIBER_TRANSFER
-	return rb_fiber_transfer(fiber, 0, NULL);
-#else
+Event_Backend_fiber_transfer(VALUE fiber) {
 	return rb_funcall(fiber, id_transfer, 0);
-#endif
 }
 
 VALUE
-Event_Backend_transfer_result(VALUE fiber, VALUE result) {
-	// if (!RTEST(rb_fiber_alive_p(fiber))) {
-	// 	return Qnil;
-	// }
-	
-#ifdef HAVE__RB_FIBER_TRANSFER
-	return rb_fiber_transfer(fiber, 1, &result);
-#else
+Event_Backend_fiber_transfer_result(VALUE fiber, VALUE result) {
 	return rb_funcall(fiber, id_transfer, 1, result);
-#endif
 }
+#endif
+
+#ifndef HAVE_RB_IO_DESCRIPTOR
+static ID id_fileno;
+
+int Event_Backend_io_descriptor(VALUE io) {
+	return RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+}
+#endif
+
+#ifndef HAVE_RB_PROCESS_STATUS_WAIT
+static ID id_wait;
+static VALUE rb_Process_Status = Qnil;
 
 VALUE Event_Backend_process_status_wait(rb_pid_t pid)
 {
 	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(WNOHANG));
 }
-
-char* Event_Backend_verify_size(VALUE buffer, size_t offset, size_t length) {
-	if ((size_t)RSTRING_LEN(buffer) < offset + length) {
-		rb_raise(rb_eRuntimeError, "invalid offset/length exceeds bounds of buffer");
-	}
-	
-	return RSTRING_PTR(buffer);
-}
+#endif
 
 int Event_Backend_nonblock_set(int file_descriptor)
 {
@@ -82,4 +69,19 @@ void Event_Backend_nonblock_restore(int file_descriptor, int flags)
 	if (!(flags & O_NONBLOCK)) {
 		fcntl(file_descriptor, F_SETFL, flags & ~flags);
 	}
+}
+
+void Init_Event_Backend(VALUE Event_Backend) {
+#ifndef HAVE_RB_IO_DESCRIPTOR
+	id_fileno = rb_intern("fileno");
+#endif
+	
+#ifndef HAVE__RB_FIBER_TRANSFER
+	id_transfer = rb_intern("transfer");
+#endif
+	
+#ifndef HAVE_RB_PROCESS_STATUS_WAIT
+	id_wait = rb_intern("wait");
+	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
+#endif
 }

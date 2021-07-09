@@ -26,10 +26,7 @@
 #include <time.h>
 #include <errno.h>
 
-#include <ruby/io/buffer.h>
-
 static VALUE Event_Backend_KQueue = Qnil;
-static ID id_fileno;
 
 enum {KQUEUE_MAX_EVENTS = 64};
 
@@ -162,7 +159,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_transfer(arguments->data->loop);
+	Event_Backend_fiber_transfer(arguments->data->loop);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -283,7 +280,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Backend_transfer(arguments->data->loop);
+	VALUE result = Event_Backend_fiber_transfer(arguments->data->loop);
 	
 	return INT2NUM(events_from_kqueue_filter(RB_NUM2INT(result)));
 }
@@ -292,7 +289,7 @@ VALUE Event_Backend_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.events = io_add_filters(data->descriptor, descriptor, RB_NUM2INT(events), fiber),
@@ -361,7 +358,7 @@ VALUE Event_Backend_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	
@@ -562,15 +559,13 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 		VALUE fiber = (VALUE)arguments.events[i].udata;
 		VALUE result = INT2NUM(arguments.events[i].filter);
 		
-		Event_Backend_transfer_result(fiber, result);
+		Event_Backend_fiber_transfer_result(fiber, result);
 	}
 	
 	return INT2NUM(arguments.count);
 }
 
 void Init_Event_Backend_KQueue(VALUE Event_Backend) {
-	id_fileno = rb_intern("fileno");
-	
 	Event_Backend_KQueue = rb_define_class_under(Event_Backend, "KQueue", rb_cObject);
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);

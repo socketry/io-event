@@ -47,6 +47,9 @@ if have_header('sys/event.h')
 	$srcs << "backend/kqueue.c"
 end
 
+have_func("rb_io_descriptor")
+have_func("&rb_process_status_wait")
+
 have_header('ruby/io/buffer.h')
 
 create_header

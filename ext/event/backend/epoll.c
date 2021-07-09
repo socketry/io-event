@@ -30,7 +30,6 @@
 #include <ruby/io/buffer.h>
 
 static VALUE Event_Backend_EPoll = Qnil;
-static ID id_fileno;
 
 enum {EPOLL_MAX_EVENTS = 64};
 
@@ -126,7 +125,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_transfer(arguments->data->loop);
+	Event_Backend_fiber_transfer(arguments->data->loop);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -219,7 +218,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Backend_transfer(arguments->data->loop);
+	VALUE result = Event_Backend_fiber_transfer(arguments->data->loop);
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
@@ -321,7 +320,7 @@ VALUE io_read_ensure(VALUE _arguments) {
 }
 
 VALUE Event_Backend_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	
@@ -493,15 +492,13 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
-		Event_Backend_transfer_result(fiber, result);
+		Event_Backend_fiber_transfer_result(fiber, result);
 	}
 	
 	return INT2NUM(arguments.count);
 }
 
 void Init_Event_Backend_EPoll(VALUE Event_Backend) {
-	id_fileno = rb_intern("fileno");
-	
 	Event_Backend_EPoll = rb_define_class_under(Event_Backend, "EPoll", rb_cObject);
 	
 	rb_define_alloc_func(Event_Backend_EPoll, Event_Backend_EPoll_allocate);
