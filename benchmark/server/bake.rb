@@ -2,6 +2,7 @@
 SERVERS = [
 	"compiled",
 	"event.rb",
+	"event-direct.rb",
 	"loop.rb",
 	# "async.rb",
 	# "thread.rb",

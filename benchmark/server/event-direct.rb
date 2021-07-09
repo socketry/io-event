@@ -31,6 +31,22 @@ class Scheduler
 		@waiting.delete(fiber)
 	end
 
+	def io_read(io, buffer, length)
+		fiber = Fiber.current
+		@waiting[fiber] = io
+		result = @selector.io_read(fiber, io, buffer, length)
+	ensure
+		@waiting.delete(fiber)
+	end
+
+	def io_write(io, buffer, length)
+		fiber = Fiber.current
+		@waiting[fiber] = io
+		@selector.io_write(fiber, io, buffer, length)
+	ensure
+		@waiting.delete(fiber)
+	end
+
 	def kernel_sleep(duration)
 		@ready << Fiber.current
 		@fiber.transfer
