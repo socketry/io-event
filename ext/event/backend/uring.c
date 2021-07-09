@@ -268,11 +268,7 @@ static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
-	struct iovec iovecs[1];
-	iovecs[0].iov_base = buffer;
-	iovecs[0].iov_len = length;
-	
-	io_uring_prep_readv(sqe, descriptor, iovecs, 1, 0);
+	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 
@@ -318,11 +314,7 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
-	struct iovec iovecs[1];
-	iovecs[0].iov_base = buffer;
-	iovecs[0].iov_len = length;
-	
-	io_uring_prep_writev(sqe, descriptor, iovecs, 1, 0);
+	io_uring_prep_write(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit(&data->ring);
 	
@@ -333,7 +325,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int descriptor = RB_NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_descriptor(io);
 	
 	const void *base;
 	size_t size;
