@@ -27,8 +27,6 @@
 
 #include "pidfd.c"
 
-#include <ruby/io/buffer.h>
-
 static VALUE Event_Backend_EPoll = Qnil;
 
 enum {EPOLL_MAX_EVENTS = 64};

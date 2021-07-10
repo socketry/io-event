@@ -27,8 +27,6 @@
 
 #include "pidfd.c"
 
-#include <ruby/io/buffer.h>
-
 static VALUE Event_Backend_URing = Qnil;
 
 enum {URING_ENTRIES = 128};
@@ -296,7 +294,7 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 			break;
 		} else if (result > 0) {
 			offset += result;
-			if ((size_t)result > length) break;
+			if ((size_t)result >= length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(READABLE));
@@ -341,8 +339,9 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 		int result = io_write(data, fiber, descriptor, (char*)base+offset, length);
 		
 		if (result >= 0) {
-			length -= result;
 			offset += result;
+			if ((size_t)result >= length) break;
+			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			Event_Backend_URing_io_wait(self, fiber, io, RB_INT2NUM(WRITABLE));
 		} else {
