@@ -229,7 +229,7 @@ VALUE Event_Backend_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	struct epoll_event event = {0};
 	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	int duplicate = -1;
 	
 	event.events = epoll_flags_from_events(NUM2INT(events));
@@ -392,7 +392,7 @@ VALUE io_write_ensure(VALUE _arguments) {
 };
 
 VALUE Event_Backend_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	

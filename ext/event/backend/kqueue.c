@@ -433,7 +433,7 @@ VALUE Event_Backend_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	int descriptor = NUM2INT(rb_funcall(io, id_fileno, 0));
+	int descriptor = Event_Backend_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	
