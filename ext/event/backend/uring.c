@@ -265,10 +265,18 @@ static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
+	struct timespec start, stop, duration;
+	
 	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
+	
+	Event_Backend_current_time(&start);
 	io_uring_submit(&data->ring);
-
+	Event_Backend_current_time(&stop);
+	
+	Event_Backend_elapsed_time(&start, &stop, &duration);
+	fprintf(stderr, "io_read:io_uring_submit duration=" PRINTF_TIMESPEC "s\n", PRINTF_TIMESPEC_ARGS(duration));
+	
 	VALUE result = Event_Backend_fiber_transfer(data->loop);
 	return RB_NUM2INT(result);
 }
@@ -311,9 +319,17 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
+	struct timespec start, stop, duration;
+	
 	io_uring_prep_write(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
+	
+	Event_Backend_current_time(&start);
 	io_uring_submit(&data->ring);
+	Event_Backend_current_time(&stop);
+	
+	Event_Backend_elapsed_time(&start, &stop, &duration);
+	fprintf(stderr, "io_write:io_uring_submit duration=" PRINTF_TIMESPEC "s\n", PRINTF_TIMESPEC_ARGS(duration));
 	
 	return NUM2INT(Event_Backend_fiber_transfer(data->loop));
 }
