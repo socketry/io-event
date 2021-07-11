@@ -5,8 +5,13 @@ require_relative 'lib/event'
 require 'fiber'
 require 'socket'
 
+require 'io/nonblock'
+
 local, remote = UNIXSocket.pair
 selector = Event::Backend::URing.new(Fiber.current)
+
+local.nonblock = false
+remote.nonblock = false
 
 f1 = Fiber.new do
 	buffer = IO::Buffer.new(128)

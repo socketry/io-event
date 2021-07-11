@@ -1,61 +1,7 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
-require_relative '../../lib/event'
-require 'socket'
-require 'fiber'
-
-class Scheduler
-	def initialize(selector = nil)
-		@fiber = Fiber.current
-		@selector = selector || Event::Backend.new(@fiber)
-		@ready = []
-		@pending = []
-		@waiting = {}
-
-		@mutex = Mutex.new
-	end
-
-	def block(blocker, timeout)
-		raise NotImplementedError
-	end
-
-	def unblock(blocker, fiber)
-		raise NotImplementedError
-	end
-
-	def io_wait(io, events, timeout)
-		fiber = Fiber.current
-		@waiting[fiber] = io
-		@selector.io_wait(fiber, io, events)
-	ensure
-		@waiting.delete(fiber)
-	end
-
-	def kernel_sleep(duration)
-		@ready << Fiber.current
-		@fiber.transfer
-	end
-
-	def close
-		while @ready.any? || @waiting.any?
-			@pending, @ready = @ready, @pending
-			while fiber = @pending.pop
-				fiber.transfer
-			end
-
-			@selector.select(@ready.any? ? 0 : nil)
-		end
-	end
-	
-	def fiber(&block)
-		fiber = Fiber.new(&block)
-		
-		@ready << Fiber.current
-		fiber.transfer
-		
-		return fiber
-	end
-end
+require_relative 'scheduler'
 
 scheduler = Scheduler.new
 Fiber.set_scheduler(scheduler)
@@ -70,11 +16,9 @@ Fiber.schedule do
 	loop do
 		peer, address = server.accept
 		
-		Fiber.schedule do
-			peer.gets
-			peer.write(RESPONSE)
-			peer.close
-		end
+		peer.readpartial(1024) rescue nil
+		peer.write(RESPONSE)
+		peer.close
 	end
 end
 

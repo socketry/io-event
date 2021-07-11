@@ -2,11 +2,11 @@
 SERVERS = [
 	"compiled",
 	"event.rb",
-	"event-direct.rb",
+	"buffer.rb",
 	"loop.rb",
-	# "async.rb",
-	# "thread.rb",
-	# "fork.rb",
+	"async.rb",
+	"thread.rb",
+	"fork.rb",
 ]
 
 def default
@@ -22,7 +22,7 @@ end
 # @parameter connections [Integer] The number of simultaneous connections.
 # @parameter threads [Integer] The number of client threads to use.
 # @parameter duration [Integer] The duration of the test.
-def benchmark(connections: 8, threads: 1, duration: 10)
+def benchmark(connections: 8, threads: 1, duration: 1)
 	port = 9095
 	wrk = ENV.fetch('WRK', 'wrk')
 	

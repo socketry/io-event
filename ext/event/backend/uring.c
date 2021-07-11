@@ -27,6 +27,10 @@
 
 #include "pidfd.c"
 
+static const int DEBUG = 0;
+
+static const int EARLY_SUBMIT = 0;
+
 static VALUE Event_Backend_URing = Qnil;
 
 enum {URING_ENTRIES = 128};
@@ -211,10 +215,9 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
-	// fprintf(stderr, "poll_remove(%p, %p)\n", sqe, (void*)arguments->fiber);
+	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
 	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
-	io_uring_submit(&data->ring);
 	
 	rb_exc_raise(exception);
 };
@@ -243,12 +246,11 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
-	// fprintf(stderr, "poll_add(%p, %d, %d, %p)\n", sqe, descriptor, flags, (void*)fiber);
+	if (DEBUG) fprintf(stderr, "poll_add(%p, %d, %d, %p)\n", sqe, descriptor, flags, (void*)fiber);
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	// fprintf(stderr, "io_uring_submit\n");
-	// io_uring_submit(&data->ring);
+	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.data = data,
@@ -265,17 +267,9 @@ static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
-	struct timespec start, stop, duration;
-	
 	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	
-	Event_Backend_current_time(&start);
-	io_uring_submit(&data->ring);
-	Event_Backend_current_time(&stop);
-	
-	Event_Backend_elapsed_time(&start, &stop, &duration);
-	fprintf(stderr, "io_read:io_uring_submit duration=" PRINTF_TIMESPEC "s\n", PRINTF_TIMESPEC_ARGS(duration));
+	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
 	
 	VALUE result = Event_Backend_fiber_transfer(data->loop);
 	return RB_NUM2INT(result);
@@ -319,17 +313,9 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
-	struct timespec start, stop, duration;
-	
 	io_uring_prep_write(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	
-	Event_Backend_current_time(&start);
-	io_uring_submit(&data->ring);
-	Event_Backend_current_time(&stop);
-	
-	Event_Backend_elapsed_time(&start, &stop, &duration);
-	fprintf(stderr, "io_write:io_uring_submit duration=" PRINTF_TIMESPEC "s\n", PRINTF_TIMESPEC_ARGS(duration));
+	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
 	
 	return NUM2INT(Event_Backend_fiber_transfer(data->loop));
 }
@@ -413,7 +399,7 @@ struct select_arguments {
 static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
-	
+
 	io_uring_submit(&arguments->data->ring);
 	
 	struct io_uring_cqe *cqe = NULL;
@@ -453,16 +439,16 @@ unsigned select_process_completions(struct io_uring *ring) {
 		}
 		
 		VALUE fiber = (VALUE)cqe->user_data;
-		VALUE result = INT2NUM(cqe->res);
+		VALUE result = RB_INT2NUM(cqe->res);
 		
-		// fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
+		if (DEBUG) fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
+
+		io_uring_cq_advance(ring, 1);
 
 		Event_Backend_fiber_transfer_result(fiber, result);
 	}
 	
-	if (completed) {
-		io_uring_cq_advance(ring, completed);
-	}
+	// io_uring_cq_advance(ring, completed);
 	
 	return completed;
 }
@@ -493,7 +479,7 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	
 	result = select_process_completions(&data->ring);
 	
-	return INT2NUM(result);
+	return RB_INT2NUM(result);
 }
 
 void Init_Event_Backend_URing(VALUE Event_Backend) {
