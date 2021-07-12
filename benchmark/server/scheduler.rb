@@ -42,7 +42,11 @@ class Scheduler
 				fiber.transfer
 			end
 			
-			@selector.select(@ready.any? ? 0 : nil)
+			begin
+				@selector.select(@ready.any? ? 0 : nil)
+			rescue Errno::EINTR
+				# Ignore.
+			end
 		end
 	end
 	

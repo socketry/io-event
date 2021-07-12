@@ -2,7 +2,9 @@
 # frozen_string_literal: true
 
 require_relative 'scheduler'
+require 'io/nonblock'
 
+#scheduler = DirectScheduler.new
 scheduler = Scheduler.new
 Fiber.set_scheduler(scheduler)
 
@@ -15,10 +17,12 @@ Fiber.schedule do
 	
 	loop do
 		peer, address = server.accept
-		
-		peer.readpartial(1024) rescue nil
-		peer.write(RESPONSE)
-		peer.close
+
+		Fiber.schedule do
+			peer.readpartial(1024) rescue nil
+			peer.write(RESPONSE)
+			peer.close
+		end
 	end
 end
 

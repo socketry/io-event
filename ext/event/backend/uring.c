@@ -29,6 +29,7 @@
 
 static const int DEBUG = 0;
 
+// This option controls whether to all `io_uring_submit()` after every operation:
 static const int EARLY_SUBMIT = 0;
 
 static VALUE Event_Backend_URing = Qnil;
@@ -39,6 +40,7 @@ enum {URING_MAX_EVENTS = 128};
 struct Event_Backend_URing {
 	VALUE loop;
 	struct io_uring ring;
+	size_t pending;
 };
 
 void Event_Backend_URing_Type_mark(void *_data)
@@ -87,13 +89,15 @@ VALUE Event_Backend_URing_allocate(VALUE self) {
 	data->loop = Qnil;
 	data->ring.ring_fd = -1;
 	
+	data->pending = 0;
+
 	return instance;
 }
 
 VALUE Event_Backend_URing_initialize(VALUE self, VALUE loop) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
-	
+
 	data->loop = loop;
 	
 	int result = io_uring_queue_init(URING_ENTRIES, &data->ring, 0);
@@ -116,11 +120,33 @@ VALUE Event_Backend_URing_close(VALUE self) {
 	return Qnil;
 }
 
+static inline
+int io_uring_submit_flush(struct Event_Backend_URing *data) {
+	if (data->pending) {
+		if (DEBUG) fprintf(stderr, "io_uring_submit_flush(pending=%ld)\n", data->pending);
+		data->pending = 0;
+		return io_uring_submit(&data->ring);
+	}
+	
+	return 0;
+}
+
+static inline
+void io_uring_submit_pending(struct Event_Backend_URing *data) {
+	if (EARLY_SUBMIT) {
+		io_uring_submit(&data->ring);
+	} else {
+		data->pending += 1;
+	}
+}
+
 struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
 	while (sqe == NULL) {
 		io_uring_submit(&data->ring);
+		data->pending = 0;
+
 		sqe = io_uring_get_sqe(&data->ring);
 	}
 	
@@ -169,10 +195,12 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
-	
+
+	if (DEBUG) fprintf(stderr, "Event_Backend_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, process_wait_arguments.descriptor, POLLIN|POLLHUP|POLLERR);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	
+	io_uring_submit_pending(data);
+
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
@@ -228,7 +256,8 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	struct Event_Backend_URing *data = arguments->data;
 
 	VALUE result = Event_Backend_fiber_transfer(data->loop);
-	
+	if (DEBUG) fprintf(stderr, "io_wait:Event_Backend_fiber_transfer -> %d\n", RB_NUM2INT(result));
+
 	// We explicitly filter the resulting events based on the requested events.
 	// In some cases, poll will report events we didn't ask for.
 	short flags = arguments->flags & NUM2INT(result);
@@ -246,11 +275,11 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
-	if (DEBUG) fprintf(stderr, "poll_add(%p, %d, %d, %p)\n", sqe, descriptor, flags, (void*)fiber);
+	if (DEBUG) fprintf(stderr, "Event_Backend_URing_io_wait:io_uring_prep_poll_add(descriptor=%d, flags=%d, fiber=%p)\n", descriptor, flags, (void*)fiber);
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
+	io_uring_submit_pending(data);
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.data = data,
@@ -266,12 +295,16 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
-	
+
+	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
+
 	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
+	io_uring_submit_pending(data);
 	
 	VALUE result = Event_Backend_fiber_transfer(data->loop);
+	if (DEBUG) fprintf(stderr, "io_read:Event_Backend_fiber_transfer -> %d\n", RB_NUM2INT(result));
+
 	return RB_NUM2INT(result);
 }
 
@@ -313,11 +346,16 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	assert(sqe);
 	
+	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
+
 	io_uring_prep_write(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	if (EARLY_SUBMIT) io_uring_submit(&data->ring);
+	io_uring_submit_pending(data);
 	
-	return NUM2INT(Event_Backend_fiber_transfer(data->loop));
+	int result = RB_NUM2INT(Event_Backend_fiber_transfer(data->loop));
+	if (DEBUG) fprintf(stderr, "io_write:Event_Backend_fiber_transfer -> %d\n", result);
+
+	return result;
 }
 
 VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
@@ -400,8 +438,8 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 
-	io_uring_submit(&arguments->data->ring);
-	
+	io_uring_submit_flush(arguments->data);
+
 	struct io_uring_cqe *cqe = NULL;
 	arguments->result = io_uring_wait_cqe_timeout(&arguments->data->ring, &cqe, arguments->timeout);
 	
@@ -449,7 +487,9 @@ unsigned select_process_completions(struct io_uring *ring) {
 	}
 	
 	// io_uring_cq_advance(ring, completed);
-	
+
+	if (DEBUG) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
+
 	return completed;
 }
 
@@ -457,11 +497,15 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	int result = select_process_completions(&data->ring);
-	
-	if (result < 0) {
-		rb_syserr_fail(-result, strerror(-result));
-	} else if (result == 0) {
+	int result = 0;
+
+	// There can only be events waiting if we have been submitting them early:
+	if (EARLY_SUBMIT) {
+		result = select_process_completions(&data->ring);
+	}
+
+	// If we aren't submitting events early, we need to submit them and/or wait for them:
+	if (result == 0) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.data = data,
@@ -471,13 +515,16 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
+			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
 		} else {
-			io_uring_submit(&data->ring);
+			// The timeout specified required "nonblocking" behaviour so we just flush the SQ if required:
+			io_uring_submit_flush(data);
 		}
+
+		// After waiting/flushing the SQ, check if there are any completions:
+		result = select_process_completions(&data->ring);
 	}
-	
-	result = select_process_completions(&data->ring);
 	
 	return RB_INT2NUM(result);
 }

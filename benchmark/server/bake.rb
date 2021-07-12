@@ -1,12 +1,12 @@
 
 SERVERS = [
-	"compiled",
+	# "compiled",
 	"event.rb",
 	"buffer.rb",
-	"loop.rb",
-	"async.rb",
-	"thread.rb",
-	"fork.rb",
+	# "loop.rb",
+	# "async.rb",
+	# "thread.rb",
+	# "fork.rb",
 ]
 
 def default
