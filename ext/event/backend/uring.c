@@ -30,7 +30,7 @@
 static const int DEBUG = 0;
 
 // This option controls whether to all `io_uring_submit()` after every operation:
-static const int EARLY_SUBMIT = 0;
+static const int EARLY_SUBMIT = 1;
 
 static VALUE Event_Backend_URing = Qnil;
 
