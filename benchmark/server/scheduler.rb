@@ -29,8 +29,6 @@ class Scheduler
 		@waiting.delete(fiber)
 	end
 
-	EAGAIN = Errno::EAGAIN::Errno
-
 	def io_close(io)
 		@selector.io_close(io)
 	end
