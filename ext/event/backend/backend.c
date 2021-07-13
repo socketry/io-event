@@ -86,6 +86,82 @@ void Init_Event_Backend(VALUE Event_Backend) {
 #endif
 }
 
+struct wait_and_transfer_arguments {
+	struct Event_Backend *backend;
+	struct Event_Backend_Queue *waiting;
+};
+
+static void queue_pop(struct Event_Backend *backend, struct Event_Backend_Queue *waiting) {
+	if (waiting->behind) {
+		waiting->behind->infront = waiting->infront;
+	} else {
+		backend->waiting = waiting->infront;
+	}
+	
+	if (waiting->infront) {
+		waiting->infront->behind = waiting->behind;
+	} else {
+		backend->ready = waiting->behind;
+	}
+}
+
+static void queue_push(struct Event_Backend *backend, struct Event_Backend_Queue *waiting) {
+	if (backend->waiting) {
+		backend->waiting->behind = waiting;
+		waiting->infront = backend->waiting;
+	} else {
+		backend->ready = waiting;
+	}
+	
+	backend->waiting = waiting;
+}
+
+static VALUE wait_and_transfer(VALUE fiber) {
+	return Event_Backend_fiber_transfer(fiber);
+}
+
+static VALUE wait_and_transfer_ensure(VALUE _arguments) {
+	struct wait_and_transfer_arguments *arguments = (struct wait_and_transfer_arguments *)_arguments;
+	
+	queue_pop(arguments->backend, arguments->waiting);
+	
+	return Qnil;
+}
+
+void Event_Backend_wait_and_transfer(struct Event_Backend *backend, VALUE fiber)
+{
+	struct Event_Backend_Queue waiting = {
+		.behind = NULL,
+		.infront = NULL,
+		.fiber = rb_fiber_current()
+	};
+	
+	queue_push(backend, &waiting);
+	
+	struct wait_and_transfer_arguments arguments = {
+		.backend = backend,
+		.waiting = &waiting,
+	};
+	
+	rb_ensure(wait_and_transfer, fiber, wait_and_transfer_ensure, (VALUE)&arguments);
+}
+
+void Event_Backend_ready_pop(struct Event_Backend *backend)
+{
+	// Get the current tail and head of the queue:
+	struct Event_Backend_Queue *waiting = backend->waiting;
+	
+	// Process from head to tail in order:
+	// During this, more items may be appended to tail.
+	while (backend->ready) {
+		struct Event_Backend_Queue *ready = backend->ready;
+		
+		Event_Backend_fiber_transfer(ready->fiber);
+		
+		if (ready == waiting) break;
+	}
+}
+
 void Event_Backend_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration)
 {
 	if ((stop->tv_nsec - start->tv_nsec) < 0) {

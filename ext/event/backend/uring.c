@@ -38,7 +38,7 @@ enum {URING_ENTRIES = 128};
 enum {URING_MAX_EVENTS = 128};
 
 struct Event_Backend_URing {
-	VALUE loop;
+	struct Event_Backend backend;
 	struct io_uring ring;
 	size_t pending;
 };
@@ -46,7 +46,7 @@ struct Event_Backend_URing {
 void Event_Backend_URing_Type_mark(void *_data)
 {
 	struct Event_Backend_URing *data = _data;
-	rb_gc_mark(data->loop);
+	Event_Backend_mark(&data->backend);
 }
 
 static
@@ -86,7 +86,7 @@ VALUE Event_Backend_URing_allocate(VALUE self) {
 	struct Event_Backend_URing *data = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
-	data->loop = Qnil;
+	Event_Backend_initialize(&data->backend, Qnil);
 	data->ring.ring_fd = -1;
 	
 	data->pending = 0;
@@ -97,9 +97,8 @@ VALUE Event_Backend_URing_allocate(VALUE self) {
 VALUE Event_Backend_URing_initialize(VALUE self, VALUE loop) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
-
-	data->loop = loop;
 	
+	Event_Backend_initialize(&data->backend, loop);
 	int result = io_uring_queue_init(URING_ENTRIES, &data->ring, 0);
 	
 	if (result < 0) {
@@ -118,6 +117,33 @@ VALUE Event_Backend_URing_close(VALUE self) {
 	close_internal(data);
 	
 	return Qnil;
+}
+
+VALUE Event_Backend_URing_transfer(VALUE self, VALUE fiber)
+{
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	
+	Event_Backend_wait_and_transfer(&data->backend, fiber);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_URing_defer(VALUE self)
+{
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	
+	Event_Backend_defer(&data->backend);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_URing_ready_p(VALUE self) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	
+	return data->backend.ready ? Qtrue : Qfalse;
 }
 
 static inline
@@ -156,9 +182,8 @@ void io_uring_submit_now(struct Event_Backend_URing *data) {
 struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
-	if (sqe == NULL) {
-		io_uring_submit_now(data);
-
+	while (sqe == NULL) {
+		Event_Backend_defer(&data->backend, rb_fiber_current());
 		sqe = io_uring_get_sqe(&data->ring);
 	}
 	
@@ -176,7 +201,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_fiber_transfer(arguments->data->loop);
+	Event_Backend_fiber_transfer(arguments->data->backend.loop);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -265,7 +290,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct Event_Backend_URing *data = arguments->data;
 
-	VALUE result = Event_Backend_fiber_transfer(data->loop);
+	VALUE result = Event_Backend_fiber_transfer(data->backend.loop);
 	if (DEBUG) fprintf(stderr, "io_wait:Event_Backend_fiber_transfer -> %d\n", RB_NUM2INT(result));
 
 	// We explicitly filter the resulting events based on the requested events.
@@ -312,7 +337,7 @@ static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
 	
-	VALUE result = Event_Backend_fiber_transfer(data->loop);
+	VALUE result = Event_Backend_fiber_transfer(data->backend.loop);
 	if (DEBUG) fprintf(stderr, "io_read:Event_Backend_fiber_transfer -> %d\n", RB_NUM2INT(result));
 
 	return RB_NUM2INT(result);
@@ -362,7 +387,7 @@ int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
 	
-	int result = RB_NUM2INT(Event_Backend_fiber_transfer(data->loop));
+	int result = RB_NUM2INT(Event_Backend_fiber_transfer(data->backend.loop));
 	if (DEBUG) fprintf(stderr, "io_write:Event_Backend_fiber_transfer -> %d\n", result);
 
 	return result;
@@ -534,6 +559,8 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 	struct Event_Backend_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
 	
+	Event_Backend_ready_pop(&data->backend);
+	
 	int result = 0;
 
 	// There can only be events waiting if we have been submitting them early:
@@ -551,7 +578,7 @@ VALUE Event_Backend_URing_select(VALUE self, VALUE duration) {
 		
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!timeout_nonblocking(arguments.timeout)) {
+		if (!data->backend.ready && !timeout_nonblocking(arguments.timeout)) {
 			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
 		} else {
@@ -571,6 +598,9 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_URing, Event_Backend_URing_allocate);
 	rb_define_method(Event_Backend_URing, "initialize", Event_Backend_URing_initialize, 1);
+	rb_define_method(Event_Backend_URing, "transfer", Event_Backend_URing_transfer, 1);
+	rb_define_method(Event_Backend_URing, "defer", Event_Backend_URing_defer, 0);
+	rb_define_method(Event_Backend_URing, "ready?", Event_Backend_URing_ready_p, 0);
 	rb_define_method(Event_Backend_URing, "select", Event_Backend_URing_select, 1);
 	rb_define_method(Event_Backend_URing, "close", Event_Backend_URing_close, 0);
 	

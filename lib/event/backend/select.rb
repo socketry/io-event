@@ -26,12 +26,32 @@ module Event
 				
 				@readable = {}
 				@writable = {}
+				
+				@ready = []
 			end
 			
 			def close
 				@loop = nil
 				@readable = nil
 				@writable = nil
+			end
+			
+			def defer
+				fiber = Fiber.current
+				@ready.push(fiber)
+				@loop.transfer
+			ensure
+				# Linear scan :(
+				@ready.delete(fiber)
+			end
+			
+			def transfer(fiber)
+				@ready.push(Fiber.current)
+				fiber.transfer
+			end
+			
+			def ready?
+				@ready.any?
 			end
 			
 			def io_wait(fiber, io, events)
@@ -119,6 +139,10 @@ module Event
 			end
 			
 			def select(duration = nil)
+				while @ready.any?
+					@ready.pop.transfer
+				end
+				
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
 				
 				ready = Hash.new(0)

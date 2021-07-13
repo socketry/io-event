@@ -61,6 +61,50 @@ VALUE Event_Backend_process_status_wait(rb_pid_t pid);
 int Event_Backend_nonblock_set(int file_descriptor);
 void Event_Backend_nonblock_restore(int file_descriptor, int flags);
 
+struct Event_Backend_Queue {
+	struct Event_Backend_Queue *behind;
+	struct Event_Backend_Queue *infront;
+	
+	VALUE fiber;
+};
+
+struct Event_Backend {
+	VALUE loop;
+	
+	// Append to waiting.
+	struct Event_Backend_Queue *waiting;
+	// Process from ready.
+	struct Event_Backend_Queue *ready;
+};
+
+inline
+void Event_Backend_initialize(struct Event_Backend *backend, VALUE loop) {
+	backend->loop = loop;
+	backend->waiting = NULL;
+	backend->ready = NULL;
+}
+
+inline
+void Event_Backend_mark(struct Event_Backend *backend) {
+	rb_gc_mark(backend->loop);
+	
+	struct Event_Backend_Queue *ready = backend->ready;
+	while (ready) {
+		rb_gc_mark(ready->fiber);
+		ready = ready->behind;
+	}
+}
+
+void Event_Backend_wait_and_transfer(struct Event_Backend *backend, VALUE fiber);
+
+inline
+void Event_Backend_defer(struct Event_Backend *backend)
+{
+	Event_Backend_wait_and_transfer(backend, backend->loop);
+}
+
+void Event_Backend_ready_pop(struct Event_Backend *backend);
+
 void Event_Backend_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration);
 void Event_Backend_current_time(struct timespec *time);
 

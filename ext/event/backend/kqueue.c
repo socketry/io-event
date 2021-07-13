@@ -31,14 +31,14 @@ static VALUE Event_Backend_KQueue = Qnil;
 enum {KQUEUE_MAX_EVENTS = 64};
 
 struct Event_Backend_KQueue {
-	VALUE loop;
+	struct Event_Backend backend;
 	int descriptor;
 };
 
 void Event_Backend_KQueue_Type_mark(void *_data)
 {
 	struct Event_Backend_KQueue *data = _data;
-	rb_gc_mark(data->loop);
+	Event_Backend_mark(&data->backend);
 }
 
 static
@@ -78,7 +78,7 @@ VALUE Event_Backend_KQueue_allocate(VALUE self) {
 	struct Event_Backend_KQueue *data = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	data->loop = Qnil;
+	Event_Backend_initialize(&data->backend, Qnil);
 	data->descriptor = -1;
 	
 	return instance;
@@ -88,7 +88,7 @@ VALUE Event_Backend_KQueue_initialize(VALUE self, VALUE loop) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	data->loop = loop;
+	Event_Backend_initialize(&data->backend, loop);
 	int result = kqueue();
 	
 	if (result == -1) {
@@ -110,6 +110,33 @@ VALUE Event_Backend_KQueue_close(VALUE self) {
 	close_internal(data);
 	
 	return Qnil;
+}
+
+VALUE Event_Backend_KQueue_transfer(VALUE self, VALUE fiber)
+{
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	Event_Backend_wait_and_transfer(&data->backend, fiber);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_KQueue_defer(VALUE self)
+{
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	Event_Backend_defer(&data->backend);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_KQueue_ready_p(VALUE self) {
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	return data->backend.ready ? Qtrue : Qfalse;
 }
 
 struct process_wait_arguments {
@@ -159,7 +186,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_fiber_transfer(arguments->data->loop);
+	Event_Backend_fiber_transfer(arguments->data->backend.loop);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -280,7 +307,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Backend_fiber_transfer(arguments->data->loop);
+	VALUE result = Event_Backend_fiber_transfer(arguments->data->backend.loop);
 	
 	return INT2NUM(events_from_kqueue_filter(RB_NUM2INT(result)));
 }
@@ -525,6 +552,8 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
+	Event_Backend_ready_pop(&data->backend);
+	
 	struct select_arguments arguments = {
 		.data = data,
 		.count = KQUEUE_MAX_EVENTS,
@@ -548,7 +577,7 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	if (arguments.count == 0) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!timeout_nonblocking(arguments.timeout)) {
+		if (!data->backend.ready && !timeout_nonblocking(arguments.timeout)) {
 			arguments.count = KQUEUE_MAX_EVENTS;
 			
 			select_internal_without_gvl(&arguments);
@@ -570,6 +599,9 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);
 	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_initialize, 1);
+	rb_define_method(Event_Backend_KQueue, "transfer", Event_Backend_KQueue_transfer, 1);
+	rb_define_method(Event_Backend_KQueue, "defer", Event_Backend_KQueue_defer, 0);
+	rb_define_method(Event_Backend_KQueue, "ready?", Event_Backend_KQueue_ready_p, 0);
 	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
 	rb_define_method(Event_Backend_KQueue, "close", Event_Backend_KQueue_close, 0);
 	

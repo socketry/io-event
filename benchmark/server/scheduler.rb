@@ -7,7 +7,6 @@ class Scheduler
 	def initialize(selector = nil)
 		@fiber = Fiber.current
 		@selector = selector || Event::Backend.new(@fiber)
-		@ready = []
 		@pending = []
 		@waiting = {}
 		
@@ -37,19 +36,13 @@ class Scheduler
 	end
 	
 	def kernel_sleep(duration)
-		@ready << Fiber.current
-		@fiber.transfer
+		@selector.defer
 	end
 	
 	def close
-		while @ready.any? || @waiting.any?
-			@pending, @ready = @ready, @pending
-			while fiber = @pending.pop
-				fiber.transfer
-			end
-			
+		while @selector.ready? || @waiting.any?
 			begin
-				@selector.select(@ready.any? ? 0 : nil)
+				@selector.select(nil)
 			rescue Errno::EINTR
 				# Ignore.
 			end
@@ -61,8 +54,7 @@ class Scheduler
 	def fiber(&block)
 		fiber = Fiber.new(&block)
 		
-		@ready << Fiber.current
-		fiber.transfer
+		@selector.transfer(fiber)
 		
 		return fiber
 	end
