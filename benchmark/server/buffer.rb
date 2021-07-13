@@ -21,10 +21,11 @@ Fiber.schedule do
 	loop do
 		peer, address = server.accept
 		
-		scheduler.io_read(peer, REQUEST, 1)
-		scheduler.io_write(peer, RESPONSE, RESPONSE_SIZE)
-		
-		peer.close
+		Fiber.schedule do
+			scheduler.io_read(peer, REQUEST, 1)
+			scheduler.io_write(peer, RESPONSE, RESPONSE_SIZE)
+			peer.close
+		end
 	end
 end
 
