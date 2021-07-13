@@ -27,15 +27,14 @@
 
 #include "pidfd.c"
 
-static const int DEBUG = 1;
+static const int DEBUG = 0;
 
 // This option controls whether to all `io_uring_submit()` after every operation:
 static const int EARLY_SUBMIT = 0;
 
 static VALUE Event_Backend_URing = Qnil;
 
-enum {URING_ENTRIES = 128};
-enum {URING_MAX_EVENTS = 128};
+enum {URING_ENTRIES = 64};
 
 struct Event_Backend_URing {
 	struct Event_Backend backend;
@@ -146,44 +145,61 @@ VALUE Event_Backend_URing_ready_p(VALUE self) {
 	return data->backend.ready ? Qtrue : Qfalse;
 }
 
-static inline
+static
 int io_uring_submit_flush(struct Event_Backend_URing *data) {
 	if (data->pending) {
 		if (DEBUG) fprintf(stderr, "io_uring_submit_flush(pending=%ld)\n", data->pending);
 		
-		data->pending = 0;
-
+		// Try to submit:
 		int result = io_uring_submit(&data->ring);
-		if (result < 0) {
-			rb_syserr_fail(-result, "io_uring_submit");
-		} else {
-			if (DEBUG) fprintf(stderr, "io_uring_submit -> %d\n", result);
+
+		if (result >= 0) {
+			// If it was submitted, reset pending count:
+			data->pending = 0;
+		} else if (result != -EBUSY && result != -EAGAIN) {
+			rb_syserr_fail(-result, "io_uring_submit_flush");
 		}
+
+		return result;
 	}
 	
 	return 0;
 }
 
-static inline
-void io_uring_submit_pending(struct Event_Backend_URing *data) {
-	if (EARLY_SUBMIT) {
-		io_uring_submit(&data->ring);
-	} else {
-		data->pending += 1;
+static
+int io_uring_submit_now(struct Event_Backend_URing *data) {
+	while (true) {
+		int result = io_uring_submit(&data->ring);
+		
+		if (result >= 0) {
+			data->pending = 0;
+			return result;
+		}
+
+		if (result == -EBUSY || result == -EAGAIN) {
+			Event_Backend_defer(&data->backend);
+		} else {
+			rb_syserr_fail(-result, "io_uring_submit_now");
+		}
 	}
 }
 
-static inline
-void io_uring_submit_now(struct Event_Backend_URing *data) {
-	io_uring_submit(&data->ring);
-	data->pending = 0;
+static
+void io_uring_submit_pending(struct Event_Backend_URing *data) {
+	if (EARLY_SUBMIT) {
+		io_uring_submit_now(data);
+	} else {
+		data->pending += 1;
+	}
 }
 
 struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
 	while (sqe == NULL) {
-		Event_Backend_defer(&data->backend, rb_fiber_current());
+		// The submit queue is full, we need to drain it:	
+		io_uring_submit_now(data);
+
 		sqe = io_uring_get_sqe(&data->ring);
 	}
 	
@@ -229,7 +245,6 @@ VALUE Event_Backend_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE
 	rb_update_max_fd(process_wait_arguments.descriptor);
 	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-	assert(sqe);
 
 	if (DEBUG) fprintf(stderr, "Event_Backend_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, process_wait_arguments.descriptor, POLLIN|POLLHUP|POLLERR);
@@ -276,7 +291,6 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct Event_Backend_URing *data = arguments->data;
 	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-	assert(sqe);
 	
 	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
@@ -306,7 +320,6 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 	
 	int descriptor = Event_Backend_io_descriptor(io);
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-	assert(sqe);
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
@@ -329,7 +342,6 @@ VALUE Event_Backend_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE event
 
 static int io_read(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-	assert(sqe);
 
 	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
 
@@ -379,7 +391,6 @@ VALUE Event_Backend_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffe
 static
 int io_write(struct Event_Backend_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-	assert(sqe);
 	
 	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
 
@@ -429,7 +440,7 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 
 #endif
 
-static const int ASYNC_CLOSE = 0;
+static const int ASYNC_CLOSE = 2;
 
 VALUE Event_Backend_URing_io_close(VALUE self, VALUE io) {
 	struct Event_Backend_URing *data = NULL;
@@ -439,7 +450,6 @@ VALUE Event_Backend_URing_io_close(VALUE self, VALUE io) {
 
 	if (ASYNC_CLOSE) {
 		struct io_uring_sqe *sqe = io_get_sqe(data);
-		assert(sqe);
 		
 		io_uring_prep_close(sqe, descriptor);
 		io_uring_sqe_set_data(sqe, NULL);
