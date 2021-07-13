@@ -27,7 +27,7 @@
 
 #include "pidfd.c"
 
-static const int DEBUG = 0;
+static const int DEBUG = 1;
 
 // This option controls whether to all `io_uring_submit()` after every operation:
 static const int EARLY_SUBMIT = 0;
@@ -124,8 +124,15 @@ static inline
 int io_uring_submit_flush(struct Event_Backend_URing *data) {
 	if (data->pending) {
 		if (DEBUG) fprintf(stderr, "io_uring_submit_flush(pending=%ld)\n", data->pending);
+		
 		data->pending = 0;
-		return io_uring_submit(&data->ring);
+
+		int result = io_uring_submit(&data->ring);
+		if (result < 0) {
+			rb_syserr_fail(-result, "io_uring_submit");
+		} else {
+			if (DEBUG) fprintf(stderr, "io_uring_submit -> %d\n", result);
+		}
 	}
 	
 	return 0;
@@ -140,17 +147,20 @@ void io_uring_submit_pending(struct Event_Backend_URing *data) {
 	}
 }
 
+static inline
+void io_uring_submit_now(struct Event_Backend_URing *data) {
+	io_uring_submit(&data->ring);
+	data->pending = 0;
+}
+
 struct io_uring_sqe * io_get_sqe(struct Event_Backend_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
-	while (sqe == NULL) {
-		io_uring_submit(&data->ring);
-		data->pending = 0;
+	if (sqe == NULL) {
+		io_uring_submit_now(data);
 
 		sqe = io_uring_get_sqe(&data->ring);
 	}
-	
-	// fprintf(stderr, "io_get_sqe -> %p\n", sqe);
 	
 	return sqe;
 }
@@ -394,6 +404,32 @@ VALUE Event_Backend_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buff
 
 #endif
 
+static const int ASYNC_CLOSE = 0;
+
+VALUE Event_Backend_URing_io_close(VALUE self, VALUE io) {
+	struct Event_Backend_URing *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_URing, &Event_Backend_URing_Type, data);
+	
+	int descriptor = Event_Backend_io_descriptor(io);
+
+	if (ASYNC_CLOSE) {
+		struct io_uring_sqe *sqe = io_get_sqe(data);
+		assert(sqe);
+		
+		io_uring_prep_close(sqe, descriptor);
+		io_uring_sqe_set_data(sqe, NULL);
+		if (ASYNC_CLOSE == 1)
+			io_uring_submit_now(data);
+		else if (ASYNC_CLOSE == 2)
+			io_uring_submit_pending(data);
+	} else {
+		close(descriptor);
+	}
+
+	// We don't wait for the result of close since it has no use in pratice:
+	return Qtrue;
+}
+
 static
 struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec *storage) {
 	if (duration == Qnil) {
@@ -473,6 +509,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 		
 		// If the operation was cancelled, or the operation has no user data (fiber):
 		if (cqe->res == -ECANCELED || cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
+			io_uring_cq_advance(ring, 1);
 			continue;
 		}
 		
@@ -543,6 +580,8 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 4);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 4);
 #endif
-	
+
+	rb_define_method(Event_Backend_URing, "io_close", Event_Backend_URing_io_close, 1);
+
 	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }

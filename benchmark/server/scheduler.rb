@@ -29,6 +29,12 @@ class Scheduler
 	ensure
 		@waiting.delete(fiber)
 	end
+
+	EAGAIN = Errno::EAGAIN::Errno
+
+	def io_close(io)
+		@selector.io_close(io)
+	end
 	
 	def kernel_sleep(duration)
 		@ready << Fiber.current
@@ -48,6 +54,8 @@ class Scheduler
 				# Ignore.
 			end
 		end
+	rescue Interrupt
+		# Exit.
 	end
 	
 	def fiber(&block)
