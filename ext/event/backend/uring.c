@@ -620,8 +620,8 @@ void Init_Event_Backend_URing(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_URing, "io_read", Event_Backend_URing_io_read, 4);
 	rb_define_method(Event_Backend_URing, "io_write", Event_Backend_URing_io_write, 4);
 #endif
-
+	
 	rb_define_method(Event_Backend_URing, "io_close", Event_Backend_URing_io_close, 1);
-
+	
 	rb_define_method(Event_Backend_URing, "process_wait", Event_Backend_URing_process_wait, 3);
 }

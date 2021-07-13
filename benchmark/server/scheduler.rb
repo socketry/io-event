@@ -10,6 +10,10 @@ class Scheduler
 		@pending = []
 		@waiting = {}
 		
+		unless @selector.respond_to?(:io_close)
+			instance_eval{undef io_close}
+		end
+		
 		@mutex = Mutex.new
 	end
 	
