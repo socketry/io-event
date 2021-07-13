@@ -532,7 +532,7 @@ void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	rb_define_method(Event_Backend_EPoll, "initialize", Event_Backend_EPoll_initialize, 1);
 	rb_define_method(Event_Backend_EPoll, "transfer", Event_Backend_EPoll_transfer, 1);
 	rb_define_method(Event_Backend_EPoll, "defer", Event_Backend_EPoll_defer, 0);
-	rb_define_method(Event_Backend_EPoll, "defered?", Event_Backend_EPoll_ready_p, 0);
+	rb_define_method(Event_Backend_EPoll, "ready?", Event_Backend_EPoll_ready_p, 0);
 	rb_define_method(Event_Backend_EPoll, "select", Event_Backend_EPoll_select, 1);
 	rb_define_method(Event_Backend_EPoll, "close", Event_Backend_EPoll_close, 0);
 	
