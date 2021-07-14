@@ -36,19 +36,36 @@ module Event
 				@writable = nil
 			end
 			
+			Queue = Struct.new(:fiber) do
+				def transfer(*arguments)
+					fiber&.transfer(*arguments)
+				end
+				
+				def alive?
+					fiber&.alive?
+				end
+				
+				def nullify
+					self.fiber = nil
+				end
+			end
+			
 			def transfer(fiber, *arguments)
-				@ready.push(Fiber.current)
+				queue = Queue.new(Fiber.current)
+				@ready.push(queue)
+				
 				fiber.transfer(*arguments)
-			rescue
-				@ready.delete(fiber)
+			ensure
+				queue.nullify
 			end
 			
 			def yield
-				fiber = Fiber.current
-				@ready.push(fiber)
+				queue = Queue.new(Fiber.current)
+				@ready.push(queue)
+				
 				@loop.transfer
-			rescue
-				@ready.delete(fiber)
+			ensure
+				queue.nullify
 			end
 			
 			def push(fiber)
@@ -56,10 +73,12 @@ module Event
 			end
 			
 			def raise(fiber, *arguments)
-				@ready.push(Fiber.current)
+				queue = Queue.new(Fiber.current)
+				@ready.push(queue)
+				
 				fiber.raise(*arguments)
-			rescue
-				@ready.delete(fiber)
+			ensure
+				queue.nullify
 			end
 			
 			def ready?
@@ -150,7 +169,7 @@ module Event
 				thread&.kill
 			end
 			
-			def select(duration = nil)
+			private def pop_ready
 				if @ready.any?
 					ready = @ready
 					@ready = Array.new
@@ -159,6 +178,12 @@ module Event
 						fiber.transfer if fiber.alive?
 					end
 					
+					return true
+				end
+			end
+			
+			def select(duration = nil)
+				if pop_ready
 					duration = 0
 				end
 				
