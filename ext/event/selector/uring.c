@@ -313,7 +313,8 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
 	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
-	
+	io_uring_submit_now(data);
+
 	rb_exc_raise(exception);
 };
 
