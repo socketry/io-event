@@ -31,7 +31,7 @@ int main (int argc, char *argv[]) {
 	err = bind(server_fd, (struct sockaddr *) &server, sizeof(server));
 	if (err < 0) on_error("Could not bind socket\n");
 	
-	err = listen(server_fd, 128);
+	err = listen(server_fd, SOMAXCONN);
 	if (err < 0) on_error("Could not listen on socket\n");
 	
 	printf("Server is listening on %d\n", port);

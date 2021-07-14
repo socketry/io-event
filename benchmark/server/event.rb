@@ -14,6 +14,7 @@ RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 
 Fiber.schedule do
 	server = TCPServer.new('localhost', port)
+	server.listen(Socket::SOMAXCONN)
 	
 	loop do
 		peer, address = server.accept

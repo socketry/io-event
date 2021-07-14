@@ -590,7 +590,7 @@ VALUE Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	select_internal_with_gvl(&arguments);
 	
 	// If there were no pending events, if we have a timeout, wait for more events:
-	if (arguments.count == 0 && !ready) {
+	if (!ready && arguments.count == 0) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {

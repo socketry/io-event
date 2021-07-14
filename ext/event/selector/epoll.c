@@ -522,7 +522,8 @@ VALUE Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	};
 	
 	select_internal_with_gvl(&arguments);
-	
+
+	// If the ready list was empty and no events were processed:	
 	if (!ready && arguments.count == 0) {
 		arguments.timeout = make_timeout(duration);
 		

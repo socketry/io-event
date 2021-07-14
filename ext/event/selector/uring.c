@@ -29,9 +29,6 @@
 
 static const int DEBUG = 0;
 
-// This option controls whether to all `io_uring_submit()` after every operation:
-static const int EARLY_SUBMIT = 1;
-
 static VALUE Event_Selector_URing = Qnil;
 
 enum {URING_ENTRIES = 64};
@@ -204,11 +201,7 @@ int io_uring_submit_now(struct Event_Selector_URing *data) {
 
 static
 void io_uring_submit_pending(struct Event_Selector_URing *data) {
-	if (EARLY_SUBMIT) {
-		io_uring_submit_now(data);
-	} else {
-		data->pending += 1;
-	}
+	data->pending += 1;
 }
 
 struct io_uring_sqe * io_get_sqe(struct Event_Selector_URing *data) {
@@ -346,6 +339,8 @@ VALUE Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
+	
+	// If we are going to wait, we assume that we are waiting for a while:
 	io_uring_submit_pending(data);
 	
 	struct io_wait_arguments io_wait_arguments = {
@@ -366,7 +361,7 @@ static int io_read(struct Event_Selector_URing *data, VALUE fiber, int descripto
 
 	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
-	io_uring_submit_pending(data);
+	io_uring_submit_now(data);
 	
 	VALUE result = Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 	if (DEBUG) fprintf(stderr, "io_read:Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
@@ -459,7 +454,7 @@ VALUE Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 
 #endif
 
-static const int ASYNC_CLOSE = 2;
+static const int ASYNC_CLOSE = 1;
 
 VALUE Event_Selector_URing_io_close(VALUE self, VALUE io) {
 	struct Event_Selector_URing *data = NULL;
@@ -472,10 +467,7 @@ VALUE Event_Selector_URing_io_close(VALUE self, VALUE io) {
 		
 		io_uring_prep_close(sqe, descriptor);
 		io_uring_sqe_set_data(sqe, NULL);
-		if (ASYNC_CLOSE == 1)
-			io_uring_submit_now(data);
-		else if (ASYNC_CLOSE == 2)
-			io_uring_submit_pending(data);
+		io_uring_submit_now(data);
 	} else {
 		close(descriptor);
 	}
@@ -588,17 +580,12 @@ VALUE Event_Selector_URing_select(VALUE self, VALUE duration) {
 	struct Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
 	
-	Event_Selector_queue_flush(&data->backend);
+	int ready = Event_Selector_queue_flush(&data->backend);
 	
-	int result = 0;
+	int result = select_process_completions(&data->ring);
 
-	// There can only be events waiting if we have been submitting them early:
-	if (EARLY_SUBMIT) {
-		result = select_process_completions(&data->ring);
-	}
-
-	// If we aren't submitting events early, we need to submit them and/or wait for them:
-	if (result == 0) {
+	// If the ready list was empty and we didn't process any completions:
+	if (!ready && result == 0) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.data = data,
