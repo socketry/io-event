@@ -30,21 +30,21 @@ dir_config(extension_name)
 
 $CFLAGS << " -Wall"
 
-$srcs = ["event.c", "backend/backend.c"]
-$VPATH << "$(srcdir)/backend"
+$srcs = ["event.c", "selector/selector.c"]
+$VPATH << "$(srcdir)/selector"
 
 have_func('&rb_fiber_transfer')
 
 if have_library('uring') and have_header('liburing.h')
-	$srcs << "backend/uring.c"
+	$srcs << "selector/uring.c"
 end
 
 if have_header('sys/epoll.h')
-	$srcs << "backend/epoll.c"
+	$srcs << "selector/epoll.c"
 end
 
 if have_header('sys/event.h')
-	$srcs << "backend/kqueue.c"
+	$srcs << "selector/kqueue.c"
 end
 
 have_func("rb_io_descriptor")

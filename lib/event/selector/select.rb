@@ -19,7 +19,7 @@
 # THE SOFTWARE.
 
 module Event
-	module Backend
+	module Selector
 		class Select
 			def initialize(loop)
 				@loop = loop

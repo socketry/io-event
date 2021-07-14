@@ -8,7 +8,7 @@ require 'socket'
 require 'io/nonblock'
 
 local, remote = UNIXSocket.pair
-selector = Event::Backend::URing.new(Fiber.current)
+selector = Event::Selector::URing.new(Fiber.current)
 
 local.nonblock = false
 remote.nonblock = false

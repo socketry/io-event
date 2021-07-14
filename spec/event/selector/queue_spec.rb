@@ -64,10 +64,10 @@ RSpec.shared_examples_for "queue" do
 	end
 end
 
-Event::Backend.constants.each do |name|
-	backend = Event::Backend.const_get(name)
+Event::Selector.constants.each do |name|
+	selector = Event::Selector.const_get(name)
 	
-	RSpec.describe backend do
+	RSpec.describe selector do
 		it_behaves_like "queue"
 	end
 end

@@ -6,8 +6,8 @@ require 'console'
 
 require_relative '../lib/event'
 
-Event::Backend.constants.each do |name|
-	backend = Event::Backend.const_get(name).new(Fiber.current)
+Event::Selector.constants.each do |name|
+	selector = Event::Selector.const_get(name).new(Fiber.current)
 	
 	fibers = 256.times.map do |index|
 		input, output = IO.pipe
@@ -15,7 +15,7 @@ Event::Backend.constants.each do |name|
 		
 		fiber = Fiber.new do
 			while true
-				backend.io_wait(fiber, input, Event::READABLE)
+				selector.io_wait(fiber, input, Event::READABLE)
 			end
 		rescue RuntimeError
 			# Ignore.
@@ -28,10 +28,10 @@ Event::Backend.constants.each do |name|
 	# Start initial wait:
 	fibers.each(&:transfer)
 	
-	Console.logger.measure(backend) do
+	Console.logger.measure(selector) do
 		i = 10_000
 		while (i -= 1) > 0
-			backend.select(0)
+			selector.select(0)
 		end
 	end
 	

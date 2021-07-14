@@ -20,6 +20,8 @@
 
 #pragma once
 
-#define EVENT_BACKEND_EPOLL
+#include <ruby.h>
 
-void Init_Event_Backend_EPoll(VALUE Event_Backend);
+#define EVENT_SELECTOR_KQUEUE
+
+void Init_Event_Selector_KQueue(VALUE Event_Selector);

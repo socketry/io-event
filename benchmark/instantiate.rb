@@ -7,10 +7,10 @@ require_relative '../lib/event'
 
 GC.disable
 
-Event::Backend.constants.each do |name|
+Event::Selector.constants.each do |name|
 	puts "Creating #{name}..."
 	1000.times.map do |i|
 		puts i
-		backend = Event::Backend.const_get(name).new(Fiber.current)
+		selector = Event::Selector.const_get(name).new(Fiber.current)
 	end
 end

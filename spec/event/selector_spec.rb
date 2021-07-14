@@ -311,10 +311,10 @@ RSpec.shared_examples_for "selector" do
 	end
 end
 
-Event::Backend.constants.each do |name|
-	backend = Event::Backend.const_get(name)
+Event::Selector.constants.each do |name|
+	klass = Event::Selector.const_get(name)
 	
-	RSpec.describe backend do
+	RSpec.describe(klass) do
 		it_behaves_like "selector"
 	end
 end

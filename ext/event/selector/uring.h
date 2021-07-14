@@ -22,6 +22,7 @@
 
 #include <ruby.h>
 
-#define EVENT_BACKEND_KQUEUE
+#define EVENT_SELECTOR_URING
 
-void Init_Event_Backend_KQueue(VALUE Event_Backend);
+void Init_Event_Selector_URing(VALUE Event_Selector);
+VALUE Event_Selector_URing_select(VALUE self, VALUE duration);

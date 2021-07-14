@@ -18,9 +18,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
+require_relative 'selector/select'
 
 module Event
-	class Selector
+	module Selector
+		def self.default(env = ENV)
+			if name = env['EVENT_SELECTOR']&.to_sym
+				if Event::Selector.const_defined?(name)
+					return Event::Selector.const_get(name)
+				else
+					warn "Could not find EVENT_SELECTOR=#{name}!"
+				end
+			end
+			
+			if self.const_defined?(:URing)
+				return Event::Selector::URing
+			elsif self.const_defined?(:KQueue)
+				return Event::Selector::KQueue
+			elsif self.const_defined?(:EPoll)
+				return Event::Selector::EPoll
+			else
+				return Event::Selector::Select
+			end
+		end
+		
+		def self.new(...)
+			default.new(...)
+		end
 	end
 end

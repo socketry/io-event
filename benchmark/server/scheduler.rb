@@ -6,7 +6,7 @@ require 'fiber'
 class Scheduler
 	def initialize(selector = nil)
 		@fiber = Fiber.current
-		@selector = selector || Event::Backend.new(@fiber)
+		@selector = selector || Event::Selector.new(@fiber)
 		@pending = []
 		@waiting = {}
 		

@@ -19,10 +19,10 @@
 // THE SOFTWARE.
 
 #include "event.h"
-#include "backend/backend.h"
+#include "selector/selector.h"
 
 VALUE Event = Qnil;
-VALUE Event_Backend = Qnil;
+VALUE Event_Selector = Qnil;
 
 void Init_event()
 {
@@ -31,19 +31,19 @@ void Init_event()
 	#endif
 	
 	Event = rb_define_module("Event");
-	Event_Backend = rb_define_module_under(Event, "Backend");
+	Event_Selector = rb_define_module_under(Event, "Selector");
 	
-	Init_Event_Backend(Event_Backend);
+	Init_Event_Selector(Event_Selector);
 	
-	#ifdef EVENT_BACKEND_URING
-	Init_Event_Backend_URing(Event_Backend);
+	#ifdef EVENT_SELECTOR_URING
+	Init_Event_Selector_URing(Event_Selector);
 	#endif
 	
-	#ifdef EVENT_BACKEND_EPOLL
-	Init_Event_Backend_EPoll(Event_Backend);
+	#ifdef EVENT_SELECTOR_EPOLL
+	Init_Event_Selector_EPoll(Event_Selector);
 	#endif
 	
-	#ifdef EVENT_BACKEND_KQUEUE
-	Init_Event_Backend_KQueue(Event_Backend);
+	#ifdef EVENT_SELECTOR_KQUEUE
+	Init_Event_Selector_KQueue(Event_Selector);
 	#endif
 }
