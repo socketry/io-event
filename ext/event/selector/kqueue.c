@@ -379,7 +379,7 @@ VALUE io_read_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(READABLE));
+			Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_READABLE));
 		} else {
 			rb_sys_fail("Event_Selector_KQueue_io_read");
 		}
@@ -454,7 +454,7 @@ VALUE io_write_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(WRITABLE));
+			Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_WRITABLE));
 		} else {
 			rb_sys_fail("Event_Selector_KQueue_io_write");
 		}
