@@ -57,7 +57,7 @@ module Event
 			
 			def raise(fiber, *arguments)
 				@ready.push(Fiber.current)
-				@fiber.raise(*arguments)
+				fiber.raise(*arguments)
 			ensure
 				@ready.delete(fiber)
 			end

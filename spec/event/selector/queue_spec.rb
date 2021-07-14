@@ -62,6 +62,28 @@ RSpec.shared_examples_for "queue" do
 			expect(sequence).to be == [:select, :yield, :select, :resume]
 		end
 	end
+	
+	describe '#raise' do
+		it "can raise exception on fiber" do
+			sequence = []
+			
+			fiber = Fiber.new do
+				begin
+					subject.yield
+				rescue
+					sequence << :rescue
+				end
+			end
+			
+			subject.push(fiber)
+			subject.select(0)
+			
+			sequence << :raise
+			subject.raise(fiber, "Boom")
+			
+			expect(sequence).to be == [:raise, :rescue]
+		end
+	end
 end
 
 Event::Selector.constants.each do |name|
