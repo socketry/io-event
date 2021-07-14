@@ -563,16 +563,16 @@ unsigned select_process_completions(struct io_uring *ring) {
 		VALUE result = RB_INT2NUM(cqe->res);
 		
 		if (DEBUG) fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
-
+		
 		io_uring_cq_advance(ring, 1);
-
+		
 		Event_Selector_fiber_transfer(fiber, 1, &result);
 	}
 	
 	// io_uring_cq_advance(ring, completed);
-
+	
 	if (DEBUG) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
-
+	
 	return completed;
 }
 
