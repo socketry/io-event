@@ -122,14 +122,32 @@ VALUE Event_Backend_EPoll_transfer(VALUE self, VALUE fiber)
 	return Qnil;
 }
 
-VALUE Event_Backend_EPoll_defer(VALUE self)
+VALUE Event_Backend_EPoll_yield(VALUE self)
 {
 	struct Event_Backend_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
-	Event_Backend_defer(&data->backend);
+	Event_Backend_yield(&data->backend);
 	
 	return Qnil;
+}
+
+VALUE Event_Backend_EPoll_push(VALUE self, VALUE fiber)
+{
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+	
+	Event_Backend_queue_push(&data->backend, fiber);
+	
+	return Qnil;
+}
+
+VALUE Event_Backend_EPoll_raise(int argc, VALUE *argv, VALUE self)
+{
+	struct Event_Backend_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
+	
+	return Event_Backend_wait_and_raise(&data->backend, argc, argv);
 }
 
 VALUE Event_Backend_EPoll_ready_p(VALUE self) {
@@ -150,7 +168,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_fiber_transfer(arguments->data->backend.loop);
+	Event_Backend_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -197,9 +215,9 @@ static inline
 uint32_t epoll_flags_from_events(int events) {
 	uint32_t flags = 0;
 	
-	if (events & READABLE) flags |= EPOLLIN;
+	if (events & EVENT_READABLE) flags |= EPOLLIN;
 	if (events & PRIORITY) flags |= EPOLLPRI;
-	if (events & WRITABLE) flags |= EPOLLOUT;
+	if (events & EVENT_WRITABLE) flags |= EPOLLOUT;
 	
 	flags |= EPOLLRDHUP;
 	flags |= EPOLLONESHOT;
@@ -243,7 +261,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Backend_fiber_transfer(arguments->data->backend.loop);
+	VALUE result = Event_Backend_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
@@ -496,7 +514,7 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	struct Event_Backend_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_EPoll, &Event_Backend_EPoll_Type, data);
 	
-	Event_Backend_ready_pop(&data->backend);
+	int ready = Event_Backend_queue_flush(&data->backend);
 	
 	struct select_arguments arguments = {
 		.data = data,
@@ -505,10 +523,10 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 	
 	select_internal_with_gvl(&arguments);
 	
-	if (arguments.count == 0) {
+	if (!ready && arguments.count == 0) {
 		arguments.timeout = make_timeout(duration);
 		
-		if (!data->backend.ready && arguments.timeout != 0) {
+		if (arguments.timeout != 0) {
 			select_internal_without_gvl(&arguments);
 		}
 	}
@@ -519,7 +537,7 @@ VALUE Event_Backend_EPoll_select(VALUE self, VALUE duration) {
 		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
-		Event_Backend_fiber_transfer_result(fiber, result);
+		Event_Backend_fiber_transfer(fiber, 1, &result);
 	}
 	
 	return INT2NUM(arguments.count);
@@ -530,9 +548,14 @@ void Init_Event_Backend_EPoll(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_EPoll, Event_Backend_EPoll_allocate);
 	rb_define_method(Event_Backend_EPoll, "initialize", Event_Backend_EPoll_initialize, 1);
-	rb_define_method(Event_Backend_EPoll, "transfer", Event_Backend_EPoll_transfer, 1);
-	rb_define_method(Event_Backend_EPoll, "defer", Event_Backend_EPoll_defer, 0);
+	
+	rb_define_method(Event_Backend_EPoll, "transfer", Event_Backend_EPoll_transfer, -1);
+	rb_define_method(Event_Backend_EPoll, "yield", Event_Backend_EPoll_yield, 0);
+	rb_define_method(Event_Backend_EPoll, "push", Event_Backend_EPoll_push, 1);
+	rb_define_method(Event_Backend_EPoll, "raise", Event_Backend_EPoll_raise, -1);
+	
 	rb_define_method(Event_Backend_EPoll, "ready?", Event_Backend_EPoll_ready_p, 0);
+	
 	rb_define_method(Event_Backend_EPoll, "select", Event_Backend_EPoll_select, 1);
 	rb_define_method(Event_Backend_EPoll, "close", Event_Backend_EPoll_close, 0);
 	

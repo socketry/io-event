@@ -112,24 +112,40 @@ VALUE Event_Backend_KQueue_close(VALUE self) {
 	return Qnil;
 }
 
-VALUE Event_Backend_KQueue_transfer(VALUE self, VALUE fiber)
+VALUE Event_Backend_KQueue_transfer(int argc, VALUE *argv, VALUE self)
 {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	Event_Backend_wait_and_transfer(&data->backend, fiber);
+	return Event_Backend_wait_and_transfer(&data->backend, argc, argv);
+}
+
+VALUE Event_Backend_KQueue_yield(VALUE self)
+{
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	Event_Backend_yield(&data->backend);
 	
 	return Qnil;
 }
 
-VALUE Event_Backend_KQueue_defer(VALUE self)
+VALUE Event_Backend_KQueue_push(VALUE self, VALUE fiber)
 {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	Event_Backend_defer(&data->backend);
+	Event_Backend_queue_push(&data->backend, fiber);
 	
 	return Qnil;
+}
+
+VALUE Event_Backend_KQueue_raise(int argc, VALUE *argv, VALUE self)
+{
+	struct Event_Backend_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
+	
+	return Event_Backend_wait_and_raise(&data->backend, argc, argv);
 }
 
 VALUE Event_Backend_KQueue_ready_p(VALUE self) {
@@ -186,7 +202,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Backend_fiber_transfer(arguments->data->backend.loop);
+	Event_Backend_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
 	return Event_Backend_process_status_wait(arguments->pid);
 }
@@ -224,7 +240,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	int count = 0;
 	struct kevent kevents[2] = {0};
 	
-	if (events & READABLE) {
+	if (events & EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
@@ -239,7 +255,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 		count++;
 	}
 	
-	if (events & WRITABLE) {
+	if (events & EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
@@ -261,7 +277,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 	int count = 0;
 	struct kevent kevents[2] = {0};
 	
-	if (events & READABLE) {
+	if (events & EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
 		kevents[count].flags = EV_DELETE;
@@ -269,7 +285,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 		count++;
 	}
 	
-	if (events & WRITABLE) {
+	if (events & EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
 		kevents[count].flags = EV_DELETE;
@@ -297,8 +313,8 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 
 static inline
 int events_from_kqueue_filter(int filter) {
-	if (filter == EVFILT_READ) return READABLE;
-	if (filter == EVFILT_WRITE) return WRITABLE;
+	if (filter == EVFILT_READ) return EVENT_READABLE;
+	if (filter == EVFILT_WRITE) return EVENT_WRITABLE;
 	
 	return 0;
 }
@@ -307,7 +323,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Backend_fiber_transfer(arguments->data->backend.loop);
+	VALUE result = Event_Backend_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
 	return INT2NUM(events_from_kqueue_filter(RB_NUM2INT(result)));
 }
@@ -552,7 +568,7 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	struct Event_Backend_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Backend_KQueue, &Event_Backend_KQueue_Type, data);
 	
-	Event_Backend_ready_pop(&data->backend);
+	int ready = Event_Backend_queue_flush(&data->backend);
 	
 	struct select_arguments arguments = {
 		.data = data,
@@ -574,10 +590,10 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 	select_internal_with_gvl(&arguments);
 	
 	// If there were no pending events, if we have a timeout, wait for more events:
-	if (arguments.count == 0) {
+	if (arguments.count == 0 && !ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!data->backend.ready && !timeout_nonblocking(arguments.timeout)) {
+		if (!timeout_nonblocking(arguments.timeout)) {
 			arguments.count = KQUEUE_MAX_EVENTS;
 			
 			select_internal_without_gvl(&arguments);
@@ -588,7 +604,7 @@ VALUE Event_Backend_KQueue_select(VALUE self, VALUE duration) {
 		VALUE fiber = (VALUE)arguments.events[i].udata;
 		VALUE result = INT2NUM(arguments.events[i].filter);
 		
-		Event_Backend_fiber_transfer_result(fiber, result);
+		Event_Backend_fiber_transfer(fiber, 1, &result);
 	}
 	
 	return INT2NUM(arguments.count);
@@ -599,9 +615,14 @@ void Init_Event_Backend_KQueue(VALUE Event_Backend) {
 	
 	rb_define_alloc_func(Event_Backend_KQueue, Event_Backend_KQueue_allocate);
 	rb_define_method(Event_Backend_KQueue, "initialize", Event_Backend_KQueue_initialize, 1);
-	rb_define_method(Event_Backend_KQueue, "transfer", Event_Backend_KQueue_transfer, 1);
-	rb_define_method(Event_Backend_KQueue, "defer", Event_Backend_KQueue_defer, 0);
+	
+	rb_define_method(Event_Backend_KQueue, "transfer", Event_Backend_KQueue_transfer, -1);
+	rb_define_method(Event_Backend_KQueue, "yield", Event_Backend_KQueue_yield, 0);
+	rb_define_method(Event_Backend_KQueue, "push", Event_Backend_KQueue_push, 1);
+	rb_define_method(Event_Backend_KQueue, "raise", Event_Backend_KQueue_raise, -1);
+	
 	rb_define_method(Event_Backend_KQueue, "ready?", Event_Backend_KQueue_ready_p, 0);
+	
 	rb_define_method(Event_Backend_KQueue, "select", Event_Backend_KQueue_select, 1);
 	rb_define_method(Event_Backend_KQueue, "close", Event_Backend_KQueue_close, 0);
 	

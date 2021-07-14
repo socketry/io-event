@@ -1,5 +1,3 @@
-#!/usr/bin/env ruby
-
 # Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,40 +18,56 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'mkmf'
+require 'event'
+require 'event/selector'
+require 'socket'
 
-gem_name = File.basename(__dir__)
-extension_name = 'event'
-
-# The destination
-dir_config(extension_name)
-
-$CFLAGS << " -Wall"
-
-$srcs = ["event.c", "backend/backend.c"]
-$VPATH << "$(srcdir)/backend"
-
-have_func('&rb_fiber_transfer')
-
-if have_library('uring') and have_header('liburing.h')
-	$srcs << "backend/uring.c"
+RSpec.shared_examples_for "queue" do
+	let!(:loop) {Fiber.current}
+	subject{described_class.new(loop)}
+	
+	after do
+		subject.close
+	end
+	
+	describe '#push' do
+		it "can push fiber into queue" do
+			sequence = []
+			
+			fiber = Fiber.new do
+				sequence << :executed
+			end
+			
+			subject.push(fiber)
+			subject.select(0)
+			
+			expect(sequence).to be == [:executed]
+		end
+		
+		it "defers push during push to next iteration" do
+			sequence = []
+			
+			fiber = Fiber.new do
+				sequence << :yield
+				subject.yield
+				sequence << :resume
+			end
+			
+			subject.push(fiber)
+			sequence << :select
+			subject.select(0)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:select, :yield, :select, :resume]
+		end
+	end
 end
 
-if have_header('sys/epoll.h')
-	$srcs << "backend/epoll.c"
+Event::Backend.constants.each do |name|
+	backend = Event::Backend.const_get(name)
+	
+	RSpec.describe backend do
+		it_behaves_like "queue"
+	end
 end
-
-if have_header('sys/event.h')
-	$srcs << "backend/kqueue.c"
-end
-
-have_func("rb_io_descriptor")
-have_func("&rb_process_status_wait")
-have_func("&rb_fiber_raise")
-
-have_header('ruby/io/buffer.h')
-
-create_header
-
-# Generate the makefile to compile the native binary into `lib`:
-create_makefile(File.join(gem_name, extension_name))

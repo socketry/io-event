@@ -21,17 +21,19 @@
 #include "backend.h"
 #include <fcntl.h>
 
+static ID id_transfer, id_alive_p;
+
 #ifndef HAVE__RB_FIBER_TRANSFER
-static ID id_transfer;
-
-VALUE
-Event_Backend_fiber_transfer(VALUE fiber) {
-	return rb_funcall(fiber, id_transfer, 0);
+VALUE Event_Backend_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
+	return rb_funcallv(fiber, id_transfer, argc, argv);
 }
+#endif
 
-VALUE
-Event_Backend_fiber_transfer_result(VALUE fiber, VALUE result) {
-	return rb_funcall(fiber, id_transfer, 1, result);
+#ifndef HAVE__RB_FIBER_RAISE
+static ID id_raise;
+
+VALUE Event_Backend_fiber_raise(VALUE fiber, int argc, VALUE *argv) {
+	return rb_funcallv(fiber, id_raise, argc, argv);
 }
 #endif
 
@@ -72,12 +74,15 @@ void Event_Backend_nonblock_restore(int file_descriptor, int flags)
 }
 
 void Init_Event_Backend(VALUE Event_Backend) {
-#ifndef HAVE_RB_IO_DESCRIPTOR
-	id_fileno = rb_intern("fileno");
+	id_transfer = rb_intern("transfer");
+	id_alive_p = rb_intern("alive?");
+	
+#ifndef HAVE__RB_FIBER_RAISE
+	id_raise = rb_intern("raise");
 #endif
 	
-#ifndef HAVE__RB_FIBER_TRANSFER
-	id_transfer = rb_intern("transfer");
+#ifndef HAVE_RB_IO_DESCRIPTOR
+	id_fileno = rb_intern("fileno");
 #endif
 	
 #ifndef HAVE_RB_PROCESS_STATUS_WAIT
@@ -87,6 +92,9 @@ void Init_Event_Backend(VALUE Event_Backend) {
 }
 
 struct wait_and_transfer_arguments {
+	int argc;
+	VALUE *argv;
+	
 	struct Event_Backend *backend;
 	struct Event_Backend_Queue *waiting;
 };
@@ -116,8 +124,14 @@ static void queue_push(struct Event_Backend *backend, struct Event_Backend_Queue
 	backend->waiting = waiting;
 }
 
-static VALUE wait_and_transfer(VALUE fiber) {
-	return Event_Backend_fiber_transfer(fiber);
+static VALUE wait_and_transfer(VALUE _arguments) {
+	struct wait_and_transfer_arguments *arguments = (struct wait_and_transfer_arguments *)_arguments;
+	
+	VALUE fiber = arguments->argv[0];
+	int argc = arguments->argc - 1;
+	VALUE *argv = arguments->argv + 1;
+	
+	return Event_Backend_fiber_transfer(fiber, argc, argv);
 }
 
 static VALUE wait_and_transfer_ensure(VALUE _arguments) {
@@ -128,26 +142,94 @@ static VALUE wait_and_transfer_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-void Event_Backend_wait_and_transfer(struct Event_Backend *backend, VALUE fiber)
+VALUE Event_Backend_wait_and_transfer(struct Event_Backend *backend, int argc, VALUE *argv)
 {
+	rb_check_arity(1, UNLIMITED_ARGUMENTS);
+	
 	struct Event_Backend_Queue waiting = {
 		.behind = NULL,
 		.infront = NULL,
+		.flags = EVENT_BACKEND_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
 	
 	queue_push(backend, &waiting);
 	
 	struct wait_and_transfer_arguments arguments = {
+		.argc = argc,
+		.argv = argv,
 		.backend = backend,
 		.waiting = &waiting,
 	};
 	
-	rb_ensure(wait_and_transfer, fiber, wait_and_transfer_ensure, (VALUE)&arguments);
+	return rb_ensure(wait_and_transfer, (VALUE)&arguments, wait_and_transfer_ensure, (VALUE)&arguments);
 }
 
-void Event_Backend_ready_pop(struct Event_Backend *backend)
+static VALUE wait_and_raise(VALUE _arguments) {
+	struct wait_and_transfer_arguments *arguments = (struct wait_and_transfer_arguments *)_arguments;
+	
+	VALUE fiber = arguments->argv[0];
+	int argc = arguments->argc - 1;
+	VALUE *argv = arguments->argv + 1;
+	
+	return Event_Backend_fiber_raise(fiber, argc, argv);
+}
+
+VALUE Event_Backend_wait_and_raise(struct Event_Backend *backend, int argc, VALUE *argv)
 {
+	rb_check_arity(2, UNLIMITED_ARGUMENTS);
+	
+	struct Event_Backend_Queue waiting = {
+		.behind = NULL,
+		.infront = NULL,
+		.flags = EVENT_BACKEND_QUEUE_FIBER,
+		.fiber = rb_fiber_current()
+	};
+	
+	queue_push(backend, &waiting);
+	
+	struct wait_and_transfer_arguments arguments = {
+		.argc = argc,
+		.argv = argv,
+		.backend = backend,
+		.waiting = &waiting,
+	};
+	
+	return rb_ensure(wait_and_raise, (VALUE)&arguments, wait_and_transfer_ensure, (VALUE)&arguments);
+}
+
+void Event_Backend_queue_push(struct Event_Backend *backend, VALUE fiber)
+{
+	struct Event_Backend_Queue *waiting = malloc(sizeof(struct Event_Backend_Queue));
+	
+	waiting->behind = NULL;
+	waiting->infront = NULL;
+	waiting->flags = EVENT_BACKEND_QUEUE_INTERNAL;
+	waiting->fiber = fiber;
+	
+	queue_push(backend, waiting);
+}
+
+static inline
+void Event_Backend_queue_pop(struct Event_Backend *backend, struct Event_Backend_Queue *ready)
+{
+	if (ready->flags & EVENT_BACKEND_QUEUE_FIBER) {
+		Event_Backend_fiber_transfer(ready->fiber, 0, NULL);
+	} else {
+		VALUE fiber = ready->fiber;
+		queue_pop(backend, ready);
+		free(ready);
+		
+		if (RTEST(rb_funcall(fiber, id_alive_p, 0))) {
+			rb_funcall(fiber, id_transfer, 0);
+		}
+	}
+}
+
+int Event_Backend_queue_flush(struct Event_Backend *backend)
+{
+	int count = 0;
+	
 	// Get the current tail and head of the queue:
 	struct Event_Backend_Queue *waiting = backend->waiting;
 	
@@ -156,10 +238,13 @@ void Event_Backend_ready_pop(struct Event_Backend *backend)
 	while (backend->ready) {
 		struct Event_Backend_Queue *ready = backend->ready;
 		
-		Event_Backend_fiber_transfer(ready->fiber);
+		count += 1;
+		Event_Backend_queue_pop(backend, ready);
 		
 		if (ready == waiting) break;
 	}
+	
+	return count;
 }
 
 void Event_Backend_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration)

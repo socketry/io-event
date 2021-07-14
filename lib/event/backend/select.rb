@@ -36,18 +36,30 @@ module Event
 				@writable = nil
 			end
 			
-			def defer
+			def transfer(fiber, *arguments)
+				@ready.push(Fiber.current)
+				fiber.transfer(*arguments)
+			ensure
+				@ready.delete(fiber)
+			end
+			
+			def yield
 				fiber = Fiber.current
 				@ready.push(fiber)
 				@loop.transfer
 			ensure
-				# Linear scan :(
 				@ready.delete(fiber)
 			end
 			
-			def transfer(fiber)
+			def push(fiber)
+				@ready.push(fiber)
+			end
+			
+			def raise(fiber, *arguments)
 				@ready.push(Fiber.current)
-				fiber.transfer
+				@fiber.raise(*arguments)
+			ensure
+				@ready.delete(fiber)
 			end
 			
 			def ready?
@@ -139,8 +151,13 @@ module Event
 			end
 			
 			def select(duration = nil)
-				while @ready.any?
-					@ready.pop.transfer
+				if @ready.any?
+					ready = @ready
+					@ready = Array.new
+					
+					ready.each do |fiber|
+						fiber.transfer if fiber.alive?
+					end
 				end
 				
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
