@@ -39,7 +39,7 @@ module Event
 			def transfer(fiber, *arguments)
 				@ready.push(Fiber.current)
 				fiber.transfer(*arguments)
-			ensure
+			rescue
 				@ready.delete(fiber)
 			end
 			
@@ -47,7 +47,7 @@ module Event
 				fiber = Fiber.current
 				@ready.push(fiber)
 				@loop.transfer
-			ensure
+			rescue
 				@ready.delete(fiber)
 			end
 			
@@ -58,7 +58,7 @@ module Event
 			def raise(fiber, *arguments)
 				@ready.push(Fiber.current)
 				fiber.raise(*arguments)
-			ensure
+			rescue
 				@ready.delete(fiber)
 			end
 			
@@ -158,6 +158,8 @@ module Event
 					ready.each do |fiber|
 						fiber.transfer if fiber.alive?
 					end
+					
+					duration = 0
 				end
 				
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)

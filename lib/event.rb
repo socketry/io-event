@@ -20,7 +20,6 @@
 
 require_relative 'event/version'
 require_relative 'event/selector'
-require_relative 'event/selector'
 
 module Event
 	# These constants are the same as those defined in IO.
