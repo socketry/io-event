@@ -65,6 +65,16 @@ RSpec.shared_examples_for "queue" do
 			expect(sequence).to be == [:executed]
 		end
 		
+		it "can push non-fiber object into queue" do
+			object = double
+			
+			expect(object).to receive(:alive?).and_return(true)
+			expect(object).to receive(:transfer)
+			
+			subject.push(object)
+			subject.select(0)
+		end
+		
 		it "defers push during push to next iteration" do
 			sequence = []
 			
