@@ -112,6 +112,16 @@ VALUE Event_Selector_KQueue_close(VALUE self) {
 	return Qnil;
 }
 
+VALUE Event_Selector_KQueue_transfer(VALUE self)
+{
+	struct Event_Selector_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct Event_Selector_KQueue, &Event_Selector_KQueue_Type, data);
+	
+	Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	
+	return Qnil;
+}
+
 VALUE Event_Selector_KQueue_resume(int argc, VALUE *argv, VALUE self)
 {
 	struct Event_Selector_KQueue *data = NULL;
@@ -616,6 +626,7 @@ void Init_Event_Selector_KQueue(VALUE Event_Selector) {
 	rb_define_alloc_func(Event_Selector_KQueue, Event_Selector_KQueue_allocate);
 	rb_define_method(Event_Selector_KQueue, "initialize", Event_Selector_KQueue_initialize, 1);
 	
+	rb_define_method(Event_Selector_KQueue, "transfer", Event_Selector_KQueue_transfer, 0);
 	rb_define_method(Event_Selector_KQueue, "resume", Event_Selector_KQueue_resume, -1);
 	rb_define_method(Event_Selector_KQueue, "yield", Event_Selector_KQueue_yield, 0);
 	rb_define_method(Event_Selector_KQueue, "push", Event_Selector_KQueue_push, 1);

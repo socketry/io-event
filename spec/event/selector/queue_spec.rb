@@ -30,6 +30,27 @@ RSpec.shared_examples_for "queue" do
 		subject.close
 	end
 	
+	describe '#transfer' do
+		it "can transfer back to event loop" do
+			sequence = []
+			
+			fiber = Fiber.new do
+				while true
+					sequence << :transfer
+					subject.transfer
+				end
+			end
+			
+			subject.push(fiber)
+			sequence << :select
+			subject.select(0)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:select, :transfer, :select]
+		end
+	end
+	
 	describe '#push' do
 		it "can push fiber into queue" do
 			sequence = []

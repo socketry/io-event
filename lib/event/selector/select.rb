@@ -50,6 +50,11 @@ module Event
 				end
 			end
 			
+			# Transfer from the current fiber to the event loop.
+			def transfer
+				@loop.transfer
+			end
+			
 			# Transfer from the current fiber to the specified fiber. Put the current fiber into the ready list.
 			def resume(fiber, *arguments)
 				queue = Queue.new(Fiber.current)
