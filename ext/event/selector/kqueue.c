@@ -117,9 +117,7 @@ VALUE Event_Selector_KQueue_transfer(VALUE self)
 	struct Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_KQueue, &Event_Selector_KQueue_Type, data);
 	
-	Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
-	
-	return Qnil;
+	return Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 }
 
 VALUE Event_Selector_KQueue_resume(int argc, VALUE *argv, VALUE self)
@@ -135,9 +133,7 @@ VALUE Event_Selector_KQueue_yield(VALUE self)
 	struct Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_KQueue, &Event_Selector_KQueue_Type, data);
 	
-	Event_Selector_yield(&data->backend);
-	
-	return Qnil;
+	return Event_Selector_yield(&data->backend);
 }
 
 VALUE Event_Selector_KQueue_push(VALUE self, VALUE fiber)
@@ -155,7 +151,7 @@ VALUE Event_Selector_KQueue_raise(int argc, VALUE *argv, VALUE self)
 	struct Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_KQueue, &Event_Selector_KQueue_Type, data);
 	
-	return Event_Selector_wait_and_raise(&data->backend, argc, argv);
+	return Event_Selector_raise(&data->backend, argc, argv);
 }
 
 VALUE Event_Selector_KQueue_ready_p(VALUE self) {

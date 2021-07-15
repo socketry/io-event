@@ -197,7 +197,7 @@ static VALUE wait_and_raise(VALUE _arguments) {
 	return Event_Selector_fiber_raise(fiber, argc, argv);
 }
 
-VALUE Event_Selector_wait_and_raise(struct Event_Selector *backend, int argc, VALUE *argv)
+VALUE Event_Selector_raise(struct Event_Selector *backend, int argc, VALUE *argv)
 {
 	rb_check_arity(argc, 2, UNLIMITED_ARGUMENTS);
 	

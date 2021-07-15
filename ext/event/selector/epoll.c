@@ -117,9 +117,7 @@ VALUE Event_Selector_EPoll_transfer(VALUE self)
 	struct Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
-	
-	return Qnil;
+	return Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 }
 
 VALUE Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
@@ -127,9 +125,7 @@ VALUE Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
 	struct Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_resume(&data->backend, argc, argv);
-	
-	return Qnil;
+	return Event_Selector_resume(&data->backend, argc, argv);
 }
 
 VALUE Event_Selector_EPoll_yield(VALUE self)
@@ -137,9 +133,7 @@ VALUE Event_Selector_EPoll_yield(VALUE self)
 	struct Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_yield(&data->backend);
-	
-	return Qnil;
+	return Event_Selector_yield(&data->backend);
 }
 
 VALUE Event_Selector_EPoll_push(VALUE self, VALUE fiber)
@@ -157,7 +151,7 @@ VALUE Event_Selector_EPoll_raise(int argc, VALUE *argv, VALUE self)
 	struct Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
 	
-	return Event_Selector_wait_and_raise(&data->backend, argc, argv);
+	return Event_Selector_raise(&data->backend, argc, argv);
 }
 
 VALUE Event_Selector_EPoll_ready_p(VALUE self) {
