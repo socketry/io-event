@@ -46,6 +46,15 @@ VALUE Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv) {
 }
 #endif
 
+#ifndef HAVE_RB_FIBER_CURRENT
+static ID id_current;
+
+static VALUE rb_fiber_current() {
+	return rb_funcall(rb_cFiber, id_current, 0);
+}
+#endif
+
+
 #ifndef HAVE_RB_IO_DESCRIPTOR
 static ID id_fileno;
 
@@ -88,6 +97,10 @@ void Init_Event_Selector(VALUE Event_Selector) {
 	
 #ifndef HAVE__RB_FIBER_RAISE
 	id_raise = rb_intern("raise");
+#endif
+	
+#ifndef HAVE_RB_FIBER_CURRENT
+	id_current = rb_intern("current");
 #endif
 	
 #ifndef HAVE_RB_IO_DESCRIPTOR
