@@ -115,12 +115,12 @@ VALUE Event_Selector_URing_close(VALUE self) {
 	return Qnil;
 }
 
-VALUE Event_Selector_URing_transfer(int argc, VALUE *argv, VALUE self)
+VALUE Event_Selector_URing_resume(int argc, VALUE *argv, VALUE self)
 {
 	struct Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
 	
-	Event_Selector_wait_and_transfer(&data->backend, argc, argv);
+	Event_Selector_resume(&data->backend, argc, argv);
 	
 	return Qnil;
 }
@@ -615,7 +615,7 @@ void Init_Event_Selector_URing(VALUE Event_Selector) {
 	rb_define_alloc_func(Event_Selector_URing, Event_Selector_URing_allocate);
 	rb_define_method(Event_Selector_URing, "initialize", Event_Selector_URing_initialize, 1);
 	
-	rb_define_method(Event_Selector_URing, "transfer", Event_Selector_URing_transfer, -1);
+	rb_define_method(Event_Selector_URing, "resume", Event_Selector_URing_resume, -1);
 	rb_define_method(Event_Selector_URing, "yield", Event_Selector_URing_yield, 0);
 	rb_define_method(Event_Selector_URing, "push", Event_Selector_URing_push, 1);
 	rb_define_method(Event_Selector_URing, "raise", Event_Selector_URing_raise, -1);

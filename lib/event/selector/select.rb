@@ -50,7 +50,8 @@ module Event
 				end
 			end
 			
-			def transfer(fiber, *arguments)
+			# Transfer from the current fiber to the specified fiber. Put the current fiber into the ready list.
+			def resume(fiber, *arguments)
 				queue = Queue.new(Fiber.current)
 				@ready.push(queue)
 				
@@ -59,6 +60,7 @@ module Event
 				queue.nullify
 			end
 			
+			# Yield from the current fiber back to the event loop. Put the current fiber into the ready list.
 			def yield
 				queue = Queue.new(Fiber.current)
 				@ready.push(queue)
@@ -68,10 +70,12 @@ module Event
 				queue.nullify
 			end
 			
+			# Append the given fiber into the ready list.
 			def push(fiber)
 				@ready.push(fiber)
 			end
 			
+			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
 			def raise(fiber, *arguments)
 				queue = Queue.new(Fiber.current)
 				@ready.push(queue)

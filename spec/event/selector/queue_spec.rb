@@ -84,6 +84,80 @@ RSpec.shared_examples_for "queue" do
 			expect(sequence).to be == [:raise, :rescue]
 		end
 	end
+	
+	describe '#resume' do
+		it "can resume a fiber for execution from the main fiber" do
+			sequence = []
+			
+			fiber = Fiber.new do |argument|
+				sequence << argument
+			end
+			
+			subject.resume(fiber, :resumed)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:resumed, :select]
+		end
+		
+		it "can resume a fiber for execution from a nested fiber" do
+			sequence = []
+			
+			child = Fiber.new do |argument|
+				sequence << argument
+			end
+			
+			parent = Fiber.new do |argument|
+				sequence << argument
+				subject.resume(child, :child)
+				sequence << :parent
+			end
+			
+			subject.resume(parent, :resumed)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:resumed, :child, :select, :parent]
+		end
+	end
+	
+	describe '#yield' do
+		it "can yield to the scheduler and later resume execution" do
+			sequence = []
+			
+			fiber = Fiber.new do |argument|
+				sequence << :yield
+				subject.yield
+				sequence << :resumed
+			end
+			
+			subject.resume(fiber)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:yield, :select, :resumed]
+		end
+		
+		it "can yield from resumed fiber" do
+			sequence = []
+			
+			child = Fiber.new do |argument|
+				sequence << :yield
+				subject.yield
+				sequence << :resumed
+			end
+			
+			parent = Fiber.new do
+				child.resume
+			end
+			
+			subject.resume(parent)
+			sequence << :select
+			subject.select(0)
+			
+			expect(sequence).to be == [:yield, :select, :resumed]
+		end
+	end
 end
 
 Event::Selector.constants.each do |name|

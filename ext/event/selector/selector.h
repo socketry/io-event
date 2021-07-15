@@ -104,13 +104,13 @@ void Event_Selector_mark(struct Event_Selector *backend) {
 	}
 }
 
-VALUE Event_Selector_wait_and_transfer(struct Event_Selector *backend, int argc, VALUE *argv);
+VALUE Event_Selector_resume(struct Event_Selector *backend, int argc, VALUE *argv);
 VALUE Event_Selector_wait_and_raise(struct Event_Selector *backend, int argc, VALUE *argv);
 
 static inline
 VALUE Event_Selector_yield(struct Event_Selector *backend)
 {
-	return Event_Selector_wait_and_transfer(backend, 1, &backend->loop);
+	return Event_Selector_resume(backend, 1, &backend->loop);
 }
 
 void Event_Selector_queue_push(struct Event_Selector *backend, VALUE fiber);

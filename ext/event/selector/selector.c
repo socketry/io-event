@@ -164,7 +164,7 @@ static VALUE wait_and_transfer_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-VALUE Event_Selector_wait_and_transfer(struct Event_Selector *backend, int argc, VALUE *argv)
+VALUE Event_Selector_resume(struct Event_Selector *backend, int argc, VALUE *argv)
 {
 	rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
 	

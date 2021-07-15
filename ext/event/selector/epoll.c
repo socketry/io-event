@@ -112,12 +112,12 @@ VALUE Event_Selector_EPoll_close(VALUE self) {
 	return Qnil;
 }
 
-VALUE Event_Selector_EPoll_transfer(int argc, VALUE *argv, VALUE self)
+VALUE Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
 {
 	struct Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_wait_and_transfer(&data->backend, argc, argv);
+	Event_Selector_resume(&data->backend, argc, argv);
 	
 	return Qnil;
 }
@@ -550,7 +550,7 @@ void Init_Event_Selector_EPoll(VALUE Event_Selector) {
 	rb_define_alloc_func(Event_Selector_EPoll, Event_Selector_EPoll_allocate);
 	rb_define_method(Event_Selector_EPoll, "initialize", Event_Selector_EPoll_initialize, 1);
 	
-	rb_define_method(Event_Selector_EPoll, "transfer", Event_Selector_EPoll_transfer, -1);
+	rb_define_method(Event_Selector_EPoll, "resume", Event_Selector_EPoll_resume, -1);
 	rb_define_method(Event_Selector_EPoll, "yield", Event_Selector_EPoll_yield, 0);
 	rb_define_method(Event_Selector_EPoll, "push", Event_Selector_EPoll_push, 1);
 	rb_define_method(Event_Selector_EPoll, "raise", Event_Selector_EPoll_raise, -1);
