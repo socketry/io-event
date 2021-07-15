@@ -11,7 +11,8 @@ Gem::Specification.new do |spec|
 	
 	spec.homepage = "https://github.com/socketry/event"
 	
-	spec.required_ruby_version = ">= 3.0.2"
+	# Breaks TruffleRuby:
+	# spec.required_ruby_version = ">= 3.0.2"
 	
 	spec.files = Dir.glob('{ext,lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
 	
