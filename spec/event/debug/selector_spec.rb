@@ -18,13 +18,14 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event/debug'
-require 'event'
-require 'socket'
+require 'event/debug/selector'
+require_relative '../selector_examples'
 
-RSpec.describe Event::Debug do
+RSpec.describe Event::Debug::Selector do
 	let!(:loop) {Fiber.current}
-	subject {described_class.new(Event::Selector::Select.new(loop))}
+	subject {described_class.new(Event::Selector.new(loop))}
+	
+	it_behaves_like Event::Selector
 	
 	describe '#io_wait' do
 		let(:events) {Array.new}
