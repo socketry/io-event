@@ -33,6 +33,7 @@ $CFLAGS << " -Wall"
 $srcs = ["event.c", "selector/selector.c"]
 $VPATH << "$(srcdir)/selector"
 
+have_func('rb_ext_ractor_safe')
 have_func('&rb_fiber_transfer')
 
 if have_library('uring') and have_header('liburing.h')

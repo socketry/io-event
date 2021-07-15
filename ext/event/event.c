@@ -26,9 +26,9 @@ VALUE Event_Selector = Qnil;
 
 void Init_event()
 {
-	#ifdef HAVE_RB_EXT_RACTOR_SAFE
+#ifdef HAVE_RB_EXT_RACTOR_SAFE
 	rb_ext_ractor_safe(true);
-	#endif
+#endif
 	
 	Event = rb_define_module("Event");
 	Event_Selector = rb_define_module_under(Event, "Selector");
