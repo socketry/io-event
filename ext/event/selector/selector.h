@@ -38,11 +38,7 @@ enum Event {
 
 void Init_Event_Selector();
 
-#ifdef HAVE__RB_FIBER_TRANSFER
-#define Event_Selector_fiber_transfer(fiber, argc, argv) rb_fiber_transfer(fiber, argc, argv)
-#else
 VALUE Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
-#endif
 
 #ifdef HAVE__RB_FIBER_RAISE
 #define Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)

@@ -23,11 +23,20 @@
 
 static ID id_transfer, id_alive_p;
 
-#ifndef HAVE__RB_FIBER_TRANSFER
 VALUE Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
-	return rb_funcallv(fiber, id_transfer, argc, argv);
-}
+	// TODO Consider introducing something like `rb_fiber_scheduler_transfer(...)`.
+#ifdef HAVE__RB_FIBER_TRANSFER
+	if (RTEST(rb_fiber_alive_p(fiber))) {
+		return rb_fiber_transfer(fiber, argc, argv);
+	}
+#else
+	if (RTEST(rb_funcall(fiber, id_alive_p, 0))) {
+		return rb_funcallv(fiber, id_transfer, argc, argv);
+	}
 #endif
+	
+	return Qnil;
+}
 
 #ifndef HAVE__RB_FIBER_RAISE
 static ID id_raise;
