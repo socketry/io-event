@@ -18,11 +18,38 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'event/version'
-require_relative 'event/selector'
+require_relative 'selector'
 
-begin
-	require_relative '../ext/event/event'
-rescue LoadError
-	# Ignore.
+module Event
+	# A thread safe synchronisation primative.
+	class Interrupt
+		def self.call(selector, &block)
+			self.new(selector, block)
+		end
+		
+		def initialize(selector, block)
+			@selector = selector
+			@input, @output = ::IO.pipe
+			
+			@fiber = Fiber.new do
+				while true
+					@selector.io_wait(@fiber, @input, READABLE)
+					block.call(@input.read_nonblock(1)&.ord)
+				end
+			end
+			
+			@fiber.transfer
+		end
+		
+		# Send a sigle byte interrupt.
+		def signal(event = 0)
+			@output.write(event.chr)
+			@output.flush
+		end
+		
+		def close
+			@input.close
+			@output.close
+		end
+	end
 end

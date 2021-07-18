@@ -18,11 +18,32 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'event/version'
-require_relative 'event/selector'
+require 'event/interrupt'
 
-begin
-	require_relative '../ext/event/event'
-rescue LoadError
-	# Ignore.
+RSpec.describe Event::Interrupt do
+	let!(:loop) {Fiber.current}
+	let(:selector) {Event::Selector.new(loop)}
+	let(:handler) {double}
+	subject {described_class.new(selector, handler)}
+	
+	after do
+		subject.close
+		selector.close
+	end
+	
+	it "can send interrupts" do
+		expect(handler).to receive(:call).with(0)
+		
+		subject.signal
+		
+		selector.select(0)
+	end
+	
+	it "can send different interrupts" do
+		expect(handler).to receive(:call).with(1)
+		
+		subject.signal(1)
+		
+		selector.select(0)
+	end
 end

@@ -21,6 +21,11 @@
 require_relative 'selector/select'
 
 module Event
+	# These constants are the same as those defined in IO.
+	READABLE = 1
+	PRIORITY = 2
+	WRITABLE = 4
+	
 	module Selector
 		def self.default(env = ENV)
 			if name = env['EVENT_SELECTOR']&.to_sym
