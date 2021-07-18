@@ -23,7 +23,7 @@ require_relative 'selector'
 module Event
 	# A thread safe synchronisation primative.
 	class Interrupt
-		def self.call(selector, &block)
+		def self.attach(selector, &block)
 			self.new(selector, block)
 		end
 		
