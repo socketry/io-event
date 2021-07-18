@@ -20,6 +20,7 @@
 
 require_relative 'event/version'
 require_relative 'event/selector'
+require_relative 'event/interrupt'
 
 begin
 	require_relative '../ext/event/event'
