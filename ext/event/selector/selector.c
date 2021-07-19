@@ -21,6 +21,8 @@
 #include "selector.h"
 #include <fcntl.h>
 
+static const int DEBUG = 0;
+
 static ID id_transfer, id_alive_p;
 
 VALUE Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
@@ -238,6 +240,7 @@ void Event_Selector_queue_push(struct Event_Selector *backend, VALUE fiber)
 static inline
 void Event_Selector_queue_pop(struct Event_Selector *backend, struct Event_Selector_Queue *ready)
 {
+	if (DEBUG) fprintf(stderr, "Event_Selector_queue_pop -> %p\n", (void*)ready->fiber);
 	if (ready->flags & EVENT_SELECTOR_QUEUE_FIBER) {
 		Event_Selector_fiber_transfer(ready->fiber, 0, NULL);
 	} else {
@@ -257,10 +260,12 @@ int Event_Selector_queue_flush(struct Event_Selector *backend)
 	
 	// Get the current tail and head of the queue:
 	struct Event_Selector_Queue *waiting = backend->waiting;
+	if (DEBUG) fprintf(stderr, "Event_Selector_queue_flush waiting = %p\n", waiting);
 	
 	// Process from head to tail in order:
 	// During this, more items may be appended to tail.
 	while (backend->ready) {
+		if (DEBUG) fprintf(stderr, "backend->ready = %p\n", backend->ready);
 		struct Event_Selector_Queue *ready = backend->ready;
 		
 		count += 1;

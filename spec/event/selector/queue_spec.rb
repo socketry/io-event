@@ -92,6 +92,27 @@ RSpec.shared_examples_for "queue" do
 			
 			expect(sequence).to be == [:select, :yield, :select, :resume]
 		end
+		
+		it "can push a fiber into the queue while processing queue" do
+			sequence = []
+			
+			second = Fiber.new do
+				sequence << :second
+			end
+			
+			first = Fiber.new do
+				sequence << :first
+				subject.push(second)
+			end
+			
+			subject.push(first)
+			
+			subject.select(0)
+			expect(sequence).to be == [:first]
+			
+			subject.select(0)
+			expect(sequence).to be == [:first, :second]
+		end
 	end
 	
 	describe '#raise' do
