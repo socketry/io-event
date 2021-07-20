@@ -1,4 +1,4 @@
-# Event
+# ![Event](logo.svg)
 
 An event loop.
 
