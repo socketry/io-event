@@ -47,8 +47,8 @@ module Event
 			end
 		end
 		
-		def self.new(...)
-			default.new(...)
+		def self.new(*args)
+			default.new(*args)
 		end
 	end
 end
