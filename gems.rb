@@ -7,7 +7,7 @@ group :test do
 end
 
 group :maintenance, optional: true do
-	gem "bake-bundler"
+	gem "bake-gem"
 	gem "bake-modernize"
 	
 	gem "utopia-project"
