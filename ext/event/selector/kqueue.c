@@ -618,6 +618,7 @@ VALUE Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 
 void Init_Event_Selector_KQueue(VALUE Event_Selector) {
 	Event_Selector_KQueue = rb_define_class_under(Event_Selector, "KQueue", rb_cObject);
+	rb_gc_register_mark_object(Event_Selector_KQueue);
 	
 	rb_define_alloc_func(Event_Selector_KQueue, Event_Selector_KQueue_allocate);
 	rb_define_method(Event_Selector_KQueue, "initialize", Event_Selector_KQueue_initialize, 1);

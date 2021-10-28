@@ -31,7 +31,10 @@ void Init_event()
 #endif
 	
 	Event = rb_define_module("Event");
+	rb_gc_register_mark_object(Event);
+	
 	Event_Selector = rb_define_module_under(Event, "Selector");
+	rb_gc_register_mark_object(Event_Selector);
 	
 	Init_Event_Selector(Event_Selector);
 	

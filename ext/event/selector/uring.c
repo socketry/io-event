@@ -615,6 +615,7 @@ VALUE Event_Selector_URing_select(VALUE self, VALUE duration) {
 
 void Init_Event_Selector_URing(VALUE Event_Selector) {
 	Event_Selector_URing = rb_define_class_under(Event_Selector, "URing", rb_cObject);
+	rb_gc_register_mark_object(Event_Selector_URing);
 	
 	rb_define_alloc_func(Event_Selector_URing, Event_Selector_URing_allocate);
 	rb_define_method(Event_Selector_URing, "initialize", Event_Selector_URing_initialize, 1);

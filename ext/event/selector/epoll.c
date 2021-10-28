@@ -550,6 +550,7 @@ VALUE Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 
 void Init_Event_Selector_EPoll(VALUE Event_Selector) {
 	Event_Selector_EPoll = rb_define_class_under(Event_Selector, "EPoll", rb_cObject);
+	rb_gc_register_mark_object(Event_Selector_EPoll);
 	
 	rb_define_alloc_func(Event_Selector_EPoll, Event_Selector_EPoll_allocate);
 	rb_define_method(Event_Selector_EPoll, "initialize", Event_Selector_EPoll_initialize, 1);

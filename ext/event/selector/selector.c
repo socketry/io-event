@@ -115,6 +115,7 @@ void Init_Event_Selector(VALUE Event_Selector) {
 #ifndef HAVE_RB_PROCESS_STATUS_WAIT
 	id_wait = rb_intern("wait");
 	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
+	rb_gc_register_mark_object(rb_Process_Status);
 #endif
 }
 
