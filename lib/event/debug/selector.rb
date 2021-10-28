@@ -22,6 +22,7 @@ require "event/version"
 
 module Event
 	module Debug
+		# Enforces the selector interface and delegates operations to a wrapped selector instance.
 		class Selector
 			def initialize(selector)
 				@selector = selector
