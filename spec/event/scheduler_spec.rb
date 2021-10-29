@@ -18,38 +18,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'selector'
+require_relative 'scheduler'
 
-module Event
-	# A thread safe synchronisation primative.
-	class Interrupt
-		def self.attach(selector, &block)
-			self.new(selector, block)
+RSpec.describe Event::Scheduler do
+	around do |example|
+		thread = Thread.new do
+			Fiber.set_scheduler(subject)
+			example.run
 		end
 		
-		def initialize(selector, block)
-			@selector = selector
-			@input, @output = ::IO.pipe
-			
-			@fiber = Fiber.new do
-				while true
-					@selector.io_wait(@fiber, @input, READABLE)
-					block.call(@input.read_nonblock(1)&.ord)
-				end
-			end
-			
-			@fiber.transfer
+		thread.join
+	end
+	
+	it 'can run several fibers' do
+		sum = 0
+		
+		fibers = 3.times.map do |i|
+			Fiber.schedule{sleep 0.001; sum += i}
 		end
 		
-		# Send a sigle byte interrupt.
-		def signal(event = 0)
-			@output.write(event.chr)
-			@output.flush
-		end
+		subject.run
 		
-		def close
-			@input.close
-			@output.close
-		end
+		expect(sum).to be == 3
 	end
 end
