@@ -20,6 +20,8 @@
 
 require 'covered/rspec'
 
+$LOAD_PATH << File.expand_path("../ext", __dir__)
+
 RSpec.configure do |config|
 	config.disable_monkey_patching!
 	

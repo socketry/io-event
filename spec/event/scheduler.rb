@@ -25,10 +25,10 @@ require 'resolv'
 module Event
 	class Scheduler
 		def initialize(selector = nil)
-			@timers = ::Timers::Group.new
+			@timers = Timers::Group.new
 			
-			@selector = selector || ::Event::Selector.new(Fiber.current)
-			@thread = ::Thread.current
+			@selector = selector || Selector.new(Fiber.current)
+			@thread = Thread.current
 			
 			@blocked = 0
 		end
@@ -40,7 +40,7 @@ module Event
 		def close
 			self.run
 			
-			Kernel.raise "Closing scheduler with blocked operations!" if @blocked > 0
+			Kernel.raise("Closing scheduler with blocked operations!") if @blocked > 0
 			
 			# We depend on GVL for consistency:
 			@selector&.close
@@ -114,7 +114,7 @@ module Event
 			
 			# This operation is protected by the GVL:
 			@selector.push(fiber)
-			@thread.wakeup
+			@thread.raise(Errno::EINTR)
 		end
 		
 		# @asynchronous May be non-blocking..
@@ -187,7 +187,7 @@ module Event
 		# @parameter timeout [Float | Nil] The maximum timeout, or if nil, indefinite.
 		# @returns [Boolean] Whether there is more work to do.
 		def run_once(timeout = nil)
-			Kernel.raise "Running scheduler on non-blocking fiber!" unless Fiber.blocking?
+			Kernel.raise("Running scheduler on non-blocking fiber!") unless Fiber.blocking?
 			
 			# If we are finished, we stop the task tree and exit:
 			if self.finished?
@@ -208,7 +208,9 @@ module Event
 			end
 			
 			begin
-				@selector.select(interval)
+				Thread.handle_interrupt(Errno::EINTR => :on_blocking) do
+					@selector.select(interval)
+				end
 			rescue Errno::EINTR
 				# Ignore.
 			end
@@ -223,8 +225,9 @@ module Event
 		def run
 			Kernel.raise(RuntimeError, 'Reactor has been closed') if @selector.nil?
 			
-			::Thread.handle_interrupt(::Interrupt => :never) do
+			Thread.handle_interrupt(Errno::EINTR => :never, Interrupt => :never) do
 				while self.run_once
+					# Event loop.
 					if Thread.pending_interrupt?
 						break
 					end

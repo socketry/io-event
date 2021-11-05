@@ -27,7 +27,7 @@ module Event
 				@readable = {}
 				@writable = {}
 				
-				@ready = []
+				@ready = Queue.new
 			end
 			
 			def close
@@ -36,7 +36,7 @@ module Event
 				@writable = nil
 			end
 			
-			Queue = Struct.new(:fiber) do
+			Optional = Struct.new(:fiber) do
 				def transfer(*arguments)
 					fiber&.transfer(*arguments)
 				end
@@ -57,22 +57,22 @@ module Event
 			
 			# Transfer from the current fiber to the specified fiber. Put the current fiber into the ready list.
 			def resume(fiber, *arguments)
-				queue = Queue.new(Fiber.current)
-				@ready.push(queue)
+				optional = Optional.new(Fiber.current)
+				@ready.push(optional)
 				
 				fiber.transfer(*arguments)
 			ensure
-				queue.nullify
+				optional.nullify
 			end
 			
 			# Yield from the current fiber back to the event loop. Put the current fiber into the ready list.
 			def yield
-				queue = Queue.new(Fiber.current)
-				@ready.push(queue)
+				optional = Optional.new(Fiber.current)
+				@ready.push(optional)
 				
 				@loop.transfer
 			ensure
-				queue.nullify
+				optional.nullify
 			end
 			
 			# Append the given fiber into the ready list.
@@ -82,16 +82,16 @@ module Event
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
 			def raise(fiber, *arguments)
-				queue = Queue.new(Fiber.current)
-				@ready.push(queue)
+				optional = Optional.new(Fiber.current)
+				@ready.push(optional)
 				
 				fiber.raise(*arguments)
 			ensure
-				queue.nullify
+				optional.nullify
 			end
 			
 			def ready?
-				@ready.any?
+				!@ready.empty?
 			end
 			
 			def io_wait(fiber, io, events)
@@ -179,11 +179,11 @@ module Event
 			end
 			
 			private def pop_ready
-				if @ready.any?
-					ready = @ready
-					@ready = Array.new
+				unless @ready.empty?
+					count = @ready.size
 					
-					ready.each do |fiber|
+					count.times do
+						fiber = @ready.pop
 						fiber.transfer if fiber.alive?
 					end
 					

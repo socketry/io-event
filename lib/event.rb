@@ -23,6 +23,7 @@ require_relative 'event/selector'
 
 begin
 	require 'event/event'
-rescue LoadError
+rescue LoadError => error
+	warn "Could not load native event selector: #{error}"
 	# Ignore.
 end
