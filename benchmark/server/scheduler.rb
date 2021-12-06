@@ -1,12 +1,12 @@
 
-require_relative '../../lib/event'
+require_relative '../../lib/io/event'
 require 'socket'
 require 'fiber'
 
 class Scheduler
 	def initialize(selector = nil)
 		@fiber = Fiber.current
-		@selector = selector || Event::Selector.new(@fiber)
+		@selector = selector || IO::Event::Selector.new(@fiber)
 		@pending = []
 		@waiting = {}
 		
@@ -56,7 +56,7 @@ class Scheduler
 	def fiber(&block)
 		fiber = Fiber.new(&block)
 		
-		@selector.transfer(fiber)
+		@selector.resume(fiber)
 		
 		return fiber
 	end
