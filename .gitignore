@@ -12,11 +12,11 @@
 
 /gems.locked
 
-/ext/event/Makefile
-/ext/event/mkmf.log
-/ext/event/extconf.h
-/ext/event/**/*.o
-/ext/event/**/*.so
-/ext/event/**/*.bundle
+/ext/Makefile
+/ext/mkmf.log
+/ext/extconf.h
+/ext/**/*.o
+/ext/**/*.so
+/ext/**/*.bundle
 
 /benchmark/server/compiled
