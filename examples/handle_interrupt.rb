@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-require 'event'
+require 'io/event'
 require 'fiber'
 require 'benchmark'
 
@@ -13,7 +13,7 @@ thread = Thread.new do
 	
 	fiber = Fiber.new do
 		while true
-			selector.io_wait(Fiber.current, input, Event::READABLE)
+			selector.io_wait(Fiber.current, input, IO::Event::READABLE)
 			input.read(1)
 		end
 	end

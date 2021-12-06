@@ -18,11 +18,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event'
-require 'event/selector'
+require 'io/event'
+require 'io/event/selector'
 require 'socket'
 
-RSpec.shared_examples_for Event::Selector do
+RSpec.shared_examples_for IO::Event::Selector do
 	describe '.select' do
 		let(:quantum) {0.2}
 		
@@ -56,8 +56,8 @@ RSpec.shared_examples_for Event::Selector do
 				events << :wait_readable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, Event::READABLE)
-				).to be == Event::READABLE
+					subject.io_wait(Fiber.current, local, IO::Event::READABLE)
+				).to be == IO::Event::READABLE
 				
 				events << :readable
 			end
@@ -82,8 +82,8 @@ RSpec.shared_examples_for Event::Selector do
 				events << :wait_writable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, Event::WRITABLE)
-				).to be == Event::WRITABLE
+					subject.io_wait(Fiber.current, local, IO::Event::WRITABLE)
+				).to be == IO::Event::WRITABLE
 				
 				events << :writable
 			end
@@ -107,8 +107,8 @@ RSpec.shared_examples_for Event::Selector do
 				events << :wait_readable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, Event::READABLE)
-				).to be == Event::READABLE
+					subject.io_wait(Fiber.current, local, IO::Event::READABLE)
+				).to be == IO::Event::READABLE
 				
 				readable = true
 			end
@@ -117,8 +117,8 @@ RSpec.shared_examples_for Event::Selector do
 				events << :wait_writable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, Event::WRITABLE)
-				).to be == Event::WRITABLE
+					subject.io_wait(Fiber.current, local, IO::Event::WRITABLE)
+				).to be == IO::Event::WRITABLE
 				
 				writable = true
 			end
@@ -146,7 +146,7 @@ RSpec.shared_examples_for Event::Selector do
 				
 				expect do
 					while true
-						subject.io_wait(Fiber.current, local, Event::READABLE)
+						subject.io_wait(Fiber.current, local, IO::Event::READABLE)
 						events << :readable
 					end
 				end.to raise_exception(RuntimeError, /Boom/)

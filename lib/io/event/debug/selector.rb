@@ -18,122 +18,122 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require "event/version"
-
-module Event
-	module Debug
-		# Enforces the selector interface and delegates operations to a wrapped selector instance.
-		class Selector
-			def initialize(selector)
-				@selector = selector
-				
-				@readable = {}
-				@writable = {}
-				@priority = {}
-			end
-			
-			def close
-				if @selector.nil?
-					raise "Selector already closed!"
+class IO
+	module Event
+		module Debug
+			# Enforces the selector interface and delegates operations to a wrapped selector instance.
+			class Selector
+				def initialize(selector)
+					@selector = selector
+					
+					@readable = {}
+					@writable = {}
+					@priority = {}
 				end
 				
-				@selector.close
-				@selector = nil
-			end
-			
-			def transfer(fiber, *arguments)
-				@selector.transfer(fiber, *arguments)
-			end
-			
-			def transfer(*arguments)
-				@selector.transfer(*arguments)
-			end
-			
-			def resume(*arguments)
-				@selector.resume(*arguments)
-			end
-			
-			def yield
-				@selector.yield
-			end
-			
-			def push(fiber)
-				@selector.push(fiber)
-			end
-			
-			def raise(fiber, *arguments)
-				@selector.raise(fiber, *arguments)
-			end
-			
-			def ready?
-				@selector.ready?
-			end
-			
-			def process_wait(*arguments)
-				@selector.process_wait(*arguments)
-			end
-			
-			def io_wait(fiber, io, events)
-				register_readable(fiber, io, events)
-			end
-			
-			def select(duration = nil)
-				@selector.select(duration)
-			end
-			
-			private
-			
-			def register_readable(fiber, io, events)
-				if (events & READABLE) > 0
-					if @readable.key?(io)
-						raise "Cannot wait for #{io} to become readable from multiple fibers."
+				def close
+					if @selector.nil?
+						raise "Selector already closed!"
 					end
 					
-					begin
-						@readable[io] = fiber
+					@selector.close
+					@selector = nil
+				end
+				
+				def transfer(fiber, *arguments)
+					@selector.transfer(fiber, *arguments)
+				end
+				
+				def transfer(*arguments)
+					@selector.transfer(*arguments)
+				end
+				
+				def resume(*arguments)
+					@selector.resume(*arguments)
+				end
+				
+				def yield
+					@selector.yield
+				end
+				
+				def push(fiber)
+					@selector.push(fiber)
+				end
+				
+				def raise(fiber, *arguments)
+					@selector.raise(fiber, *arguments)
+				end
+				
+				def ready?
+					@selector.ready?
+				end
+				
+				def process_wait(*arguments)
+					@selector.process_wait(*arguments)
+				end
+				
+				def io_wait(fiber, io, events)
+					register_readable(fiber, io, events)
+				end
+				
+				def select(duration = nil)
+					@selector.select(duration)
+				end
+				
+				private
+				
+				def register_readable(fiber, io, events)
+					if (events & READABLE) > 0
+						if @readable.key?(io)
+							raise "Cannot wait for #{io} to become readable from multiple fibers."
+						end
 						
+						begin
+							@readable[io] = fiber
+							
+							register_writable(fiber, io, events)
+						ensure
+							@readable.delete(io)
+						end
+					else
 						register_writable(fiber, io, events)
-					ensure
-						@readable.delete(io)
 					end
-				else
-					register_writable(fiber, io, events)
 				end
-			end
-			
-			def register_writable(fiber, io, events)
-				if (events & WRITABLE) > 0
-					if @writable.key?(io)
-						raise "Cannot wait for #{io} to become writable from multiple fibers."
-					end
-					
-					begin
-						@writable[io] = fiber
+				
+				def register_writable(fiber, io, events)
+					if (events & WRITABLE) > 0
+						if @writable.key?(io)
+							raise "Cannot wait for #{io} to become writable from multiple fibers."
+						end
 						
+						begin
+							@writable[io] = fiber
+							
+							register_priority(fiber, io, events)
+						ensure
+							@writable.delete(io)
+						end
+					else
 						register_priority(fiber, io, events)
-					ensure
-						@writable.delete(io)
 					end
-				else
-					register_priority(fiber, io, events)
 				end
-			end
-			
-			def register_priority(fiber, io, events)
-				if (events & PRIORITY) > 0
-					if @priority.key?(io)
-						raise "Cannot wait for #{io} to become priority from multiple fibers."
-					end
-					
-					begin
-						@priority[io] = fiber
+				
+				def register_priority(fiber, io, events)
+					if (events & PRIORITY) > 0
+						if @priority.key?(io)
+							raise "Cannot wait for #{io} to become priority from multiple fibers."
+						end
 						
+						begin
+							@priority[io] = fiber
+							
+							@selector.io_wait(fiber, io, events)
+						ensure
+							@priority.delete(io)
+						end
+					else
 						@selector.io_wait(fiber, io, events)
-					ensure
-						@priority.delete(io)
 					end
-				else
-					@selector.io_wait(fiber, io, events)
 				end
 			end
 		end

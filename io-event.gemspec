@@ -3,7 +3,7 @@ require_relative "lib/io/event/version"
 
 Gem::Specification.new do |spec|
 	spec.name = "io-event"
-	spec.version = Event::VERSION
+	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
 	spec.authors = ["Samuel Williams"]

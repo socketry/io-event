@@ -18,51 +18,27 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event/debug/selector'
-require_relative '../selector_examples'
+require_relative 'selector_examples'
 
-RSpec.describe Event::Debug::Selector do
-	let!(:loop) {Fiber.current}
-	subject {described_class.new(Event::Selector.new(loop))}
+IO::Event::Selector.constants.each do |name|
+	klass = IO::Event::Selector.const_get(name)
 	
-	it_behaves_like Event::Selector
-	
-	describe '#io_wait' do
-		let(:events) {Array.new}
-		let(:sockets) {UNIXSocket.pair}
-		let(:local) {sockets.first}
-		let(:remote) {sockets.last}
+	RSpec.describe(klass) do
+		let!(:loop) {Fiber.current}
+		subject{described_class.new(loop)}
 		
-		it "cannot have two fibers reading from the same io" do
-			fiber1 = Fiber.new do
-				events << :wait_readable1
-				subject.io_wait(Fiber.current, local, Event::READABLE)
-				events << :readable1
-			rescue
-				events << :error1
+		describe '.new' do
+			it "can create multiple selectors" do
+				8.times.map do |i|
+					described_class.new(loop)
+				end.each(&:close)
 			end
-			
-			fiber2 = Fiber.new do
-				events << :wait_readable2
-				subject.io_wait(Fiber.current, local, Event::READABLE)
-				events << :readable2
-			rescue
-				events << :error2
-			end
-			
-			events << :transfer
-			fiber1.transfer
-			fiber2.transfer
-			
-			remote.puts "Hello World"
-			events << :select
-			subject.select(1)
-			
-			expect(events).to be == [
-				:transfer, :wait_readable1, :wait_readable2,
-				:error2,
-				:select, :readable1
-			]
 		end
+		
+		after do
+			subject.close
+		end
+		
+		it_behaves_like IO::Event::Selector
 	end
 end

@@ -15,7 +15,7 @@ Event::Selector.constants.each do |name|
 		
 		fiber = Fiber.new do
 			while true
-				selector.io_wait(fiber, input, Event::READABLE)
+				selector.io_wait(fiber, input, IO::Event::READABLE)
 			end
 		rescue RuntimeError
 			# Ignore.

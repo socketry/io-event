@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-module Event
-	VERSION = "0.1.0"
+class IO
+	module Event
+		VERSION = "0.1.0"
+	end
 end

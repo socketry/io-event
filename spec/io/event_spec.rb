@@ -18,54 +18,10 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'scheduler'
+require 'io/event'
 
-RSpec.shared_examples_for Event::Scheduler do
-	subject(:scheduler) {Event::Scheduler.new(selector)}
-	
-	around do |example|
-		thread = Thread.new do
-			Fiber.set_scheduler(scheduler)
-			example.run
-		end
-		
-		thread.join
-	end
-	
-	it 'can run several fibers' do
-		sum = 0
-		
-		fibers = 3.times.map do |i|
-			Fiber.schedule{sleep 0.001; sum += i}
-		end
-		
-		subject.run
-		
-		expect(sum).to be == 3
-	end
-	
-	it 'can join threads' do
-		Fiber.schedule do
-			1000.times do
-				thread = ::Thread.new do
-					sleep(0.001)
-				end
-				
-				thread.join(0.001)
-			ensure
-				thread&.join
-			end
-		end
-	end
-end
-
-Event::Selector.constants.each do |name|
-	klass = Event::Selector.const_get(name)
-	
-	RSpec.describe(klass) do
-		let(:loop) {Fiber.current}
-		let(:selector){described_class.new(loop)}
-		
-		it_behaves_like Event::Scheduler
+RSpec.describe IO::Event do
+	it "has a version number" do
+		expect(IO::Event::VERSION).not_to be nil
 	end
 end

@@ -18,8 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'event'
-require 'event/selector'
+require 'io/event'
+require 'io/event/selector'
 require 'socket'
 
 RSpec.shared_examples_for "queue" do
@@ -212,8 +212,8 @@ RSpec.shared_examples_for "queue" do
 	end
 end
 
-Event::Selector.constants.each do |name|
-	selector = Event::Selector.const_get(name)
+IO::Event::Selector.constants.each do |name|
+	selector = IO::Event::Selector.const_get(name)
 	
 	RSpec.describe selector do
 		it_behaves_like "queue"
