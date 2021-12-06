@@ -273,9 +273,9 @@ static inline
 short poll_flags_from_events(int events) {
 	short flags = 0;
 	
-	if (events & EVENT_READABLE) flags |= POLLIN;
-	if (events & EVENT_PRIORITY) flags |= POLLPRI;
-	if (events & EVENT_WRITABLE) flags |= POLLOUT;
+	if (events & IO_EVENT_READABLE) flags |= POLLIN;
+	if (events & IO_EVENT_PRIORITY) flags |= POLLPRI;
+	if (events & IO_EVENT_WRITABLE) flags |= POLLOUT;
 	
 	flags |= POLLERR;
 	flags |= POLLHUP;
@@ -287,9 +287,9 @@ static inline
 int events_from_poll_flags(short flags) {
 	int events = 0;
 	
-	if (flags & POLLIN) events |= EVENT_READABLE;
-	if (flags & POLLPRI) events |= EVENT_PRIORITY;
-	if (flags & POLLOUT) events |= EVENT_WRITABLE;
+	if (flags & POLLIN) events |= IO_EVENT_READABLE;
+	if (flags & POLLPRI) events |= IO_EVENT_PRIORITY;
+	if (flags & POLLOUT) events |= IO_EVENT_WRITABLE;
 	
 	return events;
 }
@@ -397,7 +397,7 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 			if ((size_t)result >= length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_READABLE));
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
 			rb_syserr_fail(-result, strerror(-result));
 		}
@@ -447,7 +447,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 			if ((size_t)result >= length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_WRITABLE));
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
 			rb_syserr_fail(-result, strerror(-result));
 		}

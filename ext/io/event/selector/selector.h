@@ -29,11 +29,11 @@
 #include <time.h>
 
 enum IO_Event {
-	EVENT_READABLE = 1,
-	EVENT_PRIORITY = 2,
-	EVENT_WRITABLE = 4,
-	EVENT_ERROR = 8,
-	EVENT_HANGUP = 16
+	IO_EVENT_READABLE = 1,
+	IO_EVENT_PRIORITY = 2,
+	IO_EVENT_WRITABLE = 4,
+	IO_EVENT_ERROR = 8,
+	IO_EVENT_HANGUP = 16
 };
 
 void Init_IO_Event_Selector();
@@ -62,8 +62,8 @@ int IO_Event_Selector_nonblock_set(int file_descriptor);
 void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
 
 enum IO_Event_Selector_Queue_Flags {
-	EVENT_SELECTOR_QUEUE_FIBER = 1,
-	EVENT_SELECTOR_QUEUE_INTERNAL = 2,
+	IO_EVENT_SELECTOR_QUEUE_FIBER = 1,
+	IO_EVENT_SELECTOR_QUEUE_INTERNAL = 2,
 };
 
 struct IO_Event_Selector_Queue {

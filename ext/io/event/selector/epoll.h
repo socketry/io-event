@@ -20,6 +20,6 @@
 
 #pragma once
 
-#define EVENT_SELECTOR_EPOLL
+#define IO_EVENT_SELECTOR_EPOLL
 
 void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector);

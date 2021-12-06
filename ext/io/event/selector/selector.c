@@ -177,7 +177,7 @@ VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALU
 	struct IO_Event_Selector_Queue waiting = {
 		.behind = NULL,
 		.infront = NULL,
-		.flags = EVENT_SELECTOR_QUEUE_FIBER,
+		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
 	
@@ -210,7 +210,7 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 	struct IO_Event_Selector_Queue waiting = {
 		.behind = NULL,
 		.infront = NULL,
-		.flags = EVENT_SELECTOR_QUEUE_FIBER,
+		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
 	
@@ -232,7 +232,7 @@ void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber
 	
 	waiting->behind = NULL;
 	waiting->infront = NULL;
-	waiting->flags = EVENT_SELECTOR_QUEUE_INTERNAL;
+	waiting->flags = IO_EVENT_SELECTOR_QUEUE_INTERNAL;
 	waiting->fiber = fiber;
 	
 	queue_push(backend, waiting);
@@ -242,7 +242,7 @@ static inline
 void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *ready)
 {
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_queue_pop -> %p\n", (void*)ready->fiber);
-	if (ready->flags & EVENT_SELECTOR_QUEUE_FIBER) {
+	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
 		IO_Event_Selector_fiber_transfer(ready->fiber, 0, NULL);
 	} else {
 		VALUE fiber = ready->fiber;

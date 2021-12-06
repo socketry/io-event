@@ -246,7 +246,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	int count = 0;
 	struct kevent kevents[2] = {0};
 	
-	if (events & EVENT_READABLE) {
+	if (events & IO_EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
@@ -261,7 +261,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 		count++;
 	}
 	
-	if (events & EVENT_WRITABLE) {
+	if (events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
@@ -283,7 +283,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 	int count = 0;
 	struct kevent kevents[2] = {0};
 	
-	if (events & EVENT_READABLE) {
+	if (events & IO_EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
 		kevents[count].flags = EV_DELETE;
@@ -291,7 +291,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 		count++;
 	}
 	
-	if (events & EVENT_WRITABLE) {
+	if (events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
 		kevents[count].flags = EV_DELETE;
@@ -319,8 +319,8 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 
 static inline
 int events_from_kqueue_filter(int filter) {
-	if (filter == EVFILT_READ) return EVENT_READABLE;
-	if (filter == EVFILT_WRITE) return EVENT_WRITABLE;
+	if (filter == EVFILT_READ) return IO_EVENT_READABLE;
+	if (filter == EVFILT_WRITE) return IO_EVENT_WRITABLE;
 	
 	return 0;
 }
@@ -385,7 +385,7 @@ VALUE io_read_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_READABLE));
+			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
 			rb_sys_fail("IO_Event_Selector_KQueue_io_read");
 		}
@@ -460,7 +460,7 @@ VALUE io_write_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_WRITABLE));
+			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
 			rb_sys_fail("IO_Event_Selector_KQueue_io_write");
 		}

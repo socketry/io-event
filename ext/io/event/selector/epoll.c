@@ -219,9 +219,9 @@ static inline
 uint32_t epoll_flags_from_events(int events) {
 	uint32_t flags = 0;
 	
-	if (events & EVENT_READABLE) flags |= EPOLLIN;
-	if (events & EVENT_PRIORITY) flags |= EPOLLPRI;
-	if (events & EVENT_WRITABLE) flags |= EPOLLOUT;
+	if (events & IO_EVENT_READABLE) flags |= EPOLLIN;
+	if (events & IO_EVENT_PRIORITY) flags |= EPOLLPRI;
+	if (events & IO_EVENT_WRITABLE) flags |= EPOLLOUT;
 	
 	flags |= EPOLLRDHUP;
 	flags |= EPOLLONESHOT;
@@ -233,9 +233,9 @@ static inline
 int events_from_epoll_flags(uint32_t flags) {
 	int events = 0;
 	
-	if (flags & EPOLLIN) events |= EVENT_READABLE;
-	if (flags & EPOLLPRI) events |= EVENT_PRIORITY;
-	if (flags & EPOLLOUT) events |= EVENT_WRITABLE;
+	if (flags & EPOLLIN) events |= IO_EVENT_READABLE;
+	if (flags & EPOLLPRI) events |= IO_EVENT_PRIORITY;
+	if (flags & EPOLLOUT) events |= IO_EVENT_WRITABLE;
 	
 	return events;
 }
@@ -348,7 +348,7 @@ VALUE io_read_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_READABLE));
+			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
 			rb_sys_fail("IO_Event_Selector_EPoll_io_read");
 		}
@@ -420,7 +420,7 @@ VALUE io_write_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_WRITABLE));
+			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
 			rb_sys_fail("IO_Event_Selector_EPoll_io_write");
 		}

@@ -30,9 +30,7 @@ void Init_IO_Event()
 	rb_ext_ractor_safe(true);
 #endif
 	
-	VALUE IO = IO_Event = rb_define_module("IO");
-	
-	IO_Event = rb_define_module_under(IO, "IO_Event");
+	IO_Event = rb_define_module_under(rb_cIO, "Event");
 	rb_gc_register_mark_object(IO_Event);
 	
 	IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
@@ -40,15 +38,15 @@ void Init_IO_Event()
 	
 	Init_IO_Event_Selector(IO_Event_Selector);
 	
-	#ifdef EVENT_SELECTOR_URING
+	#ifdef IO_EVENT_SELECTOR_URING
 	Init_IO_Event_Selector_URing(IO_Event_Selector);
 	#endif
 	
-	#ifdef EVENT_SELECTOR_EPOLL
+	#ifdef IO_EVENT_SELECTOR_EPOLL
 	Init_IO_Event_Selector_EPoll(IO_Event_Selector);
 	#endif
 	
-	#ifdef EVENT_SELECTOR_KQUEUE
+	#ifdef IO_EVENT_SELECTOR_KQUEUE
 	Init_IO_Event_Selector_KQueue(IO_Event_Selector);
 	#endif
 }

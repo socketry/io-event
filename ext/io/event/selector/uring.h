@@ -22,7 +22,7 @@
 
 #include <ruby.h>
 
-#define EVENT_SELECTOR_URING
+#define IO_EVENT_SELECTOR_URING
 
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector);
 VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration);
