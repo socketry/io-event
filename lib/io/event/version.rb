@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-class IO
-	module Event
-		VERSION = "0.1.0"
-	end
+module IO::Event
+	VERSION = "0.1.0"
 end

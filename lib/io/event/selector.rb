@@ -20,37 +20,35 @@
 
 require_relative 'selector/select'
 
-class IO
-	module Event
-		# These constants are the same as those defined in IO.
-		READABLE = 1
-		PRIORITY = 2
-		WRITABLE = 4
-		
-		module Selector
-			def self.default(env = ENV)
-				if name = env['IO_EVENT_SELECTOR']&.to_sym
-					if const_defined?(name)
-						return const_get(name)
-					else
-						warn "Could not find IO_EVENT_SELECTOR=#{name}!"
-					end
-				end
-				
-				if self.const_defined?(:URing)
-					return URing
-				elsif self.const_defined?(:KQueue)
-					return KQueue
-				elsif self.const_defined?(:EPoll)
-					return EPoll
+module IO::Event
+	# These constants are the same as those defined in IO.
+	READABLE = 1
+	PRIORITY = 2
+	WRITABLE = 4
+	
+	module Selector
+		def self.default(env = ENV)
+			if name = env['IO_EVENT_SELECTOR']&.to_sym
+				if const_defined?(name)
+					return const_get(name)
 				else
-					return Select
+					warn "Could not find IO_EVENT_SELECTOR=#{name}!"
 				end
 			end
 			
-			def self.new(...)
-				default.new(...)
+			if self.const_defined?(:URing)
+				return URing
+			elsif self.const_defined?(:KQueue)
+				return KQueue
+			elsif self.const_defined?(:EPoll)
+				return EPoll
+			else
+				return Select
 			end
+		end
+		
+		def self.new(...)
+			default.new(...)
 		end
 	end
 end
