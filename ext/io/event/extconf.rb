@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 # Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -18,6 +20,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-module Event
-	VERSION = "1.0.3"
+require 'mkmf'
+
+gem_name = File.basename(__dir__)
+extension_name = 'IO_Event'
+
+# The destination
+dir_config(extension_name)
+
+$CFLAGS << " -Wall"
+
+$srcs = ["event.c", "selector/selector.c"]
+$VPATH << "$(srcdir)/selector"
+
+have_func('rb_ext_ractor_safe')
+have_func('&rb_fiber_transfer')
+
+if have_library('uring') and have_header('liburing.h')
+	$srcs << "selector/uring.c"
 end
+
+if have_header('sys/epoll.h')
+	$srcs << "selector/epoll.c"
+end
+
+if have_header('sys/event.h')
+	$srcs << "selector/kqueue.c"
+end
+
+have_func("rb_io_descriptor")
+have_func("&rb_process_status_wait")
+have_func('rb_fiber_current')
+have_func("&rb_fiber_raise")
+
+have_header('ruby/io/buffer.h')
+
+create_header
+
+# Generate the makefile to compile the native binary into `lib`:
+create_makefile(File.join(gem_name, extension_name))

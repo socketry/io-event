@@ -29,60 +29,60 @@
 
 static const int DEBUG = 0;
 
-static VALUE Event_Selector_URing = Qnil;
+static VALUE IO_Event_Selector_URing = Qnil;
 
 enum {URING_ENTRIES = 64};
 
-struct Event_Selector_URing {
-	struct Event_Selector backend;
+struct IO_Event_Selector_URing {
+	struct IO_Event_Selector backend;
 	struct io_uring ring;
 	size_t pending;
 };
 
-void Event_Selector_URing_Type_mark(void *_data)
+void IO_Event_Selector_URing_Type_mark(void *_data)
 {
-	struct Event_Selector_URing *data = _data;
-	Event_Selector_mark(&data->backend);
+	struct IO_Event_Selector_URing *data = _data;
+	IO_Event_Selector_mark(&data->backend);
 }
 
 static
-void close_internal(struct Event_Selector_URing *data) {
+void close_internal(struct IO_Event_Selector_URing *data) {
 	if (data->ring.ring_fd >= 0) {
 		io_uring_queue_exit(&data->ring);
 		data->ring.ring_fd = -1;
 	}
 }
 
-void Event_Selector_URing_Type_free(void *_data)
+void IO_Event_Selector_URing_Type_free(void *_data)
 {
-	struct Event_Selector_URing *data = _data;
+	struct IO_Event_Selector_URing *data = _data;
 	
 	close_internal(data);
 	
 	free(data);
 }
 
-size_t Event_Selector_URing_Type_size(const void *data)
+size_t IO_Event_Selector_URing_Type_size(const void *data)
 {
-	return sizeof(struct Event_Selector_URing);
+	return sizeof(struct IO_Event_Selector_URing);
 }
 
-static const rb_data_type_t Event_Selector_URing_Type = {
-	.wrap_struct_name = "Event::Backend::URing",
+static const rb_data_type_t IO_Event_Selector_URing_Type = {
+	.wrap_struct_name = "IO_Event::Backend::URing",
 	.function = {
-		.dmark = Event_Selector_URing_Type_mark,
-		.dfree = Event_Selector_URing_Type_free,
-		.dsize = Event_Selector_URing_Type_size,
+		.dmark = IO_Event_Selector_URing_Type_mark,
+		.dfree = IO_Event_Selector_URing_Type_free,
+		.dsize = IO_Event_Selector_URing_Type_size,
 	},
 	.data = NULL,
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
-VALUE Event_Selector_URing_allocate(VALUE self) {
-	struct Event_Selector_URing *data = NULL;
-	VALUE instance = TypedData_Make_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_allocate(VALUE self) {
+	struct IO_Event_Selector_URing *data = NULL;
+	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	Event_Selector_initialize(&data->backend, Qnil);
+	IO_Event_Selector_initialize(&data->backend, Qnil);
 	data->ring.ring_fd = -1;
 	
 	data->pending = 0;
@@ -90,11 +90,11 @@ VALUE Event_Selector_URing_allocate(VALUE self) {
 	return instance;
 }
 
-VALUE Event_Selector_URing_initialize(VALUE self, VALUE loop) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	Event_Selector_initialize(&data->backend, loop);
+	IO_Event_Selector_initialize(&data->backend, loop);
 	int result = io_uring_queue_init(URING_ENTRIES, &data->ring, 0);
 	
 	if (result < 0) {
@@ -106,66 +106,66 @@ VALUE Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
-VALUE Event_Selector_URing_close(VALUE self) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_close(VALUE self) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
 	close_internal(data);
 	
 	return Qnil;
 }
 
-VALUE Event_Selector_URing_transfer(VALUE self)
+VALUE IO_Event_Selector_URing_transfer(VALUE self)
 {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	return Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 }
 
-VALUE Event_Selector_URing_resume(int argc, VALUE *argv, VALUE self)
+VALUE IO_Event_Selector_URing_resume(int argc, VALUE *argv, VALUE self)
 {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	return Event_Selector_resume(&data->backend, argc, argv);
+	return IO_Event_Selector_resume(&data->backend, argc, argv);
 }
 
-VALUE Event_Selector_URing_yield(VALUE self)
+VALUE IO_Event_Selector_URing_yield(VALUE self)
 {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	return Event_Selector_yield(&data->backend);
+	return IO_Event_Selector_yield(&data->backend);
 }
 
-VALUE Event_Selector_URing_push(VALUE self, VALUE fiber)
+VALUE IO_Event_Selector_URing_push(VALUE self, VALUE fiber)
 {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	Event_Selector_queue_push(&data->backend, fiber);
+	IO_Event_Selector_queue_push(&data->backend, fiber);
 	
 	return Qnil;
 }
 
-VALUE Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
+VALUE IO_Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
 {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	return Event_Selector_raise(&data->backend, argc, argv);
+	return IO_Event_Selector_raise(&data->backend, argc, argv);
 }
 
-VALUE Event_Selector_URing_ready_p(VALUE self) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
 	return data->backend.ready ? Qtrue : Qfalse;
 }
 
 static
-int io_uring_submit_flush(struct Event_Selector_URing *data) {
+int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 	if (data->pending) {
 		if (DEBUG) fprintf(stderr, "io_uring_submit_flush(pending=%ld)\n", data->pending);
 		
@@ -186,7 +186,7 @@ int io_uring_submit_flush(struct Event_Selector_URing *data) {
 }
 
 static
-int io_uring_submit_now(struct Event_Selector_URing *data) {
+int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
 	while (true) {
 		int result = io_uring_submit(&data->ring);
 		
@@ -196,7 +196,7 @@ int io_uring_submit_now(struct Event_Selector_URing *data) {
 		}
 
 		if (result == -EBUSY || result == -EAGAIN) {
-			Event_Selector_yield(&data->backend);
+			IO_Event_Selector_yield(&data->backend);
 		} else {
 			rb_syserr_fail(-result, "io_uring_submit_now");
 		}
@@ -204,11 +204,11 @@ int io_uring_submit_now(struct Event_Selector_URing *data) {
 }
 
 static
-void io_uring_submit_pending(struct Event_Selector_URing *data) {
+void io_uring_submit_pending(struct IO_Event_Selector_URing *data) {
 	data->pending += 1;
 }
 
-struct io_uring_sqe * io_get_sqe(struct Event_Selector_URing *data) {
+struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *data) {
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&data->ring);
 	
 	while (sqe == NULL) {
@@ -222,7 +222,7 @@ struct io_uring_sqe * io_get_sqe(struct Event_Selector_URing *data) {
 }
 
 struct process_wait_arguments {
-	struct Event_Selector_URing *data;
+	struct IO_Event_Selector_URing *data;
 	pid_t pid;
 	int flags;
 	int descriptor;
@@ -232,9 +232,9 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
-	return Event_Selector_process_status_wait(arguments->pid);
+	return IO_Event_Selector_process_status_wait(arguments->pid);
 }
 
 static
@@ -246,9 +246,9 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-VALUE Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
 	struct process_wait_arguments process_wait_arguments = {
 		.data = data,
@@ -261,7 +261,7 @@ VALUE Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, VALU
 	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 
-	if (DEBUG) fprintf(stderr, "Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, process_wait_arguments.descriptor, POLLIN|POLLHUP|POLLERR);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
@@ -295,7 +295,7 @@ int events_from_poll_flags(short flags) {
 }
 
 struct io_wait_arguments {
-	struct Event_Selector_URing *data;
+	struct IO_Event_Selector_URing *data;
 	VALUE fiber;
 	short flags;
 };
@@ -303,7 +303,7 @@ struct io_wait_arguments {
 static
 VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
-	struct Event_Selector_URing *data = arguments->data;
+	struct IO_Event_Selector_URing *data = arguments->data;
 	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
@@ -318,10 +318,10 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
-	struct Event_Selector_URing *data = arguments->data;
+	struct IO_Event_Selector_URing *data = arguments->data;
 
-	VALUE result = Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
-	if (DEBUG) fprintf(stderr, "io_wait:Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
+	VALUE result = IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	if (DEBUG) fprintf(stderr, "io_wait:IO_Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
 
 	// We explicitly filter the resulting events based on the requested events.
 	// In some cases, poll will report events we didn't ask for.
@@ -330,16 +330,16 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	return INT2NUM(events_from_poll_flags(flags));
 };
 
-VALUE Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	int descriptor = Event_Selector_io_descriptor(io);
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
-	if (DEBUG) fprintf(stderr, "Event_Selector_URing_io_wait:io_uring_prep_poll_add(descriptor=%d, flags=%d, fiber=%p)\n", descriptor, flags, (void*)fiber);
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_io_wait:io_uring_prep_poll_add(descriptor=%d, flags=%d, fiber=%p)\n", descriptor, flags, (void*)fiber);
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
@@ -358,7 +358,7 @@ VALUE Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE even
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 
-static int io_read(struct Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
+static int io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 
 	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
@@ -367,17 +367,17 @@ static int io_read(struct Event_Selector_URing *data, VALUE fiber, int descripto
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_now(data);
 	
-	VALUE result = Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
-	if (DEBUG) fprintf(stderr, "io_read:Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
+	VALUE result = IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	if (DEBUG) fprintf(stderr, "io_read:IO_Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
 
 	return RB_NUM2INT(result);
 }
 
-VALUE Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	int descriptor = Event_Selector_io_descriptor(io);
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	void *base;
 	size_t size;
@@ -397,7 +397,7 @@ VALUE Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buff
 			if ((size_t)result >= length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
-			Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_READABLE));
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_READABLE));
 		} else {
 			rb_syserr_fail(-result, strerror(-result));
 		}
@@ -407,7 +407,7 @@ VALUE Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buff
 }
 
 static
-int io_write(struct Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
+int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
 	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
@@ -416,17 +416,17 @@ int io_write(struct Event_Selector_URing *data, VALUE fiber, int descriptor, cha
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
 	
-	int result = RB_NUM2INT(Event_Selector_fiber_transfer(data->backend.loop, 0, NULL));
-	if (DEBUG) fprintf(stderr, "io_write:Event_Selector_fiber_transfer -> %d\n", result);
+	int result = RB_NUM2INT(IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL));
+	if (DEBUG) fprintf(stderr, "io_write:IO_Event_Selector_fiber_transfer -> %d\n", result);
 
 	return result;
 }
 
-VALUE Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	int descriptor = Event_Selector_io_descriptor(io);
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	const void *base;
 	size_t size;
@@ -447,7 +447,7 @@ VALUE Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 			if ((size_t)result >= length) break;
 			length -= result;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
-			Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_WRITABLE));
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(EVENT_WRITABLE));
 		} else {
 			rb_syserr_fail(-result, strerror(-result));
 		}
@@ -460,11 +460,11 @@ VALUE Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 
 static const int ASYNC_CLOSE = 1;
 
-VALUE Event_Selector_URing_io_close(VALUE self, VALUE io) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	int descriptor = Event_Selector_io_descriptor(io);
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 
 	if (ASYNC_CLOSE) {
 		struct io_uring_sqe *sqe = io_get_sqe(data);
@@ -512,7 +512,7 @@ int timeout_nonblocking(struct __kernel_timespec *timespec) {
 }
 
 struct select_arguments {
-	struct Event_Selector_URing *data;
+	struct IO_Event_Selector_URing *data;
 	
 	int result;
 	
@@ -570,7 +570,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 		
 		io_uring_cq_advance(ring, 1);
 		
-		Event_Selector_fiber_transfer(fiber, 1, &result);
+		IO_Event_Selector_fiber_transfer(fiber, 1, &result);
 	}
 	
 	// io_uring_cq_advance(ring, completed);
@@ -580,11 +580,11 @@ unsigned select_process_completions(struct io_uring *ring) {
 	return completed;
 }
 
-VALUE Event_Selector_URing_select(VALUE self, VALUE duration) {
-	struct Event_Selector_URing *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_URing, &Event_Selector_URing_Type, data);
+VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
-	int ready = Event_Selector_queue_flush(&data->backend);
+	int ready = IO_Event_Selector_queue_flush(&data->backend);
 	
 	int result = select_process_completions(&data->ring);
 
@@ -613,32 +613,32 @@ VALUE Event_Selector_URing_select(VALUE self, VALUE duration) {
 	return RB_INT2NUM(result);
 }
 
-void Init_Event_Selector_URing(VALUE Event_Selector) {
-	Event_Selector_URing = rb_define_class_under(Event_Selector, "URing", rb_cObject);
-	rb_gc_register_mark_object(Event_Selector_URing);
+void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
+	IO_Event_Selector_URing = rb_define_class_under(IO_Event_Selector, "URing", rb_cObject);
+	rb_gc_register_mark_object(IO_Event_Selector_URing);
 	
-	rb_define_alloc_func(Event_Selector_URing, Event_Selector_URing_allocate);
-	rb_define_method(Event_Selector_URing, "initialize", Event_Selector_URing_initialize, 1);
+	rb_define_alloc_func(IO_Event_Selector_URing, IO_Event_Selector_URing_allocate);
+	rb_define_method(IO_Event_Selector_URing, "initialize", IO_Event_Selector_URing_initialize, 1);
 	
-	rb_define_method(Event_Selector_URing, "transfer", Event_Selector_URing_transfer, 0);
-	rb_define_method(Event_Selector_URing, "resume", Event_Selector_URing_resume, -1);
-	rb_define_method(Event_Selector_URing, "yield", Event_Selector_URing_yield, 0);
-	rb_define_method(Event_Selector_URing, "push", Event_Selector_URing_push, 1);
-	rb_define_method(Event_Selector_URing, "raise", Event_Selector_URing_raise, -1);
+	rb_define_method(IO_Event_Selector_URing, "transfer", IO_Event_Selector_URing_transfer, 0);
+	rb_define_method(IO_Event_Selector_URing, "resume", IO_Event_Selector_URing_resume, -1);
+	rb_define_method(IO_Event_Selector_URing, "yield", IO_Event_Selector_URing_yield, 0);
+	rb_define_method(IO_Event_Selector_URing, "push", IO_Event_Selector_URing_push, 1);
+	rb_define_method(IO_Event_Selector_URing, "raise", IO_Event_Selector_URing_raise, -1);
 	
-	rb_define_method(Event_Selector_URing, "ready?", Event_Selector_URing_ready_p, 0);
+	rb_define_method(IO_Event_Selector_URing, "ready?", IO_Event_Selector_URing_ready_p, 0);
 	
-	rb_define_method(Event_Selector_URing, "select", Event_Selector_URing_select, 1);
-	rb_define_method(Event_Selector_URing, "close", Event_Selector_URing_close, 0);
+	rb_define_method(IO_Event_Selector_URing, "select", IO_Event_Selector_URing_select, 1);
+	rb_define_method(IO_Event_Selector_URing, "close", IO_Event_Selector_URing_close, 0);
 	
-	rb_define_method(Event_Selector_URing, "io_wait", Event_Selector_URing_io_wait, 3);
+	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(Event_Selector_URing, "io_read", Event_Selector_URing_io_read, 4);
-	rb_define_method(Event_Selector_URing, "io_write", Event_Selector_URing_io_write, 4);
+	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 4);
+	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 4);
 #endif
 	
-	rb_define_method(Event_Selector_URing, "io_close", Event_Selector_URing_io_close, 1);
+	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
-	rb_define_method(Event_Selector_URing, "process_wait", Event_Selector_URing_process_wait, 3);
+	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
 }

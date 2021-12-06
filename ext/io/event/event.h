@@ -18,35 +18,22 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "event.h"
-#include "selector/selector.h"
+#pragma once
 
-VALUE Event = Qnil;
-VALUE Event_Selector = Qnil;
+#include <ruby.h>
 
-void Init_event()
-{
-#ifdef HAVE_RB_EXT_RACTOR_SAFE
-	rb_ext_ractor_safe(true);
+#include "extconf.h"
+
+void Init_IO_Event();
+
+#ifdef HAVE_LIBURING_H
+#include "selector/uring.h"
 #endif
-	
-	Event = rb_define_module("Event");
-	rb_gc_register_mark_object(Event);
-	
-	Event_Selector = rb_define_module_under(Event, "Selector");
-	rb_gc_register_mark_object(Event_Selector);
-	
-	Init_Event_Selector(Event_Selector);
-	
-	#ifdef EVENT_SELECTOR_URING
-	Init_Event_Selector_URing(Event_Selector);
-	#endif
-	
-	#ifdef EVENT_SELECTOR_EPOLL
-	Init_Event_Selector_EPoll(Event_Selector);
-	#endif
-	
-	#ifdef EVENT_SELECTOR_KQUEUE
-	Init_Event_Selector_KQueue(Event_Selector);
-	#endif
-}
+
+#ifdef HAVE_SYS_EPOLL_H
+#include "selector/epoll.h"
+#endif
+
+#ifdef HAVE_SYS_EVENT_H
+#include "selector/kqueue.h"
+#endif

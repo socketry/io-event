@@ -18,12 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'event/version'
-require_relative 'event/selector'
-
-begin
-	require 'event/event'
-rescue LoadError => error
-	warn "Could not load native event selector: #{error}"
-	# Ignore.
+module Event
+	VERSION = "0.1.0"
 end

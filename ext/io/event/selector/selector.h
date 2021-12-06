@@ -28,7 +28,7 @@
 
 #include <time.h>
 
-enum Event {
+enum IO_Event {
 	EVENT_READABLE = 1,
 	EVENT_PRIORITY = 2,
 	EVENT_WRITABLE = 4,
@@ -36,88 +36,88 @@ enum Event {
 	EVENT_HANGUP = 16
 };
 
-void Init_Event_Selector();
+void Init_IO_Event_Selector();
 
-VALUE Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
+VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
 
 #ifdef HAVE__RB_FIBER_RAISE
-#define Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
+#define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
 #else
-VALUE Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv);
+VALUE IO_Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv);
 #endif
 
 #ifdef HAVE_RB_IO_DESCRIPTOR
-#define Event_Selector_io_descriptor(io) rb_io_descriptor(io)
+#define IO_Event_Selector_io_descriptor(io) rb_io_descriptor(io)
 #else
-int Event_Selector_io_descriptor(VALUE io);
+int IO_Event_Selector_io_descriptor(VALUE io);
 #endif
 
 #ifdef HAVE_RB_PROCESS_STATUS_WAIT
-#define Event_Selector_process_status_wait(pid) rb_process_status_wait(pid)
+#define IO_Event_Selector_process_status_wait(pid) rb_process_status_wait(pid)
 #else
-VALUE Event_Selector_process_status_wait(rb_pid_t pid);
+VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid);
 #endif
 
-int Event_Selector_nonblock_set(int file_descriptor);
-void Event_Selector_nonblock_restore(int file_descriptor, int flags);
+int IO_Event_Selector_nonblock_set(int file_descriptor);
+void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
 
-enum Event_Selector_Queue_Flags {
+enum IO_Event_Selector_Queue_Flags {
 	EVENT_SELECTOR_QUEUE_FIBER = 1,
 	EVENT_SELECTOR_QUEUE_INTERNAL = 2,
 };
 
-struct Event_Selector_Queue {
-	struct Event_Selector_Queue *behind;
-	struct Event_Selector_Queue *infront;
+struct IO_Event_Selector_Queue {
+	struct IO_Event_Selector_Queue *behind;
+	struct IO_Event_Selector_Queue *infront;
 	
-	enum Event_Selector_Queue_Flags flags;
+	enum IO_Event_Selector_Queue_Flags flags;
 	
 	VALUE fiber;
 };
 
-struct Event_Selector {
+struct IO_Event_Selector {
 	VALUE loop;
 	
-	struct Event_Selector_Queue *free;
+	struct IO_Event_Selector_Queue *free;
 	
 	// Append to waiting.
-	struct Event_Selector_Queue *waiting;
+	struct IO_Event_Selector_Queue *waiting;
 	// Process from ready.
-	struct Event_Selector_Queue *ready;
+	struct IO_Event_Selector_Queue *ready;
 };
 
 static inline
-void Event_Selector_initialize(struct Event_Selector *backend, VALUE loop) {
+void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE loop) {
 	backend->loop = loop;
 	backend->waiting = NULL;
 	backend->ready = NULL;
 }
 
 static inline
-void Event_Selector_mark(struct Event_Selector *backend) {
+void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
 	rb_gc_mark(backend->loop);
 	
-	struct Event_Selector_Queue *ready = backend->ready;
+	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
 		rb_gc_mark(ready->fiber);
 		ready = ready->behind;
 	}
 }
 
-VALUE Event_Selector_resume(struct Event_Selector *backend, int argc, VALUE *argv);
-VALUE Event_Selector_raise(struct Event_Selector *backend, int argc, VALUE *argv);
+VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALUE *argv);
+VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE *argv);
 
 static inline
-VALUE Event_Selector_yield(struct Event_Selector *backend)
+VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend)
 {
-	return Event_Selector_resume(backend, 1, &backend->loop);
+	return IO_Event_Selector_resume(backend, 1, &backend->loop);
 }
 
-void Event_Selector_queue_push(struct Event_Selector *backend, VALUE fiber);
-int Event_Selector_queue_flush(struct Event_Selector *backend);
+void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber);
+int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend);
 
-void Event_Selector_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration);
-void Event_Selector_current_time(struct timespec *time);
+void IO_Event_Selector_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration);
+void IO_Event_Selector_current_time(struct timespec *time);
 
 #define PRINTF_TIMESPEC "%lld.%.9ld"
 #define PRINTF_TIMESPEC_ARGS(ts) (long long)((ts).tv_sec), (ts).tv_nsec

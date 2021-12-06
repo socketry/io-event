@@ -27,69 +27,69 @@
 
 #include "pidfd.c"
 
-static VALUE Event_Selector_EPoll = Qnil;
+static VALUE IO_Event_Selector_EPoll = Qnil;
 
 enum {EPOLL_MAX_EVENTS = 64};
 
-struct Event_Selector_EPoll {
-	struct Event_Selector backend;
+struct IO_Event_Selector_EPoll {
+	struct IO_Event_Selector backend;
 	int descriptor;
 };
 
-void Event_Selector_EPoll_Type_mark(void *_data)
+void IO_Event_Selector_EPoll_Type_mark(void *_data)
 {
-	struct Event_Selector_EPoll *data = _data;
-	Event_Selector_mark(&data->backend);
+	struct IO_Event_Selector_EPoll *data = _data;
+	IO_Event_Selector_mark(&data->backend);
 }
 
 static
-void close_internal(struct Event_Selector_EPoll *data) {
+void close_internal(struct IO_Event_Selector_EPoll *data) {
 	if (data->descriptor >= 0) {
 		close(data->descriptor);
 		data->descriptor = -1;
 	}
 }
 
-void Event_Selector_EPoll_Type_free(void *_data)
+void IO_Event_Selector_EPoll_Type_free(void *_data)
 {
-	struct Event_Selector_EPoll *data = _data;
+	struct IO_Event_Selector_EPoll *data = _data;
 	
 	close_internal(data);
 	
 	free(data);
 }
 
-size_t Event_Selector_EPoll_Type_size(const void *data)
+size_t IO_Event_Selector_EPoll_Type_size(const void *data)
 {
-	return sizeof(struct Event_Selector_EPoll);
+	return sizeof(struct IO_Event_Selector_EPoll);
 }
 
-static const rb_data_type_t Event_Selector_EPoll_Type = {
-	.wrap_struct_name = "Event::Backend::EPoll",
+static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
+	.wrap_struct_name = "IO_Event::Backend::EPoll",
 	.function = {
-		.dmark = Event_Selector_EPoll_Type_mark,
-		.dfree = Event_Selector_EPoll_Type_free,
-		.dsize = Event_Selector_EPoll_Type_size,
+		.dmark = IO_Event_Selector_EPoll_Type_mark,
+		.dfree = IO_Event_Selector_EPoll_Type_free,
+		.dsize = IO_Event_Selector_EPoll_Type_size,
 	},
 	.data = NULL,
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
-VALUE Event_Selector_EPoll_allocate(VALUE self) {
-	struct Event_Selector_EPoll *data = NULL;
-	VALUE instance = TypedData_Make_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_initialize(&data->backend, Qnil);
+	IO_Event_Selector_initialize(&data->backend, Qnil);
 	data->descriptor = -1;
 	
 	return instance;
 }
 
-VALUE Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_initialize(&data->backend, loop);
+	IO_Event_Selector_initialize(&data->backend, loop);
 	int result = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (result == -1) {
@@ -103,66 +103,66 @@ VALUE Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
-VALUE Event_Selector_EPoll_close(VALUE self) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_close(VALUE self) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	close_internal(data);
 	
 	return Qnil;
 }
 
-VALUE Event_Selector_EPoll_transfer(VALUE self)
+VALUE IO_Event_Selector_EPoll_transfer(VALUE self)
 {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	return Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 }
 
-VALUE Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
+VALUE IO_Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
 {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	return Event_Selector_resume(&data->backend, argc, argv);
+	return IO_Event_Selector_resume(&data->backend, argc, argv);
 }
 
-VALUE Event_Selector_EPoll_yield(VALUE self)
+VALUE IO_Event_Selector_EPoll_yield(VALUE self)
 {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	return Event_Selector_yield(&data->backend);
+	return IO_Event_Selector_yield(&data->backend);
 }
 
-VALUE Event_Selector_EPoll_push(VALUE self, VALUE fiber)
+VALUE IO_Event_Selector_EPoll_push(VALUE self, VALUE fiber)
 {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	Event_Selector_queue_push(&data->backend, fiber);
+	IO_Event_Selector_queue_push(&data->backend, fiber);
 	
 	return Qnil;
 }
 
-VALUE Event_Selector_EPoll_raise(int argc, VALUE *argv, VALUE self)
+VALUE IO_Event_Selector_EPoll_raise(int argc, VALUE *argv, VALUE self)
 {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	return Event_Selector_raise(&data->backend, argc, argv);
+	return IO_Event_Selector_raise(&data->backend, argc, argv);
 }
 
-VALUE Event_Selector_EPoll_ready_p(VALUE self) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_ready_p(VALUE self) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	return data->backend.ready ? Qtrue : Qfalse;
 }
 
 struct process_wait_arguments {
-	struct Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *data;
 	pid_t pid;
 	int flags;
 	int descriptor;
@@ -172,9 +172,9 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
-	return Event_Selector_process_status_wait(arguments->pid);
+	return IO_Event_Selector_process_status_wait(arguments->pid);
 }
 
 static
@@ -188,9 +188,9 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-VALUE Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	struct process_wait_arguments process_wait_arguments = {
 		.data = data,
@@ -241,7 +241,7 @@ int events_from_epoll_flags(uint32_t flags) {
 }
 
 struct io_wait_arguments {
-	struct Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *data;
 	int descriptor;
 	int duplicate;
 };
@@ -265,18 +265,18 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	VALUE result = IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
 
-VALUE Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	struct epoll_event event = {0};
 	
-	int descriptor = Event_Selector_io_descriptor(io);
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	int duplicate = -1;
 	
 	event.events = epoll_flags_from_events(NUM2INT(events));
@@ -348,9 +348,9 @@ VALUE io_read_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_READABLE));
+			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_READABLE));
 		} else {
-			rb_sys_fail("Event_Selector_EPoll_io_read");
+			rb_sys_fail("IO_Event_Selector_EPoll_io_read");
 		}
 	}
 	
@@ -361,13 +361,13 @@ static
 VALUE io_read_ensure(VALUE _arguments) {
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	
-	Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
+	IO_Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
 	
 	return Qnil;
 }
 
-VALUE Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	int descriptor = Event_Selector_io_descriptor(io);
+VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	
@@ -376,7 +376,7 @@ VALUE Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buff
 		.fiber = fiber,
 		.io = io,
 		
-		.flags = Event_Selector_nonblock_set(descriptor),
+		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length,
@@ -420,9 +420,9 @@ VALUE io_write_loop(VALUE _arguments) {
 			offset += result;
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_WRITABLE));
+			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(EVENT_WRITABLE));
 		} else {
-			rb_sys_fail("Event_Selector_EPoll_io_write");
+			rb_sys_fail("IO_Event_Selector_EPoll_io_write");
 		}
 	}
 	
@@ -433,13 +433,13 @@ static
 VALUE io_write_ensure(VALUE _arguments) {
 	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
 	
-	Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
+	IO_Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
 	
 	return Qnil;
 };
 
-VALUE Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
-	int descriptor = Event_Selector_io_descriptor(io);
+VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	size_t length = NUM2SIZET(_length);
 	
@@ -448,7 +448,7 @@ VALUE Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buf
 		.fiber = fiber,
 		.io = io,
 		
-		.flags = Event_Selector_nonblock_set(descriptor),
+		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length,
@@ -479,7 +479,7 @@ int make_timeout(VALUE duration) {
 }
 
 struct select_arguments {
-	struct Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *data;
 	
 	int count;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
@@ -514,11 +514,11 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 	}
 }
 
-VALUE Event_Selector_EPoll_select(VALUE self, VALUE duration) {
-	struct Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct Event_Selector_EPoll, &Event_Selector_EPoll_Type, data);
+VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
-	int ready = Event_Selector_queue_flush(&data->backend);
+	int ready = IO_Event_Selector_queue_flush(&data->backend);
 	
 	struct select_arguments arguments = {
 		.data = data,
@@ -542,36 +542,36 @@ VALUE Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
-		Event_Selector_fiber_transfer(fiber, 1, &result);
+		IO_Event_Selector_fiber_transfer(fiber, 1, &result);
 	}
 	
 	return INT2NUM(arguments.count);
 }
 
-void Init_Event_Selector_EPoll(VALUE Event_Selector) {
-	Event_Selector_EPoll = rb_define_class_under(Event_Selector, "EPoll", rb_cObject);
-	rb_gc_register_mark_object(Event_Selector_EPoll);
+void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
+	IO_Event_Selector_EPoll = rb_define_class_under(IO_Event_Selector, "EPoll", rb_cObject);
+	rb_gc_register_mark_object(IO_Event_Selector_EPoll);
 	
-	rb_define_alloc_func(Event_Selector_EPoll, Event_Selector_EPoll_allocate);
-	rb_define_method(Event_Selector_EPoll, "initialize", Event_Selector_EPoll_initialize, 1);
+	rb_define_alloc_func(IO_Event_Selector_EPoll, IO_Event_Selector_EPoll_allocate);
+	rb_define_method(IO_Event_Selector_EPoll, "initialize", IO_Event_Selector_EPoll_initialize, 1);
 	
-	rb_define_method(Event_Selector_EPoll, "transfer", Event_Selector_EPoll_transfer, 0);
-	rb_define_method(Event_Selector_EPoll, "resume", Event_Selector_EPoll_resume, -1);
-	rb_define_method(Event_Selector_EPoll, "yield", Event_Selector_EPoll_yield, 0);
-	rb_define_method(Event_Selector_EPoll, "push", Event_Selector_EPoll_push, 1);
-	rb_define_method(Event_Selector_EPoll, "raise", Event_Selector_EPoll_raise, -1);
+	rb_define_method(IO_Event_Selector_EPoll, "transfer", IO_Event_Selector_EPoll_transfer, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "resume", IO_Event_Selector_EPoll_resume, -1);
+	rb_define_method(IO_Event_Selector_EPoll, "yield", IO_Event_Selector_EPoll_yield, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "push", IO_Event_Selector_EPoll_push, 1);
+	rb_define_method(IO_Event_Selector_EPoll, "raise", IO_Event_Selector_EPoll_raise, -1);
 	
-	rb_define_method(Event_Selector_EPoll, "ready?", Event_Selector_EPoll_ready_p, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "ready?", IO_Event_Selector_EPoll_ready_p, 0);
 	
-	rb_define_method(Event_Selector_EPoll, "select", Event_Selector_EPoll_select, 1);
-	rb_define_method(Event_Selector_EPoll, "close", Event_Selector_EPoll_close, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "select", IO_Event_Selector_EPoll_select, 1);
+	rb_define_method(IO_Event_Selector_EPoll, "close", IO_Event_Selector_EPoll_close, 0);
 	
-	rb_define_method(Event_Selector_EPoll, "io_wait", Event_Selector_EPoll_io_wait, 3);
+	rb_define_method(IO_Event_Selector_EPoll, "io_wait", IO_Event_Selector_EPoll_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(Event_Selector_EPoll, "io_read", Event_Selector_EPoll_io_read, 4);
-	rb_define_method(Event_Selector_EPoll, "io_write", Event_Selector_EPoll_io_write, 4);
+	rb_define_method(IO_Event_Selector_EPoll, "io_read", IO_Event_Selector_EPoll_io_read, 4);
+	rb_define_method(IO_Event_Selector_EPoll, "io_write", IO_Event_Selector_EPoll_io_write, 4);
 #endif
 	
-	rb_define_method(Event_Selector_EPoll, "process_wait", Event_Selector_EPoll_process_wait, 3);
+	rb_define_method(IO_Event_Selector_EPoll, "process_wait", IO_Event_Selector_EPoll_process_wait, 3);
 }

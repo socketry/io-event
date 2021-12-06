@@ -20,9 +20,6 @@
 
 #pragma once
 
-#include <ruby.h>
+#define EVENT_SELECTOR_EPOLL
 
-#define EVENT_SELECTOR_URING
-
-void Init_Event_Selector_URing(VALUE Event_Selector);
-VALUE Event_Selector_URing_select(VALUE self, VALUE duration);
+void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector);
