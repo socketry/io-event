@@ -47,8 +47,8 @@ module IO::Event
 			end
 		end
 		
-		def self.new(...)
-			default.new(...)
+		def self.new(loop)
+			default.new(loop)
 		end
 	end
 end
