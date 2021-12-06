@@ -10,6 +10,7 @@ SERVERS = [
 ]
 
 def default
+	install
 	build
 	benchmark
 end
@@ -17,6 +18,10 @@ end
 def build
 	compiler = ENV.fetch('CC', 'clang')
 	system(compiler, "compiled.c", "-o", "compiled", chdir: __dir__)
+end
+
+def install
+	system("bundle", "install", chdir: __dir__)
 end
 
 # @parameter connections [Integer] The number of simultaneous connections.
