@@ -10,7 +10,6 @@ SERVERS = [
 ]
 
 def default
-	install
 	build
 	benchmark
 end
@@ -18,10 +17,6 @@ end
 def build
 	compiler = ENV.fetch('CC', 'clang')
 	system(compiler, "compiled.c", "-o", "compiled", chdir: __dir__)
-end
-
-def install
-	system("bundle", "install", chdir: __dir__)
 end
 
 # @parameter connections [Integer] The number of simultaneous connections.
@@ -34,7 +29,7 @@ def benchmark(connections: 8, threads: 1, duration: 1)
 	SERVERS.each do |server|
 		$stdout.puts [nil, "Benchmark #{server}..."]
 		
-		pid = Process.spawn("bundle", "exec", server, port.to_s, chdir: __dir__)
+		pid = Process.spawn(server, port.to_s, chdir: __dir__)
 		puts "Server running pid=#{pid}..."
 		
 		sleep 1
