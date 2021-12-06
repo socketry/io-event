@@ -232,13 +232,20 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, 
 		.flags = RB_NUM2INT(flags),
 	};
 	
-	int waiting = process_add_filters(data->descriptor, process_wait_arguments.pid, fiber);
+	VALUE result = Qnil;
 	
-	if (waiting) {
-		return rb_rescue(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_rescue, (VALUE)&process_wait_arguments);
-	} else {
-		return IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
+	// This loop should not be needed but I have seen a race condition between NOTE_EXIT and `waitpid`, thus the result would be (unexpectedly) nil. So we put this in a loop to retry if the race condition shows up:
+	while (NIL_P(result)) {
+		int waiting = process_add_filters(data->descriptor, process_wait_arguments.pid, fiber);
+	
+		if (waiting) {
+			result = rb_rescue(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_rescue, (VALUE)&process_wait_arguments);
+		} else {
+			result = IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
+		}
 	}
+	
+	return result;
 }
 
 static

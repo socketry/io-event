@@ -277,7 +277,7 @@ RSpec.shared_examples_for IO::Event::Selector do
 			events = []
 			
 			fiber = Fiber.new do
-				pid = Process.spawn("sleep 1")
+				pid = Process.spawn("sleep 0.01")
 				result = subject.process_wait(Fiber.current, pid, 0)
 				expect(result).to be_success
 				events << :process_finished
