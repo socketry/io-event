@@ -29,7 +29,7 @@ def benchmark(connections: 8, threads: 1, duration: 1)
 	SERVERS.each do |server|
 		$stdout.puts [nil, "Benchmark #{server}..."]
 		
-		pid = Process.spawn(server, port.to_s, chdir: __dir__)
+		pid = Process.spawn(File.expand_path(server, __dir__), port.to_s)
 		puts "Server running pid=#{pid}..."
 		
 		sleep 1
