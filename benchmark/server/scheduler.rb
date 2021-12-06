@@ -1,5 +1,9 @@
 
-require_relative '../../lib/io/event'
+# $LOAD_PATH << File.expand_path("../../lib", __dir__)
+# $LOAD_PATH << File.expand_path("../../ext", __dir__)
+
+require 'io/event'
+
 require 'socket'
 require 'fiber'
 
