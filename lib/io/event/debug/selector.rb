@@ -75,6 +75,16 @@ module IO::Event
 				register_readable(fiber, io, events)
 			end
 			
+			if IO.const_defined?(:Buffer)
+				def io_read(fiber, io, buffer, length)
+					@selector.io_read(fiber, io, buffer, length)
+				end
+				
+				def io_write(fiber, io, buffer, length)
+					@selector.io_write(fiber, io, buffer, length)
+				end
+			end
+			
 			def select(duration = nil)
 				@selector.select(duration)
 			end
