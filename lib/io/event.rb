@@ -22,7 +22,7 @@ require_relative 'event/version'
 require_relative 'event/selector'
 
 begin
-	require 'io/event/IO_Event'
+	require 'IO_Event'
 rescue LoadError => error
 	warn "Could not load native event selector: #{error}"
 	# Ignore.
