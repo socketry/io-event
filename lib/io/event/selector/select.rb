@@ -127,7 +127,7 @@ module IO::Event
 						when :wait_writable
 							self.io_wait(fiber, io, WRITABLE)
 						else
-							break if result.empty?
+							break unless result
 							
 							buffer.copy(result, offset)
 							
