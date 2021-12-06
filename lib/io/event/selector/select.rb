@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+require_relative '../interrupt'
+
 module IO::Event
 	module Selector
 		class Select
@@ -28,9 +30,16 @@ module IO::Event
 				@writable = {}
 				
 				@ready = Queue.new
+				@interrupt = Interrupt.attach(self)
+			end
+			
+			def wakeup
+				@interrupt.signal
 			end
 			
 			def close
+				@interrupt.close
+				
 				@loop = nil
 				@readable = nil
 				@writable = nil
@@ -213,6 +222,8 @@ module IO::Event
 				ready.each do |fiber, events|
 					fiber.transfer(events) if fiber.alive?
 				end
+				
+				return ready.size
 			end
 		end
 	end

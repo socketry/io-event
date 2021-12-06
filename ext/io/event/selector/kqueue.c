@@ -614,13 +614,34 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	}
 	
 	for (int i = 0; i < arguments.count; i += 1) {
-		VALUE fiber = (VALUE)arguments.events[i].udata;
-		VALUE result = INT2NUM(arguments.events[i].filter);
-		
-		IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		if (arguments.events[i].udata) {
+			VALUE fiber = (VALUE)arguments.events[i].udata;
+			VALUE result = INT2NUM(arguments.events[i].filter);
+			
+			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		}
 	}
 	
 	return INT2NUM(arguments.count);
+}
+
+VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
+	struct IO_Event_Selector_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	struct kevent trigger = {0};
+	
+	trigger.filter = EVFILT_USER;
+	trigger.flags = EV_ADD|EV_CLEAR;
+	trigger.fflags = NOTE_TRIGGER;
+	
+	int result = kevent(data->descriptor, &trigger, 1, NULL, 0, NULL);
+	
+	if (result == -1) {
+		rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
+	}
+	
+	return Qtrue;
 }
 
 void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
@@ -639,6 +660,7 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "ready?", IO_Event_Selector_KQueue_ready_p, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "select", IO_Event_Selector_KQueue_select, 1);
+	rb_define_method(IO_Event_Selector_KQueue, "wakeup", IO_Event_Selector_KQueue_wakeup, 0);
 	rb_define_method(IO_Event_Selector_KQueue, "close", IO_Event_Selector_KQueue_close, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);

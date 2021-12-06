@@ -30,6 +30,10 @@ module IO::Event
 				@priority = {}
 			end
 			
+			def wakeup
+				@selector.wakeup
+			end
+			
 			def close
 				if @selector.nil?
 					raise "Selector already closed!"

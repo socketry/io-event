@@ -45,6 +45,16 @@ RSpec.shared_examples_for IO::Event::Selector do
 		end
 	end
 	
+	describe '#wakeup' do
+		it "can wakeup sleeping selector" do
+			Thread.new do
+				subject.wakeup
+			end
+			
+			expect(subject.select(1.0)).to be == 1
+		end
+	end
+	
 	describe '#io_wait' do
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}

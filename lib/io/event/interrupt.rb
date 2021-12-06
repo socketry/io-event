@@ -1,5 +1,3 @@
-#!/usr/bin/env ruby
-
 # Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -20,43 +18,42 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require 'mkmf'
+require_relative 'selector'
 
-gem_name = File.basename(__dir__)
-extension_name = 'IO_Event'
-
-# dir_config(extension_name)
-
-$CFLAGS << " -Wall"
-
-$srcs = ["io/event/event.c", "io/event/selector/selector.c"]
-$VPATH << "$(srcdir)/io/event"
-$VPATH << "$(srcdir)/io/event/selector"
-
-have_func('rb_ext_ractor_safe')
-have_func('&rb_fiber_transfer')
-have_func('eventfd')
-
-if have_library('uring') and have_header('liburing.h')
-	$srcs << "io/event/selector/uring.c"
+module IO::Event
+	# A thread safe synchronisation primative.
+	class Interrupt
+		def self.attach(selector)
+			self.new(selector)
+		end
+		
+		def initialize(selector)
+			@selector = selector
+			@input, @output = ::IO.pipe
+			
+			@fiber = Fiber.new do
+				while true
+					if @selector.io_wait(@fiber, @input, READABLE)
+						@input.read_nonblock(1)
+					end
+				end
+			end
+			
+			@fiber.transfer
+		end
+		
+		# Send a sigle byte interrupt.
+		def signal
+			@output.write('.')
+			@output.flush
+		end
+		
+		def close
+			@input.close
+			@output.close
+			# @fiber.raise(::Interrupt)
+		end
+	end
+	
+	private_constant :Interrupt
 end
-
-if have_header('sys/epoll.h')
-	$srcs << "io/event/selector/epoll.c"
-end
-
-if have_header('sys/event.h')
-	$srcs << "io/event/selector/kqueue.c"
-end
-
-have_func("rb_io_descriptor")
-have_func("&rb_process_status_wait")
-have_func('rb_fiber_current')
-have_func("&rb_fiber_raise")
-
-have_header('ruby/io/buffer.h')
-
-create_header
-
-# Generate the makefile to compile the native binary into `lib`:
-create_makefile(extension_name)
