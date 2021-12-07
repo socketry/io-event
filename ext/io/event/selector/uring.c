@@ -26,6 +26,7 @@
 #include <time.h>
 
 #include "pidfd.c"
+#include "../interrupt.h"
 
 static const int DEBUG = 0;
 
@@ -37,6 +38,8 @@ struct IO_Event_Selector_URing {
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
 	size_t pending;
+	
+	int selecting;
 };
 
 void IO_Event_Selector_URing_Type_mark(void *_data)
@@ -86,7 +89,8 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	data->ring.ring_fd = -1;
 	
 	data->pending = 0;
-
+	data->selecting = 0;
+	
 	return instance;
 }
 
@@ -156,7 +160,8 @@ VALUE IO_Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
 	
 	return IO_Event_Selector_raise(&data->backend, argc, argv);
 }
-
+	
+	int selecting;
 VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
@@ -171,14 +176,14 @@ int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 		
 		// Try to submit:
 		int result = io_uring_submit(&data->ring);
-
+		
 		if (result >= 0) {
 			// If it was submitted, reset pending count:
 			data->pending = 0;
 		} else if (result != -EBUSY && result != -EAGAIN) {
 			rb_syserr_fail(-result, "io_uring_submit_flush");
 		}
-
+		
 		return result;
 	}
 	
@@ -194,7 +199,7 @@ int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
 			data->pending = 0;
 			return result;
 		}
-
+		
 		if (result == -EBUSY || result == -EAGAIN) {
 			IO_Event_Selector_yield(&data->backend);
 		} else {
@@ -214,7 +219,7 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *data) {
 	while (sqe == NULL) {
 		// The submit queue is full, we need to drain it:	
 		io_uring_submit_now(data);
-
+		
 		sqe = io_uring_get_sqe(&data->ring);
 	}
 	
@@ -523,11 +528,14 @@ struct select_arguments {
 static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
-
+	
 	io_uring_submit_flush(arguments->data);
-
+	
 	struct io_uring_cqe *cqe = NULL;
+	
+	arguments->data->selecting = 1;
 	arguments->result = io_uring_wait_cqe_timeout(&arguments->data->ring, &cqe, arguments->timeout);
+	arguments->data->selecting = 0;
 	
 	return NULL;
 }
@@ -548,6 +556,8 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	return arguments->result;
 }
 
+#define IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT ((__u64) -2)
+
 static inline
 unsigned select_process_completions(struct io_uring *ring) {
 	unsigned completed = 0;
@@ -561,6 +571,11 @@ unsigned select_process_completions(struct io_uring *ring) {
 		if (cqe->res == -ECANCELED || cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
 			io_uring_cq_advance(ring, 1);
 			continue;
+		}
+		
+		if (cqe->user_data == IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT) {
+			io_uring_cq_advance(ring, 1);
+			IO_Event_Interrupt_clear();
 		}
 		
 		VALUE fiber = (VALUE)cqe->user_data;
@@ -587,7 +602,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	int ready = IO_Event_Selector_queue_flush(&data->backend);
 	
 	int result = select_process_completions(&data->ring);
-
+	
 	// If the ready list was empty and we didn't process any completions:
 	if (!ready && result == 0) {
 		// We might need to wait for events:
@@ -605,12 +620,35 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 			// The timeout specified required "nonblocking" behaviour so we just flush the SQ if required:
 			io_uring_submit_flush(data);
 		}
-
+		
 		// After waiting/flushing the SQ, check if there are any completions:
 		result = select_process_completions(&data->ring);
 	}
 	
 	return RB_INT2NUM(result);
+}
+
+VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
+	struct IO_Event_Selector_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	if (data->selecting) {
+		// Since we're currently blocking while waiting for a completion, we add a
+		// NOP which would cause the io_uring_enter syscall to return
+		struct io_uring_sqe *sqe = NULL;
+		
+		while (!sqe) {
+			io_uring_get_sqe(&data->ring);
+			rb_thread_schedule();
+		}
+		
+		io_uring_prep_nop(sqe);
+		io_uring_submit(&backend->ring);
+		
+		return Qtrue;
+	}
+	
+	return Qfalse;
 }
 
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
@@ -629,6 +667,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "ready?", IO_Event_Selector_URing_ready_p, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "select", IO_Event_Selector_URing_select, 1);
+	rb_define_method(IO_Event_Selector_KQueue, "wakeup", IO_Event_Selector_URing_wakeup, 0);
 	rb_define_method(IO_Event_Selector_URing, "close", IO_Event_Selector_URing_close, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);

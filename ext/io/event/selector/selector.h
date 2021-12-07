@@ -72,7 +72,19 @@ struct IO_Event_Selector_Queue {
 	
 	enum IO_Event_Selector_Queue_Flags flags;
 	
-	VALUE fiber;
+	VALUE fiber;#ifdef HAVE_SYS_EVENT_H
+struct IO_Event_Interrupt {
+	int descriptor;
+};
+#else
+struct IO_Event_Interrupt {
+	int descriptor[2];
+};
+#endif
+
+void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt);
+void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt);
+void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt);
 };
 
 struct IO_Event_Selector {

@@ -35,7 +35,6 @@ $VPATH << "$(srcdir)/io/event/selector"
 
 have_func('rb_ext_ractor_safe')
 have_func('&rb_fiber_transfer')
-have_func('eventfd')
 
 if have_library('uring') and have_header('liburing.h')
 	$srcs << "io/event/selector/uring.c"
@@ -48,6 +47,9 @@ end
 if have_header('sys/event.h')
 	$srcs << "io/event/selector/kqueue.c"
 end
+
+have_header('sys/eventfd.h')
+$srcs << "io/event/interrupt.c"
 
 have_func("rb_io_descriptor")
 have_func("&rb_process_status_wait")
