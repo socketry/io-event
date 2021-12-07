@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 
-require_relative 'lib/event'
+$LOAD_PATH << "ext"
+
+require_relative 'lib/io/event'
 
 require 'fiber'
 require 'socket'
@@ -8,26 +10,31 @@ require 'socket'
 require 'io/nonblock'
 
 local, remote = UNIXSocket.pair
-selector = Event::Selector::URing.new(Fiber.current)
+selector = IO::Event::Selector::Select.new(Fiber.current)
 
-local.nonblock = false
-remote.nonblock = false
+events = Array.new
+sockets = UNIXSocket.pair
+local = sockets.first
+remote = sockets.last
 
-f1 = Fiber.new do
-	buffer = IO::Buffer.new(128)
-	length = selector.io_read(Fiber.current, local, buffer, 1)
-	pp ["f1", length, buffer]
+fiber = Fiber.new do
+	events << :wait_readable
+	
+	selector.io_wait(Fiber.current, local, IO::Event::READABLE)
+	
+	events << :readable
 end
 
-f2 = Fiber.new do
-	buffer = IO::Buffer.new(128)
-	offset = buffer.copy("Hello World", 0)
-	length = selector.io_write(Fiber.current, remote, buffer, offset)
-	pp ["f2", length, buffer]
-end
+events << :transfer
+fiber.transfer
 
-f1.transfer
-f2.transfer
+remote.puts "Hello World"
 
-pp ["select", selector.select(1)]
+events << :select
 
+selector.select(1)
+
+pp events == [
+	:transfer, :wait_readable,
+	:select, :readable
+]

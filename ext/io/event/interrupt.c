@@ -18,24 +18,23 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-static const int DEBUG = 0;
+// static const int DEBUG = 0;
 
 #include "interrupt.h"
 #include <fcntl.h>
+#include <unistd.h>
 
-#ifdef HAVE_SYS_EVENT_H
+#ifdef HAVE_SYS_EVENTFD_H
 #include <sys/eventfd.h>
 #endif
 
-#ifdef HAVE_SYS_EVENT_H
+#include "selector/selector.h"
+
+#ifdef HAVE_SYS_EVENTFD_H
 void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt)
 {
 	interrupt->descriptor = eventfd2(0, EFD_CLOEXEC | EFD_NONBLOCK);
-}
-
-int IO_Event_Interrupt_wait(struct IO_Event_Interrupt *interrupt)
-{
-	return interrupt->descriptor;
+	rb_update_max_fd(interrupt->descriptor);
 }
 
 void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
@@ -43,10 +42,10 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 	close(interrupt->descriptor);
 }
 
-int IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
+void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
 	uint64_t value = 1;
-	return write(interrupt->descriptor, &value, sizeof(value));
+	write(interrupt->descriptor, &value, sizeof(value));
 }
 
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
@@ -57,12 +56,13 @@ void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 #else
 void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt)
 {
+#ifdef __linux__
 	pipe2(interrupt->descriptor, O_CLOEXEC | O_NONBLOCK);
-}
-
-int IO_Event_Interrupt_wait(struct IO_Event_Interrupt *interrupt)
-{
-	return interrupt->descriptor[0];
+#else
+	pipe(interrupt->descriptor);
+	IO_Event_Selector_nonblock_set(interrupt->descriptor[0]);
+	IO_Event_Selector_nonblock_set(interrupt->descriptor[1]);
+#endif
 }
 
 void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
@@ -71,15 +71,14 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 	close(interrupt->descriptor[1]);
 }
 
-int IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
+void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
-	return write(interrupt->descriptor[1], ".", 1);
+	write(interrupt->descriptor[1], ".", 1);
 }
 
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 {
 	char buffer[128];
 	read(interrupt->descriptor[0], buffer, sizeof(buffer));
-	return value;
 }
 #endif

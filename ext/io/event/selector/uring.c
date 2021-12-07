@@ -38,8 +38,7 @@ struct IO_Event_Selector_URing {
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
 	size_t pending;
-	
-	int selecting;
+	int blocked;
 };
 
 void IO_Event_Selector_URing_Type_mark(void *_data)
@@ -89,7 +88,7 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	data->ring.ring_fd = -1;
 	
 	data->pending = 0;
-	data->selecting = 0;
+	data->blocked = 0;
 	
 	return instance;
 }
@@ -161,7 +160,7 @@ VALUE IO_Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
 	return IO_Event_Selector_raise(&data->backend, argc, argv);
 }
 	
-	int selecting;
+	int blocked;
 VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
@@ -528,21 +527,20 @@ struct select_arguments {
 static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
-	
-	io_uring_submit_flush(arguments->data);
-	
 	struct io_uring_cqe *cqe = NULL;
 	
-	arguments->data->selecting = 1;
 	arguments->result = io_uring_wait_cqe_timeout(&arguments->data->ring, &cqe, arguments->timeout);
-	arguments->data->selecting = 0;
 	
 	return NULL;
 }
 
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
+	io_uring_submit_flush(arguments->data);
+	
+	arguments->data->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	arguments->data->blocked = 0;
 	
 	if (arguments->result == -ETIME) {
 		arguments->result = 0;
@@ -632,14 +630,18 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
-	if (data->selecting) {
-		// Since we're currently blocking while waiting for a completion, we add a
-		// NOP which would cause the io_uring_enter syscall to return
+	// If we are blocking, we can schedule a nop event to wake up the selector:
+	if (data->blocked) {
 		struct io_uring_sqe *sqe = NULL;
 		
-		while (!sqe) {
-			io_uring_get_sqe(&data->ring);
+		while (true) {
+			sqe = io_uring_get_sqe(&data->ring);
+			if (sqe) break;
+			
 			rb_thread_schedule();
+			
+			// It's possible we became unblocked already, so we can assume the selector has already cycled at least once:
+			if (!data->blocked) return Qfalse;
 		}
 		
 		io_uring_prep_nop(sqe);
@@ -667,7 +669,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "ready?", IO_Event_Selector_URing_ready_p, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "select", IO_Event_Selector_URing_select, 1);
-	rb_define_method(IO_Event_Selector_KQueue, "wakeup", IO_Event_Selector_URing_wakeup, 0);
+	rb_define_method(IO_Event_Selector_URing, "wakeup", IO_Event_Selector_URing_wakeup, 0);
 	rb_define_method(IO_Event_Selector_URing, "close", IO_Event_Selector_URing_close, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);

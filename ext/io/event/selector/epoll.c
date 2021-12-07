@@ -26,6 +26,7 @@
 #include <errno.h>
 
 #include "pidfd.c"
+#include "../interrupt.h"
 
 static VALUE IO_Event_Selector_EPoll = Qnil;
 
@@ -34,6 +35,8 @@ enum {EPOLL_MAX_EVENTS = 64};
 struct IO_Event_Selector_EPoll {
 	struct IO_Event_Selector backend;
 	int descriptor;
+	int blocked;
+	IO_Event_Interrupt interrupt;
 };
 
 void IO_Event_Selector_EPoll_Type_mark(void *_data)
@@ -47,6 +50,8 @@ void close_internal(struct IO_Event_Selector_EPoll *data) {
 	if (data->descriptor >= 0) {
 		close(data->descriptor);
 		data->descriptor = -1;
+		
+		IO_Event_Interrupt_close(&data->interrupt);
 	}
 }
 
@@ -85,6 +90,21 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	return instance;
 }
 
+void IO_Event_Interrupt_add(IO_Event_Interrupt *interrupt, struct IO_Event_Selector_EPoll *data) {
+	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
+	
+	struct epoll_event event = {
+		.events = EPOLLIN|EPOLLRDHUP,
+		.data = {.ptr = NULL, .fd},
+	};
+	
+	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+	
+	if (result == -1) {
+		rb_sys_fail("IO_Event_Interrupt_addL:epoll_ctl");
+	}
+}
+
 VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
@@ -99,6 +119,9 @@ VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 		
 		rb_update_max_fd(data->descriptor);
 	}
+	
+	IO_Event_Interrupt_open(&data->interrupt);
+	IO_Event_Interrupt_add(&data->interrupt, data);
 	
 	return self;
 }
@@ -498,7 +521,9 @@ void * select_internal(void *_arguments) {
 
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
+	arguments->data->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	arguments->data->blocked = 0;
 	
 	if (arguments->count == -1) {
 		rb_sys_fail("select_internal_without_gvl:epoll_wait");
@@ -540,12 +565,30 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		VALUE fiber = (VALUE)arguments.events[i].data.ptr;
 		VALUE result = INT2NUM(arguments.events[i].events);
 		
+		if (arguments.events[i].data.fd == IO_Event_Interrupt_descriptor(&data->interrupt)) {
+			IO_Event_Interrupt_clear(&data->interrupt);
+		}
+		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
 		IO_Event_Selector_fiber_transfer(fiber, 1, &result);
 	}
 	
 	return INT2NUM(arguments.count);
+}
+
+VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	// If we are blocking, we can schedule a nop event to wake up the selector:
+	if (data->blocked) {
+		IO_Event_Interrupt_signal(data->interrupt);
+		
+		return Qtrue;
+	}
+	
+	return Qfalse;
 }
 
 void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
@@ -564,6 +607,7 @@ void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_EPoll, "ready?", IO_Event_Selector_EPoll_ready_p, 0);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "select", IO_Event_Selector_EPoll_select, 1);
+	rb_define_method(IO_Event_Selector_EPoll, "wakeup", IO_Event_Selector_EPoll_wakeup, 0);
 	rb_define_method(IO_Event_Selector_EPoll, "close", IO_Event_Selector_EPoll_close, 0);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "io_wait", IO_Event_Selector_EPoll_io_wait, 3);

@@ -18,23 +18,26 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifdef HAVE_SYS_EVENT_H
+#ifdef HAVE_SYS_EVENTFD_H
 struct IO_Event_Interrupt {
-	int armed;
 	int descriptor;
 };
+
+inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
+	return interrupt->descriptor;
+}
 #else
 struct IO_Event_Interrupt {
-	int armed;
 	int descriptor[2];
 };
+
+inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
+	return interrupt->descriptor[0];
+}
 #endif
 
 void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt);
 void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt);
-
-// Returnt the descriptor that should be used for waiting on.
-int IO_Event_Interrupt_wait(struct IO_Event_Interrupt *interrupt);
 
 void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt);
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt);

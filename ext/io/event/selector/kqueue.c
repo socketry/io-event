@@ -34,7 +34,7 @@ struct IO_Event_Selector_KQueue {
 	struct IO_Event_Selector backend;
 	int descriptor;
 	
-	int selecting;
+	int blocked;
 };
 
 void IO_Event_Selector_KQueue_Type_mark(void *_data)
@@ -82,7 +82,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	
 	IO_Event_Selector_initialize(&data->backend, Qnil);
 	data->descriptor = -1;
-	data->selecting = 0;
+	data->blocked = 0;
 	
 	return instance;
 }
@@ -557,16 +557,16 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->data->selecting = 1;
 	arguments->count = kevent(arguments->data->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
-	arguments->data->selecting = 0;
 	
 	return NULL;
 }
 
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
+	arguments->data->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	arguments->data->blocked = 0;
 	
 	if (arguments->count == -1) {
 		rb_sys_fail("select_internal_without_gvl:kevent");
@@ -634,7 +634,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
-	if (data->selecting) {
+	if (data->blocked) {
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
