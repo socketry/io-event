@@ -51,7 +51,11 @@ RSpec.shared_examples_for IO::Event::Selector do
 				subject.wakeup
 			end
 			
-			expect(subject.select(1.0)).to be == 1
+			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			subject.select(1.0)
+			end_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			
+			expect(end_time - start_time).to be < 0.1
 		end
 	end
 	
@@ -267,8 +271,6 @@ RSpec.shared_examples_for IO::Event::Selector do
 			
 			fiber = Fiber.new do
 				pid = Process.spawn("true")
-				sleep(1)
-				
 				result = subject.process_wait(Fiber.current, pid, 0)
 				expect(result).to be_success
 				events << :process_finished

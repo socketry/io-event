@@ -109,6 +109,13 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+VALUE IO_Event_Selector_URing_loop(VALUE self) {
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
+	
+	return data->backend.loop;
+}
+
 VALUE IO_Event_Selector_URing_close(VALUE self) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
@@ -659,6 +666,8 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	
 	rb_define_alloc_func(IO_Event_Selector_URing, IO_Event_Selector_URing_allocate);
 	rb_define_method(IO_Event_Selector_URing, "initialize", IO_Event_Selector_URing_initialize, 1);
+	
+	rb_define_method(IO_Event_Selector_URing, "loop", IO_Event_Selector_URing_loop, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "transfer", IO_Event_Selector_URing_transfer, 0);
 	rb_define_method(IO_Event_Selector_URing, "resume", IO_Event_Selector_URing_resume, -1);

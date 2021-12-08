@@ -25,7 +25,7 @@ IO::Event::Selector.constants.each do |name|
 	
 	RSpec.describe(klass) do
 		let!(:loop) {Fiber.current}
-		subject{described_class.new(loop)}
+		subject!{described_class.new(loop)}
 		
 		describe '.new' do
 			it "can create multiple selectors" do

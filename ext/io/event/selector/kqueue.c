@@ -106,6 +106,13 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+VALUE IO_Event_Selector_KQueue_loop(VALUE self) {
+	struct IO_Event_Selector_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	return data->backend.loop;
+}
+
 VALUE IO_Event_Selector_KQueue_close(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
@@ -659,6 +666,8 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	
 	rb_define_alloc_func(IO_Event_Selector_KQueue, IO_Event_Selector_KQueue_allocate);
 	rb_define_method(IO_Event_Selector_KQueue, "initialize", IO_Event_Selector_KQueue_initialize, 1);
+	
+	rb_define_method(IO_Event_Selector_KQueue, "loop", IO_Event_Selector_KQueue_loop, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "transfer", IO_Event_Selector_KQueue_transfer, 0);
 	rb_define_method(IO_Event_Selector_KQueue, "resume", IO_Event_Selector_KQueue_resume, -1);

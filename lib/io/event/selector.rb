@@ -22,9 +22,9 @@ require_relative 'selector/select'
 
 module IO::Event
 	# These constants are the same as those defined in IO.
-	READABLE = 1
-	PRIORITY = 2
-	WRITABLE = 4
+	READABLE = IO::READABLE
+	PRIORITY = IO::PRIORITY
+	WRITABLE = IO::WRITABLE
 	
 	module Selector
 		def self.default(env = ENV)

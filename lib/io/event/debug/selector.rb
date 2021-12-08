@@ -28,6 +28,10 @@ module IO::Event
 				@readable = {}
 				@writable = {}
 				@priority = {}
+				
+				unless Fiber.current == selector.loop
+					raise "Selector must be initialized on event loop fiber!"
+				end
 			end
 			
 			def wakeup
@@ -90,6 +94,10 @@ module IO::Event
 			end
 			
 			def select(duration = nil)
+				unless Fiber.current == @selector.loop
+					raise "Selector must be run on event loop fiber!"
+				end
+				
 				@selector.select(duration)
 			end
 			

@@ -126,6 +126,13 @@ VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 	return self;
 }
 
+VALUE IO_Event_Selector_EPoll_loop(VALUE self) {
+	struct IO_Event_Selector_EPoll *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	
+	return data->backend.loop;
+}
+
 VALUE IO_Event_Selector_EPoll_close(VALUE self) {
 	struct IO_Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
@@ -579,7 +586,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 
 VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	// If we are blocking, we can schedule a nop event to wake up the selector:
 	if (data->blocked) {
@@ -597,6 +604,8 @@ void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	
 	rb_define_alloc_func(IO_Event_Selector_EPoll, IO_Event_Selector_EPoll_allocate);
 	rb_define_method(IO_Event_Selector_EPoll, "initialize", IO_Event_Selector_EPoll_initialize, 1);
+	
+	rb_define_method(IO_Event_Selector_EPoll, "loop", IO_Event_Selector_EPoll_loop, 0);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "transfer", IO_Event_Selector_EPoll_transfer, 0);
 	rb_define_method(IO_Event_Selector_EPoll, "resume", IO_Event_Selector_EPoll_resume, -1);

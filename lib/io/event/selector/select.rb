@@ -26,15 +26,21 @@ module IO::Event
 			def initialize(loop)
 				@loop = loop
 				
-				@readable = {}
-				@writable = {}
+				@readable = Hash.new.compare_by_identity
+				@writable = Hash.new.compare_by_identity
+				
+				@blocked = false
 				
 				@ready = Queue.new
 				@interrupt = Interrupt.attach(self)
 			end
 			
+			attr :loop
+			
 			def wakeup
-				@interrupt.signal
+				if @blocked
+					@interrupt.signal
+				end
 			end
 			
 			def close
@@ -202,10 +208,14 @@ module IO::Event
 			
 			def select(duration = nil)
 				if pop_ready
+					# If we have popped items from the ready list, they may influence the duration calculation, so we don't delay the event loop:
 					duration = 0
 				end
 				
+				# The GVL ensures this is sufficiently synchronised for `#wakeup` to work correctly.
+				@blocked = true
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
+				@blocked = false
 				
 				ready = Hash.new(0)
 				
