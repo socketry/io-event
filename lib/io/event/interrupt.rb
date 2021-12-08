@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative 'selector'
-
 module IO::Event
 	# A thread safe synchronisation primative.
 	class Interrupt
