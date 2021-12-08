@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include "extconf.h"
+
 #ifdef HAVE_SYS_EVENTFD_H
 struct IO_Event_Interrupt {
 	int descriptor;
