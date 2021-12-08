@@ -20,7 +20,7 @@ remote = sockets.last
 fiber = Fiber.new do
 	events << :wait_readable
 	
-	selector.io_wait(Fiber.current, local, IO::Event::READABLE)
+	selector.io_wait(Fiber.current, local, IO::READABLE)
 	
 	events << :readable
 end

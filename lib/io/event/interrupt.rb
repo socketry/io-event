@@ -33,7 +33,7 @@ module IO::Event
 			
 			@fiber = Fiber.new do
 				while true
-					if @selector.io_wait(@fiber, @input, READABLE)
+					if @selector.io_wait(@fiber, @input, IO::READABLE)
 						@input.read_nonblock(1)
 					end
 				end

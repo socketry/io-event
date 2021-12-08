@@ -36,7 +36,7 @@ RSpec.describe IO::Event::Debug::Selector do
 		it "cannot have two fibers reading from the same io" do
 			fiber1 = Fiber.new do
 				events << :wait_readable1
-				subject.io_wait(Fiber.current, local, IO::Event::READABLE)
+				subject.io_wait(Fiber.current, local, IO::READABLE)
 				events << :readable1
 			rescue
 				events << :error1
@@ -44,7 +44,7 @@ RSpec.describe IO::Event::Debug::Selector do
 			
 			fiber2 = Fiber.new do
 				events << :wait_readable2
-				subject.io_wait(Fiber.current, local, IO::Event::READABLE)
+				subject.io_wait(Fiber.current, local, IO::READABLE)
 				events << :readable2
 			rescue
 				events << :error2

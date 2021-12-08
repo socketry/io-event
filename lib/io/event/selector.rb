@@ -21,11 +21,6 @@
 require_relative 'selector/select'
 
 module IO::Event
-	# These constants are the same as those defined in IO.
-	READABLE = IO::READABLE
-	PRIORITY = IO::PRIORITY
-	WRITABLE = IO::WRITABLE
-	
 	module Selector
 		def self.default(env = ENV)
 			if name = env['IO_EVENT_SELECTOR']&.to_sym

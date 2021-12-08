@@ -70,8 +70,8 @@ RSpec.shared_examples_for IO::Event::Selector do
 				events << :wait_readable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, IO::Event::READABLE)
-				).to be == IO::Event::READABLE
+					subject.io_wait(Fiber.current, local, IO::READABLE)
+				).to be == IO::READABLE
 				
 				events << :readable
 			end
@@ -96,8 +96,8 @@ RSpec.shared_examples_for IO::Event::Selector do
 				events << :wait_writable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, IO::Event::WRITABLE)
-				).to be == IO::Event::WRITABLE
+					subject.io_wait(Fiber.current, local, IO::WRITABLE)
+				).to be == IO::WRITABLE
 				
 				events << :writable
 			end
@@ -121,8 +121,8 @@ RSpec.shared_examples_for IO::Event::Selector do
 				events << :wait_readable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, IO::Event::READABLE)
-				).to be == IO::Event::READABLE
+					subject.io_wait(Fiber.current, local, IO::READABLE)
+				).to be == IO::READABLE
 				
 				readable = true
 			end
@@ -131,8 +131,8 @@ RSpec.shared_examples_for IO::Event::Selector do
 				events << :wait_writable
 				
 				expect(
-					subject.io_wait(Fiber.current, local, IO::Event::WRITABLE)
-				).to be == IO::Event::WRITABLE
+					subject.io_wait(Fiber.current, local, IO::WRITABLE)
+				).to be == IO::WRITABLE
 				
 				writable = true
 			end
@@ -160,7 +160,7 @@ RSpec.shared_examples_for IO::Event::Selector do
 				
 				expect do
 					while true
-						subject.io_wait(Fiber.current, local, IO::Event::READABLE)
+						subject.io_wait(Fiber.current, local, IO::READABLE)
 						events << :readable
 					end
 				end.to raise_exception(RuntimeError, /Boom/)

@@ -104,7 +104,7 @@ module IO::Event
 			private
 			
 			def register_readable(fiber, io, events)
-				if (events & READABLE) > 0
+				if (events & IO::READABLE) > 0
 					if @readable.key?(io)
 						raise "Cannot wait for #{io} to become readable from multiple fibers."
 					end
@@ -122,7 +122,7 @@ module IO::Event
 			end
 			
 			def register_writable(fiber, io, events)
-				if (events & WRITABLE) > 0
+				if (events & IO::WRITABLE) > 0
 					if @writable.key?(io)
 						raise "Cannot wait for #{io} to become writable from multiple fibers."
 					end
@@ -140,7 +140,7 @@ module IO::Event
 			end
 			
 			def register_priority(fiber, io, events)
-				if (events & PRIORITY) > 0
+				if (events & IO::PRIORITY) > 0
 					if @priority.key?(io)
 						raise "Cannot wait for #{io} to become priority from multiple fibers."
 					end

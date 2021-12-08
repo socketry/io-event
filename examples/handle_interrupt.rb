@@ -13,7 +13,7 @@ thread = Thread.new do
 	
 	fiber = Fiber.new do
 		while true
-			selector.io_wait(Fiber.current, input, IO::Event::READABLE)
+			selector.io_wait(Fiber.current, input, IO::READABLE)
 			input.read(1)
 		end
 	end

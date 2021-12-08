@@ -112,12 +112,12 @@ module IO::Event
 			def io_wait(fiber, io, events)
 				remove_readable = remove_writable = false
 				
-				if (events & READABLE) > 0 or (events & PRIORITY) > 0
+				if (events & IO::READABLE) > 0 or (events & IO::PRIORITY) > 0
 					@readable[io] = fiber
 					remove_readable = true
 				end
 				
-				if (events & WRITABLE) > 0
+				if (events & IO::WRITABLE) > 0
 					@writable[io] = fiber
 					remove_writable = true
 				end
@@ -138,9 +138,9 @@ module IO::Event
 						
 						case result = io.read_nonblock(maximum_size, exception: false)
 						when :wait_readable
-							self.io_wait(fiber, io, READABLE)
+							self.io_wait(fiber, io, IO::READABLE)
 						when :wait_writable
-							self.io_wait(fiber, io, WRITABLE)
+							self.io_wait(fiber, io, IO::WRITABLE)
 						else
 							break unless result
 							
@@ -162,9 +162,9 @@ module IO::Event
 						chunk = buffer.to_str(offset, length)
 						case result = io.write_nonblock(chunk, exception: false)
 						when :wait_readable
-							self.io_wait(fiber, io, READABLE)
+							self.io_wait(fiber, io, IO::READABLE)
 						when :wait_writable
-							self.io_wait(fiber, io, WRITABLE)
+							self.io_wait(fiber, io, IO::WRITABLE)
 						else
 							offset += result
 							length -= result
@@ -184,7 +184,7 @@ module IO::Event
 					w.close
 				end
 				
-				self.io_wait(fiber, r, READABLE)
+				self.io_wait(fiber, r, IO::READABLE)
 				
 				return thread.value
 			ensure
@@ -221,12 +221,12 @@ module IO::Event
 				
 				readable&.each do |io|
 					fiber = @readable.delete(io)
-					ready[fiber] |= READABLE
+					ready[fiber] |= IO::READABLE
 				end
 				
 				writable&.each do |io|
 					fiber = @writable.delete(io)
-					ready[fiber] |= WRITABLE
+					ready[fiber] |= IO::WRITABLE
 				end
 				
 				ready.each do |fiber, events|
