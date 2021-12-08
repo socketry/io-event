@@ -23,7 +23,7 @@ require_relative '../selector_examples'
 
 RSpec.describe IO::Event::Debug::Selector do
 	let!(:loop) {Fiber.current}
-	subject {described_class.new(IO::Event::Selector.new(loop))}
+	subject!{described_class.new(IO::Event::Selector.new(loop))}
 	
 	it_behaves_like IO::Event::Selector
 	

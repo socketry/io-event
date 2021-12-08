@@ -33,6 +33,8 @@ enum {KQUEUE_MAX_EVENTS = 64};
 struct IO_Event_Selector_KQueue {
 	struct IO_Event_Selector backend;
 	int descriptor;
+	
+	int blocked;
 };
 
 void IO_Event_Selector_KQueue_Type_mark(void *_data)
@@ -80,6 +82,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	
 	IO_Event_Selector_initialize(&data->backend, Qnil);
 	data->descriptor = -1;
+	data->blocked = 0;
 	
 	return instance;
 }
@@ -101,6 +104,13 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	}
 	
 	return self;
+}
+
+VALUE IO_Event_Selector_KQueue_loop(VALUE self) {
+	struct IO_Event_Selector_KQueue *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	return data->backend.loop;
 }
 
 VALUE IO_Event_Selector_KQueue_close(VALUE self) {
@@ -561,7 +571,9 @@ void * select_internal(void *_arguments) {
 
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
+	arguments->data->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+	arguments->data->blocked = 0;
 	
 	if (arguments->count == -1) {
 		rb_sys_fail("select_internal_without_gvl:kevent");
@@ -629,19 +641,23 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
-	struct kevent trigger = {0};
-	
-	trigger.filter = EVFILT_USER;
-	trigger.flags = EV_ADD|EV_CLEAR;
-	trigger.fflags = NOTE_TRIGGER;
-	
-	int result = kevent(data->descriptor, &trigger, 1, NULL, 0, NULL);
-	
-	if (result == -1) {
-		rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
+	if (data->blocked) {
+		struct kevent trigger = {0};
+		
+		trigger.filter = EVFILT_USER;
+		trigger.flags = EV_ADD|EV_CLEAR;
+		trigger.fflags = NOTE_TRIGGER;
+		
+		int result = kevent(data->descriptor, &trigger, 1, NULL, 0, NULL);
+		
+		if (result == -1) {
+			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
+		}
+		
+		return Qtrue;
 	}
 	
-	return Qtrue;
+	return Qfalse;
 }
 
 void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
@@ -650,6 +666,8 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	
 	rb_define_alloc_func(IO_Event_Selector_KQueue, IO_Event_Selector_KQueue_allocate);
 	rb_define_method(IO_Event_Selector_KQueue, "initialize", IO_Event_Selector_KQueue_initialize, 1);
+	
+	rb_define_method(IO_Event_Selector_KQueue, "loop", IO_Event_Selector_KQueue_loop, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "transfer", IO_Event_Selector_KQueue_transfer, 0);
 	rb_define_method(IO_Event_Selector_KQueue, "resume", IO_Event_Selector_KQueue_resume, -1);

@@ -24,7 +24,7 @@ require 'socket'
 
 RSpec.shared_examples_for "queue" do
 	let!(:loop) {Fiber.current}
-	subject{described_class.new(loop)}
+	subject!{described_class.new(loop)}
 	
 	after do
 		subject.close
