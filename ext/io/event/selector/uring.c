@@ -26,7 +26,6 @@
 #include <time.h>
 
 #include "pidfd.c"
-#include "../interrupt.h"
 
 static const int DEBUG = 0;
 
@@ -561,7 +560,7 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	return arguments->result;
 }
 
-#define IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT ((__u64) -2)
+// #define IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT ((__u64) -2)
 
 static inline
 unsigned select_process_completions(struct io_uring *ring) {
@@ -578,10 +577,9 @@ unsigned select_process_completions(struct io_uring *ring) {
 			continue;
 		}
 		
-		if (cqe->user_data == IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT) {
-			io_uring_cq_advance(ring, 1);
-			IO_Event_Interrupt_clear();
-		}
+		// if (cqe->user_data == IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT) {
+		// 	io_uring_cq_advance(ring, 1);
+		// }
 		
 		VALUE fiber = (VALUE)cqe->user_data;
 		VALUE result = RB_INT2NUM(cqe->res);
@@ -634,8 +632,8 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 }
 
 VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_URing *data = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
 	// If we are blocking, we can schedule a nop event to wake up the selector:
 	if (data->blocked) {
@@ -652,7 +650,7 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 		}
 		
 		io_uring_prep_nop(sqe);
-		io_uring_submit(&backend->ring);
+		io_uring_submit(&data->ring);
 		
 		return Qtrue;
 	}
@@ -667,7 +665,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_alloc_func(IO_Event_Selector_URing, IO_Event_Selector_URing_allocate);
 	rb_define_method(IO_Event_Selector_URing, "initialize", IO_Event_Selector_URing_initialize, 1);
 	
-	rb_define_method(IO_Event_Selector_URing, "loop", IO_Event_Selector_URing_loop, 1);
+	rb_define_method(IO_Event_Selector_URing, "loop", IO_Event_Selector_URing_loop, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "transfer", IO_Event_Selector_URing_transfer, 0);
 	rb_define_method(IO_Event_Selector_URing, "resume", IO_Event_Selector_URing_resume, -1);
