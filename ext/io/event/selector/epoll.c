@@ -36,7 +36,7 @@ struct IO_Event_Selector_EPoll {
 	struct IO_Event_Selector backend;
 	int descriptor;
 	int blocked;
-	IO_Event_Interrupt interrupt;
+	struct IO_Event_Interrupt interrupt;
 };
 
 void IO_Event_Selector_EPoll_Type_mark(void *_data)
@@ -90,12 +90,12 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	return instance;
 }
 
-void IO_Event_Interrupt_add(IO_Event_Interrupt *interrupt, struct IO_Event_Selector_EPoll *data) {
+void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Event_Selector_EPoll *data) {
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
 	struct epoll_event event = {
 		.events = EPOLLIN|EPOLLRDHUP,
-		.data = {.ptr = NULL, .fd},
+		.data = {.ptr = NULL},
 	};
 	
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
@@ -584,13 +584,13 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	return INT2NUM(arguments.count);
 }
 
-VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
+VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
 	struct IO_Event_Selector_EPoll *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
 	
 	// If we are blocking, we can schedule a nop event to wake up the selector:
 	if (data->blocked) {
-		IO_Event_Interrupt_signal(data->interrupt);
+		IO_Event_Interrupt_signal(&data->interrupt);
 		
 		return Qtrue;
 	}

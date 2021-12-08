@@ -21,19 +21,16 @@
 // static const int DEBUG = 0;
 
 #include "interrupt.h"
-#include <fcntl.h>
 #include <unistd.h>
-
-#ifdef HAVE_SYS_EVENTFD_H
-#include <sys/eventfd.h>
-#endif
 
 #include "selector/selector.h"
 
 #ifdef HAVE_SYS_EVENTFD_H
+#include <sys/eventfd.h>
+
 void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt)
 {
-	interrupt->descriptor = eventfd2(0, EFD_CLOEXEC | EFD_NONBLOCK);
+	interrupt->descriptor = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
 	rb_update_max_fd(interrupt->descriptor);
 }
 
@@ -63,6 +60,9 @@ void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt)
 	IO_Event_Selector_nonblock_set(interrupt->descriptor[0]);
 	IO_Event_Selector_nonblock_set(interrupt->descriptor[1]);
 #endif
+	
+	rb_update_max_fd(interrupt->descriptor[0]);
+	rb_update_max_fd(interrupt->descriptor[1]);
 }
 
 void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
