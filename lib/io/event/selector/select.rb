@@ -37,10 +37,15 @@ module IO::Event
 			
 			attr :loop
 			
+			# If the event loop is currently blocked, 
 			def wakeup
 				if @blocked
 					@interrupt.signal
+					
+					return true
 				end
+				
+				return false
 			end
 			
 			def close
@@ -212,8 +217,8 @@ module IO::Event
 					duration = 0
 				end
 				
-				# The GVL ensures this is sufficiently synchronised for `#wakeup` to work correctly.
 				@blocked = true
+				duration = 0 unless @ready.empty?
 				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
 				@blocked = false
 				

@@ -557,13 +557,15 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		.timeout = 0
 	};
 	
+	// Process any currently pending events:
 	select_internal_with_gvl(&arguments);
-
-	// If the ready list was empty and no events were processed:	
+	
+	// If the ready list was empty and no events were processed:
 	if (!ready && arguments.count == 0) {
 		arguments.timeout = make_timeout(duration);
 		
 		if (arguments.timeout != 0) {
+			// Wait for events to occur
 			select_internal_without_gvl(&arguments);
 		}
 	}
@@ -572,13 +574,13 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		VALUE fiber = (VALUE)arguments.events[i].data.ptr;
 		VALUE result = INT2NUM(arguments.events[i].events);
 		
-		if (arguments.events[i].data.fd == IO_Event_Interrupt_descriptor(&data->interrupt)) {
-			IO_Event_Interrupt_clear(&data->interrupt);
-		}
-		
 		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
 		
-		IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		if (arguments.events[i].data.fd == IO_Event_Interrupt_descriptor(&data->interrupt)) {
+			IO_Event_Interrupt_clear(&data->interrupt);
+		} else {
+			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		}
 	}
 	
 	return INT2NUM(arguments.count);

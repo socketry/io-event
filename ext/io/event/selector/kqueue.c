@@ -35,6 +35,7 @@ struct IO_Event_Selector_KQueue {
 	int descriptor;
 	
 	int blocked;
+	int wakeup;
 };
 
 void IO_Event_Selector_KQueue_Type_mark(void *_data)
@@ -572,6 +573,13 @@ void * select_internal(void *_arguments) {
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->data->blocked = 1;
+	
+	if (arguments->data->wakeup) {
+		arguments->data->wakeup = 0;
+		arguments->count = 0;
+		return;
+	}
+	
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->data->blocked = 0;
 	
@@ -604,12 +612,13 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		}
 	};
 	
+	arguments.timeout = &arguments.storage;
+	
 	// We break this implementation into two parts.
 	// (1) count = kevent(..., timeout = 0)
 	// (2) without gvl: kevent(..., timeout = 0) if count == 0 and timeout != 0
 	// This allows us to avoid releasing and reacquiring the GVL.
 	// Non-comprehensive testing shows this gives a 1.5x speedup.
-	arguments.timeout = &arguments.storage;
 	
 	// First do the syscall with no timeout to get any immediately available events:
 	select_internal_with_gvl(&arguments);
@@ -640,6 +649,11 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	
+	// If we are already schduled to wake up, don't bother doing it again!
+	if (data->wakeup) return Qfalse;
+	
+	data->wakeup = 1;
 	
 	if (data->blocked) {
 		struct kevent trigger = {0};

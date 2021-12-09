@@ -43,16 +43,25 @@ Selector = Sus::Shared("selector") do
 	end
 	
 	with '#wakeup' do
-		it "can wakeup sleeping selector" do
-			Thread.new do
+		it "can wakeup selector from different thread" do
+			thread = Thread.new do
+				sleep 0.05
 				selector.wakeup
 			end
 			
-			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-			selector.select(1.0)
-			end_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			expect do
+				selector.select(0.2)
+			end.to have_duration(be < 0.1)
+		ensure
+			thread.join
+		end
+		
+		it "ignores wakeup if not selecting" do
+			selector.wakeup
 			
-			expect(end_time - start_time).to be < 0.1
+			expect do
+				selector.select(0.2)
+			end.to have_duration(be < 0.2)
 		end
 	end
 	
@@ -307,7 +316,7 @@ end
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
-	describe(klass) do
+	describe(klass, unique: name) do
 		with '.new' do
 			def count = 8
 			def loop = Fiber.current
@@ -322,22 +331,22 @@ IO::Event::Selector.constants.each do |name|
 				selectors.each(&:close)
 			end
 		end
-	end
-	
-	describe(klass) do
-		def before
-			@loop = Fiber.current
-			@selector = subject.new(@loop)
+
+		with 'an instance' do
+			def before
+				@loop = Fiber.current
+				@selector = subject.new(@loop)
+			end
+			
+			def after
+				@selector&.close
+			end
+			
+			attr :loop
+			attr :selector
+			
+			it_behaves_like Selector
 		end
-		
-		def after
-			@selector&.close
-		end
-		
-		attr :loop
-		attr :selector
-		
-		it_behaves_like Selector
 	end
 end
 
