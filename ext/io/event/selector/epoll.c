@@ -28,6 +28,8 @@
 #include "pidfd.c"
 #include "../interrupt.h"
 
+static const int DEBUG = 0;
+
 static VALUE IO_Event_Selector_EPoll = Qnil;
 
 enum {EPOLL_MAX_EVENTS = 64};
@@ -571,15 +573,16 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	}
 	
 	for (int i = 0; i < arguments.count; i += 1) {
-		VALUE fiber = (VALUE)arguments.events[i].data.ptr;
-		VALUE result = INT2NUM(arguments.events[i].events);
+		const struct epoll_event *event = &arguments.events[i];
+		if (DEBUG) fprintf(stderr, "-> ptr=%p events=%d\n", event->data.ptr, event->events);
 		
-		// fprintf(stderr, "-> fiber=%p descriptor=%d\n", (void*)fiber, events[i].data.fd);
-		
-		if (arguments.events[i].data.fd == IO_Event_Interrupt_descriptor(&data->interrupt)) {
-			IO_Event_Interrupt_clear(&data->interrupt);
-		} else {
+		if (event->data.ptr) {
+			VALUE fiber = (VALUE)event->data.ptr;
+			VALUE result = INT2NUM(event->events);
+			
 			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		} else {
+			IO_Event_Interrupt_clear(&data->interrupt);
 		}
 	}
 	
