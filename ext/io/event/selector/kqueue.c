@@ -616,7 +616,11 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	// First do the syscall with no timeout to get any immediately available events:
 	select_internal_with_gvl(&arguments);
 	
-	// If there were no pending events, if we have a timeout, wait for more events:
+	// If we:
+	// 1. Didn't process any ready fibers, and
+	// 2. Didn't process any events from non-blocking select (above), and
+	// 3. There are no items in the ready list,
+	// then we can perform a blocking select.
 	if (!ready && !arguments.count && !data->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
