@@ -12,5 +12,3 @@ group :maintenance, optional: true do
 	
 	gem "utopia-project"
 end
-
-gem "sus", path: "../../ioquatix/sus"
