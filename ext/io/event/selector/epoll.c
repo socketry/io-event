@@ -103,7 +103,7 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	
 	if (result == -1) {
-		rb_sys_fail("IO_Event_Interrupt_addL:epoll_ctl");
+		rb_sys_fail("IO_Event_Interrupt_add:epoll_ctl");
 	}
 }
 

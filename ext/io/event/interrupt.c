@@ -42,13 +42,25 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
 	uint64_t value = 1;
-	write(interrupt->descriptor, &value, sizeof(value));
+	ssize_t result = write(interrupt->descriptor, &value, sizeof(value));
+	
+	if (result == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+		
+		rb_sys_fail("IO_Event_Interrupt_signal:write");
+	}
 }
 
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 {
 	uint64_t value = 0;
-	read(interrupt->descriptor, &value, sizeof(value));
+	ssize_t result = read(interrupt->descriptor, &value, sizeof(value));
+	
+	if (result == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+		
+		rb_sys_fail("IO_Event_Interrupt_clear:read");
+	}
 }
 #else
 void IO_Event_Interrupt_open(struct IO_Event_Interrupt *interrupt)
@@ -73,12 +85,24 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 
 void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
-	write(interrupt->descriptor[1], ".", 1);
+	ssize_t result = write(interrupt->descriptor[1], ".", 1);
+	
+	if (result == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+		
+		rb_sys_fail("IO_Event_Interrupt_signal:write");
+	}
 }
 
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 {
 	char buffer[128];
-	read(interrupt->descriptor[0], buffer, sizeof(buffer));
+	ssize_t result = read(interrupt->descriptor[0], buffer, sizeof(buffer));
+	
+	if (result == -1) {
+		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+		
+		rb_sys_fail("IO_Event_Interrupt_clear:read");
+	}
 }
 #endif
