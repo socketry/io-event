@@ -27,6 +27,23 @@ require 'io/event/debug/selector'
 require 'socket'
 require 'fiber'
 
+class FakeFiber
+	def initialize(alive = true)
+		@alive = alive
+		@count = 0
+	end
+	
+	attr :count
+	
+	def alive?
+		@alive
+	end
+	
+	def transfer
+		@count += 1
+	end
+end
+
 Selector = Sus::Shared("a selector") do
 	with '.select' do
 		let(:quantum) {0.2}
@@ -64,6 +81,24 @@ Selector = Sus::Shared("a selector") do
 			expect do
 				selector.select(0.2)
 			end.to have_duration(be >= 0.2)
+		end
+		
+		it "doesn't block when readying another fiber" do
+			fiber = FakeFiber.new
+			
+			10.times do |i|
+				thread = Thread.new do
+					sleep(i / 10000.0)
+					selector.push(fiber)
+					selector.wakeup
+				end
+				
+				expect do
+					selector.select(1.0)
+				end.to have_duration(be < 1.0)
+			ensure
+				thread.join
+			end
 		end
 	end
 	
