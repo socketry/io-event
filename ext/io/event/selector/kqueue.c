@@ -35,7 +35,6 @@ struct IO_Event_Selector_KQueue {
 	int descriptor;
 	
 	int blocked;
-	int wakeup;
 };
 
 void IO_Event_Selector_KQueue_Type_mark(void *_data)
@@ -574,12 +573,6 @@ static
 void select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->data->blocked = 1;
 	
-	if (arguments->data->wakeup) {
-		arguments->data->wakeup = 0;
-		arguments->count = 0;
-		return;
-	}
-	
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->data->blocked = 0;
 	
@@ -624,7 +617,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	select_internal_with_gvl(&arguments);
 	
 	// If there were no pending events, if we have a timeout, wait for more events:
-	if (!ready && arguments.count == 0) {
+	if (!ready && !arguments.count && !data->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
@@ -649,11 +642,6 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
-	
-	// If we are already schduled to wake up, don't bother doing it again!
-	if (data->wakeup) return Qfalse;
-	
-	data->wakeup = 1;
 	
 	if (data->blocked) {
 		struct kevent trigger = {0};
