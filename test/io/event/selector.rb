@@ -27,7 +27,7 @@ require 'io/event/debug/selector'
 require 'socket'
 require 'fiber'
 
-Selector = Sus::Shared("selector") do
+Selector = Sus::Shared("a selector") do
 	with '.select' do
 		let(:quantum) {0.2}
 		
@@ -63,7 +63,7 @@ Selector = Sus::Shared("selector") do
 			
 			expect do
 				selector.select(0.2)
-			end.to have_duration(be < 0.2)
+			end.to have_duration(be >= 0.2)
 		end
 	end
 	

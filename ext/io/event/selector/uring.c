@@ -606,8 +606,8 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	
 	int result = select_process_completions(&data->ring);
 	
-	// If the ready list was empty and we didn't process any completions:
-	if (!ready && result == 0) {
+	// If the ready list was empty, we didn't process any completions, and the ready list is still empty:
+	if (!ready && result == 0 && !data->backend.ready) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.data = data,
