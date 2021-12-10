@@ -606,8 +606,12 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	
 	int result = select_process_completions(&data->ring);
 	
-	// If the ready list was empty, we didn't process any completions, and the ready list is still empty:
-	if (!ready && result == 0 && !data->backend.ready) {
+	// If we:
+	// 1. Didn't process any ready fibers, and
+	// 2. Didn't process any events from non-blocking select (above), and
+	// 3. There are no items in the ready list,
+	// then we can perform a blocking select.
+	if (!ready && !result && !data->backend.ready) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.data = data,

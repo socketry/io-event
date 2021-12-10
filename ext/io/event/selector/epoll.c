@@ -562,7 +562,11 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// Process any currently pending events:
 	select_internal_with_gvl(&arguments);
 	
-	// If the ready list was empty and no events were processed:
+	// If we:
+	// 1. Didn't process any ready fibers, and
+	// 2. Didn't process any events from non-blocking select (above), and
+	// 3. There are no items in the ready list,
+	// then we can perform a blocking select.
 	if (!ready && !arguments.count && !data->backend.ready) {
 		arguments.timeout = make_timeout(duration);
 		
