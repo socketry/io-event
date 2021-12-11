@@ -404,8 +404,11 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 			break;
 		} else if (result > 0) {
 			offset += result;
-			if ((size_t)result >= length) break;
-			length -= result;
+			
+			// Ensure we don't underflow length:
+			if ((size_t)result < length)
+				length -= result;
+			else break;
 		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
 			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {

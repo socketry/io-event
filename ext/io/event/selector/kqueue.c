@@ -400,7 +400,11 @@ VALUE io_read_loop(VALUE _arguments) {
 			break;
 		} else if (result > 0) {
 			offset += result;
-			length -= result;
+			
+			// Ensure we don't underflow length:
+			if ((size_t)result < length)
+				length -= result;
+			else break;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
@@ -475,6 +479,8 @@ VALUE io_write_loop(VALUE _arguments) {
 		
 		if (result >= 0) {
 			offset += result;
+			
+			// Result must always be <= than length:
 			length -= result;
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
