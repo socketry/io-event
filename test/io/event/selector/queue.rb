@@ -214,7 +214,7 @@ end
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
-	describe(klass) do
+	describe(klass, unique: name) do
 		def before
 			@loop = Fiber.current
 			@selector = subject.new(@loop)
