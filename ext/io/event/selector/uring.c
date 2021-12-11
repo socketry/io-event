@@ -100,7 +100,7 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	int result = io_uring_queue_init(URING_ENTRIES, &data->ring, 0);
 	
 	if (result < 0) {
-		rb_syserr_fail(-result, "io_uring_queue_init");
+		rb_syserr_fail(-result, "IO_Event_Selector_URing_initialize:io_uring_queue_init");
 	}
 	
 	rb_update_max_fd(data->ring.ring_fd);
@@ -186,7 +186,7 @@ int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 			// If it was submitted, reset pending count:
 			data->pending = 0;
 		} else if (result != -EBUSY && result != -EAGAIN) {
-			rb_syserr_fail(-result, "io_uring_submit_flush");
+			rb_syserr_fail(-result, "io_uring_submit_flush:io_uring_submit");
 		}
 		
 		return result;
@@ -208,7 +208,7 @@ int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
 		if (result == -EBUSY || result == -EAGAIN) {
 			IO_Event_Selector_yield(&data->backend);
 		} else {
-			rb_syserr_fail(-result, "io_uring_submit_now");
+			rb_syserr_fail(-result, "io_uring_submit_now:io_uring_submit");
 		}
 	}
 }
@@ -554,7 +554,7 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	if (arguments->result == -ETIME) {
 		arguments->result = 0;
 	} else if (arguments->result < 0) {
-		rb_syserr_fail(-arguments->result, "select_internal_without_gvl:io_uring_wait_cqes");
+		rb_syserr_fail(-arguments->result, "select_internal_without_gvl:io_uring_wait_cqe_timeout");
 	} else {
 		// At least 1 event is waiting:
 		arguments->result = 1;

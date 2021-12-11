@@ -95,7 +95,7 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	int result = kqueue();
 	
 	if (result == -1) {
-		rb_sys_fail("kqueue");
+		rb_sys_fail("IO_Event_Selector_KQueue_initialize:kqueue");
 	} else {
 		ioctl(result, FIOCLEX);
 		data->descriptor = result;
@@ -195,7 +195,7 @@ int process_add_filters(int descriptor, int ident, VALUE fiber) {
 			return 0;
 		}
 		
-		rb_sys_fail("kevent(process_add_filters)");
+		rb_sys_fail("process_add_filters:kevent");
 	}
 	
 	return 1;
@@ -289,7 +289,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
-		rb_sys_fail("kevent(io_add_filters)");
+		rb_sys_fail("io_add_filters:kevent");
 	}
 	
 	return events;
@@ -408,7 +408,7 @@ VALUE io_read_loop(VALUE _arguments) {
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_KQueue_io_read");
+			rb_sys_fail("IO_Event_Selector_KQueue_io_read:read");
 		}
 	}
 	
@@ -485,7 +485,7 @@ VALUE io_write_loop(VALUE _arguments) {
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_KQueue_io_write");
+			rb_sys_fail("IO_Event_Selector_KQueue_io_write:write");
 		}
 	}
 	

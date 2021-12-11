@@ -115,7 +115,7 @@ VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 	int result = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (result == -1) {
-		rb_sys_fail("epoll_create");
+		rb_sys_fail("IO_Event_Selector_EPoll_initialize:epoll_create");
 	} else {
 		data->descriptor = result;
 		
@@ -241,7 +241,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
 	
 	if (result == -1) {
-		rb_sys_fail("epoll_ctl(process_wait)");
+		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:epoll_ctl");
 	}
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
@@ -326,13 +326,13 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		rb_update_max_fd(duplicate);
 		
 		if (descriptor == -1)
-			rb_sys_fail("dup");
+			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup");
 		
 		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	}
 	
 	if (result == -1) {
-		rb_sys_fail("epoll_ctl");
+		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
@@ -386,7 +386,7 @@ VALUE io_read_loop(VALUE _arguments) {
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_read");
+			rb_sys_fail("IO_Event_Selector_EPoll_io_read:read");
 		}
 	}
 	
@@ -460,7 +460,7 @@ VALUE io_write_loop(VALUE _arguments) {
 		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_write");
+			rb_sys_fail("IO_Event_Selector_EPoll_io_write:write");
 		}
 	}
 	
