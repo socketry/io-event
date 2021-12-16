@@ -18,6 +18,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+return unless IO.const_defined?(:Buffer)
+
 require_relative '../../../environment'
 
 require 'io/event'
