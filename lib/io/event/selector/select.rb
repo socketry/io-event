@@ -141,7 +141,7 @@ module IO::Event
 						# The maximum size we can read:
 						maximum_size = buffer.size - offset
 						
-						case result = io.read_nonblock(maximum_size, exception: false)
+						case result = blocking{io.read_nonblock(maximum_size, exception: false)}
 						when :wait_readable
 							self.io_wait(fiber, io, IO::READABLE)
 						when :wait_writable
@@ -165,7 +165,7 @@ module IO::Event
 					while length > 0
 						# From offset until the end:
 						chunk = buffer.to_str(offset, length)
-						case result = io.write_nonblock(chunk, exception: false)
+						case result = blocking{io.write_nonblock(chunk, exception: false)}
 						when :wait_readable
 							self.io_wait(fiber, io, IO::READABLE)
 						when :wait_writable
@@ -239,6 +239,10 @@ module IO::Event
 				end
 				
 				return ready.size
+			end
+			
+			private def blocking(&block)
+				Fiber.new(blocking: true, &block).resume
 			end
 		end
 	end
