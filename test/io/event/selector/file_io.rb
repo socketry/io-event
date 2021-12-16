@@ -22,31 +22,27 @@ require_relative '../../../environment'
 
 require 'io/event'
 require 'io/event/selector'
-require 'socket'
+require 'tempfile'
 
 FileIO = Sus::Shared("file io") do
 	with 'a file' do
-		let(:file) {File.open(__FILE__)}
-		let(:input) {pipe.first}
-		let(:output) {pipe.last}
+		let(:file) {Tempfile.new}
 		
 		it "can read using a buffer" do
-			events = Array.new
-			
-			fiber = Fiber.new do
-				events << :wait_readable
-				
-				selector.io_wait(Fiber.current, file, IO::READABLE)
-				
-				events << :readable
+			writer = Fiber.new do
+				buffer = IO::Buffer.new(128)
+				file.seek(0)
+				expect(selector.io_write(Fiber.current, file, buffer, 128)).to be == 128
 			end
 			
-			events << :transfer
-			fiber.transfer
-			events << :transfer
-			fiber.transfer
+			reader = Fiber.new do
+				buffer = IO::Buffer.new(64)
+				file.seek(0)
+				expect(selector.io_read(Fiber.current, file, buffer, 1)).to be == 64
+			end
 			
-			expect(events).to be == [:transfer, :wait_readable, :transfer, :readable]
+			writer.transfer
+			reader.transfer
 		end
 	end
 end
