@@ -396,27 +396,24 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
 	
-	while (length > 0) {
+	while (true) {
 		size_t maximum_size = size - offset;
 		int result = io_read(data, fiber, descriptor, (char*)base+offset, maximum_size);
 		
-		if (result == 0) {
-			break;
-		} else if (result > 0) {
+		if (result > 0) {
 			offset += result;
-			
-			// Ensure we don't underflow length:
-			if ((size_t)result < length)
-				length -= result;
-			else break;
-		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(-result)) {
 			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_syserr_fail(-result, strerror(-result));
+			return rb_fiber_scheduler_io_result(-1, -result);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
 static
@@ -452,21 +449,24 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 	
-	while (length > 0) {
-		int result = io_write(data, fiber, descriptor, (char*)base+offset, length);
+	while (true) {
+		size_t maximum_size = size - offset;
+		int result = io_write(data, fiber, descriptor, (char*)base+offset, maximum_size);
 		
-		if (result >= 0) {
+		if (result > 0) {
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
-		} else if (-result == EAGAIN || -result == EWOULDBLOCK) {
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(-result)) {
 			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
-			rb_syserr_fail(-result, strerror(-result));
+			return rb_fiber_scheduler_io_result(-1, -result);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
 #endif

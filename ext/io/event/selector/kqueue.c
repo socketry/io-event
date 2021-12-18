@@ -26,6 +26,13 @@
 #include <time.h>
 #include <errno.h>
 
+enum {
+	DEBUG = 0,
+	DEBUG_IO_READ = 0,
+	DEBUG_IO_WRITE = 0,
+	DEBUG_IO_WAIT = 0
+};
+
 static VALUE IO_Event_Selector_KQueue = Qnil;
 
 enum {KQUEUE_MAX_EVENTS = 64};
@@ -363,6 +370,8 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.descriptor = descriptor,
 	};
 	
+	if (DEBUG_IO_WAIT) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait descriptor=%d\n", descriptor);
+	
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
@@ -392,27 +401,31 @@ VALUE io_read_loop(VALUE _arguments) {
 	size_t offset = 0;
 	size_t length = arguments->length;
 	
-	while (length > 0) {
+	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
+	
+	while (true) {
 		size_t maximum_size = size - offset;
+		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, offset, maximum_size);
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
+		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %lld\n", arguments->descriptor, offset, maximum_size, result);
 		
-		if (result == 0) {
-			break;
-		} else if (result > 0) {
+		if (result > 0) {
 			offset += result;
-			
-			// Ensure we don't underflow length:
-			if ((size_t)result < length)
-				length -= result;
-			else break;
-		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(errno)) {
+			if (DEBUG_IO_READ) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait(fd=%d, length=%zu)\n", arguments->descriptor, length);
 			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_KQueue_io_read:read");
+			if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
+			return rb_fiber_scheduler_io_result(-1, errno);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
 static
@@ -474,22 +487,31 @@ VALUE io_write_loop(VALUE _arguments) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 	
-	while (length > 0) {
-		ssize_t result = write(arguments->descriptor, (char*)base+offset, length);
+	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
+	
+	while (true) {
+		size_t maximum_size = size - offset;
+		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, offset, maximum_size, length);
+		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
+		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %lld\n", arguments->descriptor, offset, maximum_size, result);
 		
-		if (result >= 0) {
+		if (result > 0) {
 			offset += result;
-			
-			// Result must always be <= than length:
+			if ((size_t)result >= length) break;
 			length -= result;
-		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(errno)) {
+			if (DEBUG_IO_WRITE) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait(fd=%d, length=%zu)\n", arguments->descriptor, length);
+			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_KQueue_io_write:write");
+			if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
+			return rb_fiber_scheduler_io_result(-1, errno);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	if (DEBUG_IO_READ) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 };
 
 static
@@ -620,7 +642,9 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	// Non-comprehensive testing shows this gives a 1.5x speedup.
 	
 	// First do the syscall with no timeout to get any immediately available events:
+	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl timeout=" PRINTF_TIMESPEC "\r\n", PRINTF_TIMESPEC_ARGS(arguments.storage));
 	select_internal_with_gvl(&arguments);
+	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl done\r\n");
 	
 	// If we:
 	// 1. Didn't process any ready fibers, and
@@ -633,6 +657,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		if (!timeout_nonblocking(arguments.timeout)) {
 			arguments.count = KQUEUE_MAX_EVENTS;
 			
+			if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_select timeout=" PRINTF_TIMESPEC "\n", PRINTF_TIMESPEC_ARGS(arguments.storage));
 			select_internal_without_gvl(&arguments);
 		}
 	}

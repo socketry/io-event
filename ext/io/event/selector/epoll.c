@@ -370,27 +370,24 @@ VALUE io_read_loop(VALUE _arguments) {
 	size_t offset = 0;
 	size_t length = arguments->length;
 	
-	while (length > 0) {
+	while (true) {
 		size_t maximum_size = size - offset;
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
 		
-		if (result == 0) {
-			break;
-		} else if (result > 0) {
+		if (result > 0) {
 			offset += result;
-			
-			// Ensure we don't underflow length:
-			if ((size_t)result < length)
-				length -= result;
-			else break;
-		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(-result)) {
 			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_read:read");
+			return rb_fiber_scheduler_io_result(-1, -result);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
 static
@@ -449,22 +446,24 @@ VALUE io_write_loop(VALUE _arguments) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 	
-	while (length > 0) {
-		ssize_t result = write(arguments->descriptor, (char*)base+offset, length);
+	while (true) {
+		size_t maximum_size = size - offset;
+		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
 		
-		if (result >= 0) {
+		if (result > 0) {
 			offset += result;
-			
-			// Result must always be <= than length:
+			if ((size_t)result >= length) break;
 			length -= result;
-		} else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(errno)) {
 			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_write:write");
+			return rb_fiber_scheduler_io_result(-1, errno);
 		}
 	}
 	
-	return SIZET2NUM(offset);
+	return rb_fiber_scheduler_io_result(offset, 0);
 };
 
 static

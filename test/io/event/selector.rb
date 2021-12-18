@@ -18,8 +18,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-require_relative '../../environment'
-
 require 'io/event'
 require 'io/event/selector'
 require 'io/event/debug/selector'

@@ -20,8 +20,6 @@
 
 return unless IO.const_defined?(:Buffer)
 
-require_relative '../../../environment'
-
 require 'io/event'
 require 'io/event/selector'
 require 'socket'

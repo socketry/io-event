@@ -19,3 +19,4 @@
 # THE SOFTWARE.
 
 $LOAD_PATH << File.expand_path("../ext", __dir__)
+Warning[:experimental] = false

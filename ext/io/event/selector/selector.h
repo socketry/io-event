@@ -26,6 +26,7 @@
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 #include <ruby/io/buffer.h>
+#include <ruby/fiber/scheduler.h>
 #endif
 
 #include <time.h>
@@ -39,6 +40,10 @@ enum IO_Event {
 };
 
 void Init_IO_Event_Selector();
+
+static inline int IO_Event_try_again(int error) {
+	return error == EAGAIN || error == EWOULDBLOCK;
+}
 
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
 

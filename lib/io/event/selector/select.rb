@@ -134,25 +134,36 @@ module IO::Event
 			end
 			
 			if IO.const_defined?(:Buffer)
+				EAGAIN = Errno::EAGAIN::Errno
+				
 				def io_read(fiber, io, buffer, length)
 					offset = 0
 					
-					while length > 0
-						# The maximum size we can read:
+					while true
 						maximum_size = buffer.size - offset
 						
 						case result = blocking{io.read_nonblock(maximum_size, exception: false)}
 						when :wait_readable
-							self.io_wait(fiber, io, IO::READABLE)
+							if length > 0
+								self.io_wait(fiber, io, IO::READABLE)
+							else
+								return -EAGAIN
+							end
 						when :wait_writable
-							self.io_wait(fiber, io, IO::WRITABLE)
+							if length > 0
+								self.io_wait(fiber, io, IO::WRITABLE)
+							else
+								return -EAGAIN
+							end
 						else
 							break unless result
 							
 							buffer.copy(result, offset)
 							
-							offset += result.bytesize
-							length -= result.bytesize
+							size = result.bytesize
+							offset += size
+							break if size >= length
+							length -= size
 						end
 					end
 					
@@ -162,16 +173,26 @@ module IO::Event
 				def io_write(fiber, io, buffer, length)
 					offset = 0
 					
-					while length > 0
-						# From offset until the end:
-						chunk = buffer.to_str(offset, length)
+					while true
+						maximum_size = buffer.size - offset
+						
+						chunk = buffer.to_str(offset, maximum_size)
 						case result = blocking{io.write_nonblock(chunk, exception: false)}
 						when :wait_readable
-							self.io_wait(fiber, io, IO::READABLE)
+							if length > 0
+								self.io_wait(fiber, io, IO::READABLE)
+							else
+								return -EAGAIN
+							end
 						when :wait_writable
-							self.io_wait(fiber, io, IO::WRITABLE)
+							if length > 0
+								self.io_wait(fiber, io, IO::WRITABLE)
+							else
+								return -EAGAIN
+							end
 						else
 							offset += result
+							break if result >= length
 							length -= result
 						end
 					end
