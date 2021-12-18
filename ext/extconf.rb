@@ -27,7 +27,7 @@ extension_name = 'IO_Event'
 
 # dir_config(extension_name)
 
-$CFLAGS << " -Wall"
+$CFLAGS << " -Wall -std=c99"
 
 $srcs = ["io/event/event.c", "io/event/selector/selector.c"]
 $VPATH << "$(srcdir)/io/event"

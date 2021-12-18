@@ -407,7 +407,7 @@ VALUE io_read_loop(VALUE _arguments) {
 		size_t maximum_size = size - offset;
 		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, offset, maximum_size);
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
-		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %lld\n", arguments->descriptor, offset, maximum_size, result);
+		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
 			offset += result;
@@ -493,7 +493,7 @@ VALUE io_write_loop(VALUE _arguments) {
 		size_t maximum_size = size - offset;
 		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, offset, maximum_size, length);
 		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
-		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %lld\n", arguments->descriptor, offset, maximum_size, result);
+		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
 			offset += result;
