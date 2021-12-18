@@ -380,10 +380,10 @@ VALUE io_read_loop(VALUE _arguments) {
 			length -= result;
 		} else if (result == 0) {
 			break;
-		} else if (length > 0 && IO_Event_try_again(-result)) {
+		} else if (length > 0 && IO_Event_try_again(errno)) {
 			IO_Event_Selector_EPoll_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
-			return rb_fiber_scheduler_io_result(-1, -result);
+			return rb_fiber_scheduler_io_result(-1, errno);
 		}
 	}
 	
