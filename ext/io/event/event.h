@@ -24,7 +24,7 @@
 
 #include "extconf.h"
 
-void Init_IO_Event();
+void Init_IO_Event(void);
 
 #ifdef HAVE_LIBURING_H
 #include "selector/uring.h"

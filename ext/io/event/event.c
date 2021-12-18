@@ -24,7 +24,7 @@
 VALUE IO_Event = Qnil;
 VALUE IO_Event_Selector = Qnil;
 
-void Init_IO_Event()
+void Init_IO_Event(void)
 {
 #ifdef HAVE_RB_EXT_RACTOR_SAFE
 	rb_ext_ractor_safe(true);
