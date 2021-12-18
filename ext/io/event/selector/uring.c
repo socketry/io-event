@@ -27,7 +27,10 @@
 
 #include "pidfd.c"
 
-static const int DEBUG = 0;
+enum {
+	DEBUG = 0,
+	DEBUG_IO_READ = 0,
+};
 
 static VALUE IO_Event_Selector_URing = Qnil;
 
@@ -373,7 +376,7 @@ static int io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descri
 
 	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
 
-	io_uring_prep_read(sqe, descriptor, buffer, length, 0);
+	io_uring_prep_read(sqe, descriptor, buffer, length, -1);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_now(data);
 	
@@ -398,7 +401,9 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	while (true) {
 		size_t maximum_size = size - offset;
+		if (DEBUG_IO_READ) fprintf(stderr, "io_read(%d, +%ld, %ld)\n", descriptor, offset, maximum_size);
 		int result = io_read(data, fiber, descriptor, (char*)base+offset, maximum_size);
+		if (DEBUG_IO_READ) fprintf(stderr, "io_read(%d, +%ld, %ld) -> %d\n", descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
 			offset += result;
@@ -422,7 +427,7 @@ int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, 
 	
 	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
 
-	io_uring_prep_write(sqe, descriptor, buffer, length, 0);
+	io_uring_prep_write(sqe, descriptor, buffer, length, -1);
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
 	
