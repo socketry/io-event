@@ -396,7 +396,7 @@ VALUE io_read_loop(VALUE _arguments) {
 	
 	void *base;
 	size_t size;
-	rb_io_buffer_get_mutable(arguments->buffer, &base, &size);
+	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = arguments->length;
@@ -478,7 +478,7 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	const void *base;
 	size_t size;
-	rb_io_buffer_get_immutable(arguments->buffer, &base, &size);
+	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = arguments->length;

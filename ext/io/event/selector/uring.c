@@ -394,7 +394,7 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	void *base;
 	size_t size;
-	rb_io_buffer_get_mutable(buffer, &base, &size);
+	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);
@@ -445,7 +445,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	const void *base;
 	size_t size;
-	rb_io_buffer_get_immutable(buffer, &base, &size);
+	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
 	size_t offset = 0;
 	size_t length = NUM2SIZET(_length);

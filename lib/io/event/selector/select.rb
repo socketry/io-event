@@ -158,7 +158,7 @@ module IO::Event
 						else
 							break unless result
 							
-							buffer.copy(result, offset)
+							buffer.set_string(result, offset)
 							
 							size = result.bytesize
 							offset += size
@@ -176,7 +176,7 @@ module IO::Event
 					while true
 						maximum_size = buffer.size - offset
 						
-						chunk = buffer.to_str(offset, maximum_size)
+						chunk = buffer.get_string(offset, maximum_size)
 						case result = blocking{io.write_nonblock(chunk, exception: false)}
 						when :wait_readable
 							if length > 0
