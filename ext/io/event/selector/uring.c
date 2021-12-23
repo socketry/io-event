@@ -558,6 +558,8 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	
 	if (arguments->result == -ETIME) {
 		arguments->result = 0;
+	} else if (arguments->result == -EINTR) {
+		arguments->result = 0;
 	} else if (arguments->result < 0) {
 		rb_syserr_fail(-arguments->result, "select_internal_without_gvl:io_uring_wait_cqe_timeout");
 	} else {
@@ -567,8 +569,6 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	
 	return arguments->result;
 }
-
-// #define IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT ((__u64) -2)
 
 static inline
 unsigned select_process_completions(struct io_uring *ring) {
@@ -584,10 +584,6 @@ unsigned select_process_completions(struct io_uring *ring) {
 			io_uring_cq_advance(ring, 1);
 			continue;
 		}
-		
-		// if (cqe->user_data == IO_EVENT_SELECTOR_URING_UDATA_INTERRUPT) {
-		// 	io_uring_cq_advance(ring, 1);
-		// }
 		
 		VALUE fiber = (VALUE)cqe->user_data;
 		VALUE result = RB_INT2NUM(cqe->res);

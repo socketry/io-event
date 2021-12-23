@@ -605,7 +605,11 @@ void select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->data->blocked = 0;
 	
 	if (arguments->count == -1) {
-		rb_sys_fail("select_internal_without_gvl:kevent");
+		if (errno != EINTR) {
+			rb_sys_fail("select_internal_without_gvl:kevent");
+		} else {
+			arguments->count = 0;
+		}
 	}
 }
 
@@ -614,7 +618,11 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 	select_internal((void *)arguments);
 	
 	if (arguments->count == -1) {
-		rb_sys_fail("select_internal_with_gvl:kevent");
+		if (errno != EINTR) {
+			rb_sys_fail("select_internal_with_gvl:kevent");
+		} else {
+			arguments->count = 0;
+		}
 	}
 }
 
