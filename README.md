@@ -6,7 +6,7 @@ An event loop.
 
 ## Usage
 
-Please see the [project documentation](https://socketry.github.io/event/).
+Please see the [project documentation](https://socketry.github.io/io-event/).
 
 ## Contributing
 
