@@ -31,12 +31,10 @@ module IO::Event
 				end
 			end
 			
-			if self.const_defined?(:URing)
-				return URing
+			if self.const_defined?(:EPoll)
+				return EPoll
 			elsif self.const_defined?(:KQueue)
 				return KQueue
-			elsif self.const_defined?(:EPoll)
-				return EPoll
 			else
 				return Select
 			end

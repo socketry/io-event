@@ -27,6 +27,8 @@
 
 #include "pidfd.c"
 
+#include <linux/version.h>
+
 enum {
 	DEBUG = 0,
 	DEBUG_IO_READ = 0,
@@ -371,12 +373,28 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0)
+static inline off_t io_seekable(int descriptor) {
+	return -1;
+}
+#else
+#warning Upgrade your kernel to 5.16! io_uring bugs prevent efficient io_read/io_write hooks.
+static inline off_t io_seekable(int descriptor)
+{
+	if (lseek(descriptor, 0, SEEK_CUR) == -1) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+#endif
+
 static int io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 
 	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
 
-	io_uring_prep_read(sqe, descriptor, buffer, length, -1);
+	io_uring_prep_read(sqe, descriptor, buffer, length, io_seekable(descriptor));
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_now(data);
 	
@@ -427,7 +445,7 @@ int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, 
 	
 	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
 
-	io_uring_prep_write(sqe, descriptor, buffer, length, -1);
+	io_uring_prep_write(sqe, descriptor, buffer, length, io_seekable(descriptor));
 	io_uring_sqe_set_data(sqe, (void*)fiber);
 	io_uring_submit_pending(data);
 	

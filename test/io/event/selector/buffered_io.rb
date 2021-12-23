@@ -44,7 +44,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			reader.transfer
 			writer.transfer
 			
-			expect(selector.select(1)).to be == 1
+			expect(selector.select(1)).to be >= 1
 		end
 	end
 end
