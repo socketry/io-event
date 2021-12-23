@@ -19,5 +19,5 @@
 # THE SOFTWARE.
 
 module IO::Event
-	VERSION = "0.5.0"
+	VERSION = "1.0.0"
 end
