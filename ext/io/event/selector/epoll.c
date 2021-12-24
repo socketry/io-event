@@ -299,6 +299,11 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	
 	VALUE result = IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
+	// If the fiber is being cancelled, it might be resumed with nil:
+	if (!RTEST(result)) {
+		return Qfalse;
+	}
+	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
 

@@ -338,6 +338,10 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	VALUE result = IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
 	if (DEBUG) fprintf(stderr, "io_wait:IO_Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
 
+	if (!RTEST(result)) {
+		return Qfalse;
+	}
+
 	// We explicitly filter the resulting events based on the requested events.
 	// In some cases, poll will report events we didn't ask for.
 	short flags = arguments->flags & NUM2INT(result);
