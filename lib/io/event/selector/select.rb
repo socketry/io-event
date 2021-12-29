@@ -155,9 +155,9 @@ module IO::Event
 							else
 								return -EAGAIN
 							end
+						when nil
+							break
 						else
-							break unless result
-							
 							buffer.set_string(result, offset)
 							
 							size = result.bytesize
