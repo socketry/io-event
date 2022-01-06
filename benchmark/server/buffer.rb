@@ -13,7 +13,7 @@ RESPONSE_STRING = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 REQUEST = IO::Buffer.new(1024)
 RESPONSE = IO::Buffer.new(128)
 
-RESPONSE_SIZE = RESPONSE.copy(RESPONSE_STRING, 0)
+RESPONSE_SIZE = RESPONSE.set_string(RESPONSE_STRING)
 
 Fiber.schedule do
 	server = TCPServer.new('localhost', port)
@@ -28,4 +28,3 @@ Fiber.schedule do
 		end
 	end
 end
-
