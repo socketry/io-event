@@ -30,7 +30,7 @@ module IO::Event
 				@priority = {}
 				
 				unless Fiber.current == selector.loop
-					raise "Selector must be initialized on event loop fiber!"
+					Kernel::raise "Selector must be initialized on event loop fiber!"
 				end
 			end
 			
@@ -40,7 +40,7 @@ module IO::Event
 			
 			def close
 				if @selector.nil?
-					raise "Selector already closed!"
+					Kernel::raise "Selector already closed!"
 				end
 				
 				@selector.close
@@ -95,7 +95,7 @@ module IO::Event
 			
 			def select(duration = nil)
 				unless Fiber.current == @selector.loop
-					raise "Selector must be run on event loop fiber!"
+					Kernel::raise "Selector must be run on event loop fiber!"
 				end
 				
 				@selector.select(duration)
@@ -106,7 +106,7 @@ module IO::Event
 			def register_readable(fiber, io, events)
 				if (events & IO::READABLE) > 0
 					if @readable.key?(io)
-						raise "Cannot wait for #{io} to become readable from multiple fibers."
+						Kernel::raise "Cannot wait for #{io} to become readable from multiple fibers."
 					end
 					
 					begin
@@ -124,7 +124,7 @@ module IO::Event
 			def register_writable(fiber, io, events)
 				if (events & IO::WRITABLE) > 0
 					if @writable.key?(io)
-						raise "Cannot wait for #{io} to become writable from multiple fibers."
+						Kernel::raise "Cannot wait for #{io} to become writable from multiple fibers."
 					end
 					
 					begin
@@ -142,7 +142,7 @@ module IO::Event
 			def register_priority(fiber, io, events)
 				if (events & IO::PRIORITY) > 0
 					if @priority.key?(io)
-						raise "Cannot wait for #{io} to become priority from multiple fibers."
+						Kernel::raise "Cannot wait for #{io} to become priority from multiple fibers."
 					end
 					
 					begin

@@ -19,6 +19,7 @@
 # THE SOFTWARE.
 
 require_relative 'selector/select'
+require_relative 'debug/selector'
 
 module IO::Event
 	module Selector
@@ -40,8 +41,14 @@ module IO::Event
 			end
 		end
 		
-		def self.new(loop)
-			default.new(loop)
+		def self.new(loop, env = ENV)
+			selector = default(env).new(loop)
+			
+			if debug = env['IO_EVENT_DEBUG_SELECTOR']
+				selector = Debug::Selector.new(selector)
+			end
+			
+			return selector
 		end
 	end
 end
