@@ -190,7 +190,7 @@ int process_add_filters(int descriptor, int ident, VALUE fiber) {
 	
 	event.ident = ident;
 	event.filter = EVFILT_PROC;
-	event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+	event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
 	event.fflags = NOTE_EXIT;
 	event.udata = (void*)fiber;
 	
@@ -214,7 +214,7 @@ void process_remove_filters(int descriptor, int ident) {
 	
 	event.ident = ident;
 	event.filter = EVFILT_PROC;
-	event.flags = EV_DELETE;
+	event.flags = EV_DELETE | EV_UDATA_SPECIFIC;
 	event.fflags = NOTE_EXIT;
 	
 	// Ignore the result.
@@ -273,7 +273,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	if (events & IO_EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
 		kevents[count].udata = (void*)fiber;
 		
 // #ifdef EV_OOBAND
@@ -288,7 +288,7 @@ int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
 	if (events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
 		kevents[count].udata = (void*)fiber;
 		count++;
 	}
@@ -310,7 +310,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 	if (events & IO_EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_DELETE;
+		kevents[count].flags = EV_DELETE | EV_UDATA_SPECIFIC;
 		
 		count++;
 	}
@@ -318,7 +318,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 	if (events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_DELETE;
+		kevents[count].flags = EV_DELETE | EV_UDATA_SPECIFIC;
 		count++;
 	}
 	
@@ -695,7 +695,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
-		trigger.flags = EV_ADD|EV_CLEAR;
+		trigger.flags = EV_ADD | EV_CLEAR | EV_UDATA_SPECIFIC;
 		trigger.fflags = NOTE_TRIGGER;
 		
 		int result = kevent(data->descriptor, &trigger, 1, NULL, 0, NULL);
