@@ -26,8 +26,7 @@ module IO::Event
 			def initialize(loop)
 				@loop = loop
 				
-				@readable = Hash.new.compare_by_identity
-				@writable = Hash.new.compare_by_identity
+				@waiting = Hash.new.compare_by_identity
 				
 				@blocked = false
 				
@@ -52,8 +51,7 @@ module IO::Event
 				@interrupt.close
 				
 				@loop = nil
-				@readable = nil
-				@writable = nil
+				@waiting = nil
 			end
 			
 			Optional = Struct.new(:fiber) do
@@ -114,23 +112,40 @@ module IO::Event
 				!@ready.empty?
 			end
 			
+			Waiter = Struct.new(:fiber, :events, :tail) do
+				def alive?
+					self.fiber&.alive?
+				end
+				
+				def transfer(events)
+					if fiber = self.fiber
+						self.fiber = nil
+						
+						fiber.transfer(events & self.events) if fiber.alive?
+					end
+				
+					self.tail&.transfer(events)
+				end
+				
+				def invalidate
+					self.fiber = nil
+				end
+				
+				def each(&block)
+					if fiber = self.fiber
+						yield fiber, self.events
+					end
+					
+					self.tail&.each(&block)
+				end
+			end
+			
 			def io_wait(fiber, io, events)
-				remove_readable = remove_writable = false
-				
-				if (events & IO::READABLE) > 0 or (events & IO::PRIORITY) > 0
-					@readable[io] = fiber
-					remove_readable = true
-				end
-				
-				if (events & IO::WRITABLE) > 0
-					@writable[io] = fiber
-					remove_writable = true
-				end
+				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
 				
 				@loop.transfer
 			ensure
-				@readable.delete(io) if remove_readable
-				@writable.delete(io) if remove_writable
+				waiter&.invalidate
 			end
 			
 			if IO.const_defined?(:Buffer)
@@ -238,25 +253,38 @@ module IO::Event
 					duration = 0
 				end
 				
+				readable = Array.new
+				writable = Array.new
+				
+				@waiting.each do |io, waiter|
+					waiter.each do |fiber, events|
+						if (events & IO::READABLE) > 0
+							readable << io
+						end
+						
+						if (events & IO::WRITABLE) > 0
+							writable << io
+						end
+					end
+				end
+				
 				@blocked = true
 				duration = 0 unless @ready.empty?
-				readable, writable, _ = ::IO.select(@readable.keys, @writable.keys, nil, duration)
+				readable, writable, _ = ::IO.select(readable, writable, nil, duration)
 				@blocked = false
 				
 				ready = Hash.new(0)
 				
 				readable&.each do |io|
-					fiber = @readable.delete(io)
-					ready[fiber] |= IO::READABLE
+					ready[io] |= IO::READABLE
 				end
 				
 				writable&.each do |io|
-					fiber = @writable.delete(io)
-					ready[fiber] |= IO::WRITABLE
+					ready[io] |= IO::WRITABLE
 				end
 				
-				ready.each do |fiber, events|
-					fiber.transfer(events) if fiber.alive?
+				ready.each do |io, events|
+					@waiting.delete(io).transfer(events)
 				end
 				
 				return ready.size

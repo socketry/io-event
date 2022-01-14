@@ -221,6 +221,38 @@ Selector = Sus::Shared("a selector") do
 				:select, :error, :puts
 			]
 		end
+		
+		
+		it "can have two fibers reading from the same io" do
+			fiber1 = Fiber.new do
+				events << :wait_readable1
+				selector.io_wait(Fiber.current, local, IO::READABLE)
+				events << :readable
+			rescue
+				events << :error1
+			end
+			
+			fiber2 = Fiber.new do
+				events << :wait_readable2
+				selector.io_wait(Fiber.current, local, IO::READABLE)
+				events << :readable
+			rescue
+				events << :error2
+			end
+			
+			events << :transfer
+			fiber1.transfer
+			fiber2.transfer
+			
+			remote.puts "Hello World"
+			events << :select
+			selector.select(1)
+			
+			expect(events).to be == [
+				:transfer, :wait_readable1, :wait_readable2,
+				:select, :readable, :readable
+			]
+		end
 	end
 	
 	if IO.const_defined?(:Buffer)
@@ -395,43 +427,4 @@ describe IO::Event::Debug::Selector do
 	attr :selector
 	
 	it_behaves_like Selector
-	
-	with '#io_wait' do
-		let(:events) {Array.new}
-		let(:sockets) {UNIXSocket.pair}
-		let(:local) {sockets.first}
-		let(:remote) {sockets.last}
-		
-		it "cannot have two fibers reading from the same io" do
-			fiber1 = Fiber.new do
-				events << :wait_readable1
-				selector.io_wait(Fiber.current, local, IO::READABLE)
-				events << :readable1
-			rescue
-				events << :error1
-			end
-			
-			fiber2 = Fiber.new do
-				events << :wait_readable2
-				selector.io_wait(Fiber.current, local, IO::READABLE)
-				events << :readable2
-			rescue
-				events << :error2
-			end
-			
-			events << :transfer
-			fiber1.transfer
-			fiber2.transfer
-			
-			remote.puts "Hello World"
-			events << :select
-			selector.select(1)
-			
-			expect(events).to be == [
-				:transfer, :wait_readable1, :wait_readable2,
-				:error2,
-				:select, :readable1
-			]
-		end
-	end
 end

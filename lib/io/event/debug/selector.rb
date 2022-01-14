@@ -80,7 +80,7 @@ module IO::Event
 			end
 			
 			def io_wait(fiber, io, events)
-				register_readable(fiber, io, events)
+				@selector.io_wait(fiber, io, events)
 			end
 			
 			if IO.const_defined?(:Buffer)
@@ -99,62 +99,6 @@ module IO::Event
 				end
 				
 				@selector.select(duration)
-			end
-			
-			private
-			
-			def register_readable(fiber, io, events)
-				if (events & IO::READABLE) > 0
-					if @readable.key?(io)
-						Kernel::raise "Cannot wait for #{io} to become readable from multiple fibers."
-					end
-					
-					begin
-						@readable[io] = fiber
-						
-						register_writable(fiber, io, events)
-					ensure
-						@readable.delete(io)
-					end
-				else
-					register_writable(fiber, io, events)
-				end
-			end
-			
-			def register_writable(fiber, io, events)
-				if (events & IO::WRITABLE) > 0
-					if @writable.key?(io)
-						Kernel::raise "Cannot wait for #{io} to become writable from multiple fibers."
-					end
-					
-					begin
-						@writable[io] = fiber
-						
-						register_priority(fiber, io, events)
-					ensure
-						@writable.delete(io)
-					end
-				else
-					register_priority(fiber, io, events)
-				end
-			end
-			
-			def register_priority(fiber, io, events)
-				if (events & IO::PRIORITY) > 0
-					if @priority.key?(io)
-						Kernel::raise "Cannot wait for #{io} to become priority from multiple fibers."
-					end
-					
-					begin
-						@priority[io] = fiber
-						
-						@selector.io_wait(fiber, io, events)
-					ensure
-						@priority.delete(io)
-					end
-				else
-					@selector.io_wait(fiber, io, events)
-				end
 			end
 		end
 	end
