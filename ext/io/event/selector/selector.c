@@ -21,6 +21,11 @@
 #include "selector.h"
 #include <fcntl.h>
 
+#ifndef HAVE_RB_PROCESS_STATUS_WAIT
+// Pull in WNOHANG.
+#include <sys/wait.h>
+#endif
+
 static const int DEBUG = 0;
 
 static ID id_transfer, id_alive_p;
