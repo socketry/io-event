@@ -1,3 +1,4 @@
+# frozen_string_literal: true
 
 require_relative "lib/io/event/version"
 
@@ -6,7 +7,7 @@ Gem::Specification.new do |spec|
 	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
-	spec.authors = ["Samuel Williams"]
+	spec.authors = ["Samuel Williams", "machty", "Benoit Daloze", "Delton Ding"]
 	spec.license = "MIT"
 	
 	spec.homepage = "https://github.com/socketry/io-event"
@@ -14,9 +15,9 @@ Gem::Specification.new do |spec|
 	spec.files = Dir.glob('{ext,lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
 	spec.require_paths = ['lib']
 	
-	spec.required_ruby_version = ">= 3.0"
-	
 	spec.extensions = ["ext/extconf.rb"]
+	
+	spec.required_ruby_version = ">= 3.0"
 	
 	spec.add_development_dependency "bake"
 	spec.add_development_dependency "bundler"

@@ -2,7 +2,7 @@
 
 An event loop.
 
-[![Development Status](https://github.com/socketry/event/workflows/Development/badge.svg)](https://github.com/socketry/event/actions?workflow=Development)
+[![Development Status](https://github.com/socketry/io-event/workflows/Development/badge.svg)](https://github.com/socketry/io-event/actions?workflow=Development)
 
 ## Usage
 
