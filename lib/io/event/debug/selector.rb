@@ -47,12 +47,9 @@ module IO::Event
 				@selector = nil
 			end
 			
-			def transfer(fiber, *arguments)
-				@selector.transfer(fiber, *arguments)
-			end
-			
-			def transfer(*arguments)
-				@selector.transfer(*arguments)
+			# Transfer from the calling fiber to the event loop.
+			def transfer
+				@selector.transfer
 			end
 			
 			def resume(*arguments)
