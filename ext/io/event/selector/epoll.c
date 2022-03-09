@@ -332,20 +332,27 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	if (result == -1 && errno == EEXIST) {
 		// The file descriptor was already inserted into epoll.
-		duplicate = descriptor = dup(descriptor);
+		duplicate = dup(descriptor);
 		
-		rb_update_max_fd(duplicate);
-		
-		if (descriptor == -1) {
+		if (duplicate == -1) {
 			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup");
 		}
+		
+		descriptor = duplicate;
+		
+		rb_update_max_fd(descriptor);
 		
 		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	}
 	
 	if (result == -1) {
-		if (duplicate >= 0) close(duplicate);
-		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
+		// If we duplicated the file descriptor, ensure it's closed:
+		if (duplicate >= 0) {
+			close(duplicate);
+			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup:epoll_ctl");
+		} else {
+			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
+		}
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
