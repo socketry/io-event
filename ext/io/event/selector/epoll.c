@@ -231,6 +231,11 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 	};
 	
 	process_wait_arguments.descriptor = pidfd_open(process_wait_arguments.pid, 0);
+	
+	if (process_wait_arguments.descriptor == -1) {
+		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:pidfd_open");
+	}
+	
 	rb_update_max_fd(process_wait_arguments.descriptor);
 	
 	struct epoll_event event = {
@@ -241,6 +246,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
 	
 	if (result == -1) {
+		close(process_wait_arguments.descriptor);
 		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:epoll_ctl");
 	}
 	
@@ -330,13 +336,15 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		
 		rb_update_max_fd(duplicate);
 		
-		if (descriptor == -1)
+		if (descriptor == -1) {
 			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup");
+		}
 		
 		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	}
 	
 	if (result == -1) {
+		if (duplicate >= 0) close(duplicate);
 		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 	}
 	
