@@ -28,7 +28,9 @@
 #include "pidfd.c"
 #include "../interrupt.h"
 
-static const int DEBUG = 0;
+enum {
+	DEBUG = 0,
+};
 
 static VALUE IO_Event_Selector_EPoll = Qnil;
 
@@ -325,7 +327,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	event.events = epoll_flags_from_events(NUM2INT(events));
 	event.data.ptr = (void*)fiber;
 	
-	// fprintf(stderr, "<- fiber=%p descriptor=%d\n", (void*)fiber, descriptor);
+	if (DEBUG) fprintf(stderr, "<- fiber=%p descriptor=%d\n", (void*)fiber, descriptor);
 	
 	// A better approach is to batch all changes:
 	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
@@ -349,10 +351,15 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		// If we duplicated the file descriptor, ensure it's closed:
 		if (duplicate >= 0) {
 			close(duplicate);
-			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup:epoll_ctl");
-		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 		}
+		
+		if (errno == EPERM) {
+			IO_Event_Selector_queue_push(&data->backend, fiber);
+			IO_Event_Selector_yield(&data->backend);
+			return events;
+		}
+		
+		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
