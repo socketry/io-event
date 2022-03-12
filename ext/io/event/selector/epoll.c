@@ -349,10 +349,15 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		// If we duplicated the file descriptor, ensure it's closed:
 		if (duplicate >= 0) {
 			close(duplicate);
-			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup:epoll_ctl");
-		} else {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 		}
+		
+		if (errno == EPERM) {
+			IO_Event_Selector_queue_push(&data->backend, fiber);
+			IO_Event_Selector_yield(&data->backend);
+			return events;
+		}
+		
+		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
