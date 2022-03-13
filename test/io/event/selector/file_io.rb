@@ -44,6 +44,18 @@ FileIO = Sus::Shared("file io") do
 			writer.transfer
 			reader.transfer
 		end
+		
+		it "can wait for the file to become writable" do
+			writer = Fiber.new do
+				expect(
+					selector.io_wait(Fiber.current, file, IO::WRITABLE)
+				).to be == IO::WRITABLE
+			end
+			
+			writer.transfer
+			
+			selector.select(0)
+		end
 	end
 end
 
