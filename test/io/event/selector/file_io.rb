@@ -29,32 +29,40 @@ FileIO = Sus::Shared("file io") do
 		let(:file) {Tempfile.new}
 		
 		it "can read using a buffer" do
+			write_result = nil
+			read_result = nil
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				file.seek(0)
-				expect(selector.io_write(Fiber.current, file, buffer, 128)).to be == 128
+				write_result = selector.io_write(Fiber.current, file, buffer, 128)
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				file.seek(0)
-				expect(selector.io_read(Fiber.current, file, buffer, 1)).to be == 64
+				read_result = selector.io_read(Fiber.current, file, buffer, 1)
 			end
 			
 			writer.transfer
 			reader.transfer
+			
+			expect(write_result).to be == 128
+			expect(read_result).to be == 64
 		end
 		
 		it "can wait for the file to become writable" do
+			wait_result = nil
+			
 			writer = Fiber.new do
-				expect(
-					selector.io_wait(Fiber.current, file, IO::WRITABLE)
-				).to be == IO::WRITABLE
+				wait_result = selector.io_wait(Fiber.current, file, IO::WRITABLE)
 			end
 			
 			writer.transfer
 			
 			selector.select(0)
+			
+			expect(wait_result).to be == IO::WRITABLE
 		end
 	end
 end
