@@ -39,6 +39,14 @@ jobs:
         ruby-version: ${{matrix.ruby}}
         bundler-cache: true
     
+    - name: Install liburing
+      run: |
+        git clone https://github.com/axboe/liburing.git
+        cd liburing
+        ./configure
+        make
+        sudo make install
+    
     - name: Build extensions
       timeout-minutes: 5
       run: ${{matrix.env}} bundle exec bake build
