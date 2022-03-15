@@ -171,7 +171,6 @@ VALUE IO_Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
 	return IO_Event_Selector_raise(&data->backend, argc, argv);
 }
 	
-	int blocked;
 VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
