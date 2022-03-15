@@ -40,6 +40,7 @@ jobs:
         bundler-cache: true
     
     - name: Install liburing
+      if: ${{ matrix.ruby == '3.1' && matrix.os == 'ubuntu' }}
       run: |
         git clone https://github.com/axboe/liburing.git
         cd liburing
