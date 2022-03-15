@@ -47,6 +47,8 @@ FileIO = Sus::Shared("file io") do
 			writer.transfer
 			reader.transfer
 			
+			selector.select(0)
+
 			expect(write_result).to be == 128
 			expect(read_result).to be == 64
 		end

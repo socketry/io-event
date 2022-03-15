@@ -30,8 +30,8 @@
 #include <linux/version.h>
 
 enum {
-	DEBUG = 0,
-	DEBUG_IO_READ = 0,
+	DEBUG = 1,
+	DEBUG_IO_READ = 1,
 };
 
 static VALUE IO_Event_Selector_URing = Qnil;
