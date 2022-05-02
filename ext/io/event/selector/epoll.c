@@ -263,8 +263,13 @@ uint32_t epoll_flags_from_events(int events) {
 	if (events & IO_EVENT_PRIORITY) flags |= EPOLLPRI;
 	if (events & IO_EVENT_WRITABLE) flags |= EPOLLOUT;
 	
-	flags |= EPOLLRDHUP;
+	flags |= EPOLLHUP;
+	flags |= EPOLLERR;
+	
+	// Immediately remove this descriptor after reading one event:
 	flags |= EPOLLONESHOT;
+	
+	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
 	
 	return flags;
 }
@@ -273,7 +278,11 @@ static inline
 int events_from_epoll_flags(uint32_t flags) {
 	int events = 0;
 	
-	if (flags & EPOLLIN) events |= IO_EVENT_READABLE;
+	if (DEBUG) fprintf(stderr, "events_from_epoll_flags flags=%d\n", flags);
+	
+	// Occasionally, (and noted specifically when dealing with child processes stdout), flags will only be POLLHUP. In this case, we arm the file descriptor for reading so that the HUP will be noted, rather than potentially ignored, since there is no dedicated event for it.
+	// if (flags & (EPOLLIN)) events |= IO_EVENT_READABLE;
+	if (flags & (EPOLLIN|EPOLLHUP|EPOLLERR)) events |= IO_EVENT_READABLE;
 	if (flags & EPOLLPRI) events |= IO_EVENT_PRIORITY;
 	if (flags & EPOLLOUT) events |= IO_EVENT_WRITABLE;
 	
@@ -307,10 +316,15 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	
 	VALUE result = IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
 	
+	if (DEBUG) fprintf(stderr, "io_wait_transfer errno=%d\n", errno);
+	
 	// If the fiber is being cancelled, it might be resumed with nil:
 	if (!RTEST(result)) {
+		if (DEBUG) fprintf(stderr, "io_wait_transfer flags=false\n");
 		return Qfalse;
 	}
+	
+	if (DEBUG) fprintf(stderr, "io_wait_transfer flags=%d\n", NUM2INT(result));
 	
 	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
