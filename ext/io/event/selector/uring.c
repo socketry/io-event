@@ -291,8 +291,8 @@ short poll_flags_from_events(int events) {
 	if (events & IO_EVENT_PRIORITY) flags |= POLLPRI;
 	if (events & IO_EVENT_WRITABLE) flags |= POLLOUT;
 	
-	flags |= POLLERR;
 	flags |= POLLHUP;
+	flags |= POLLERR;
 	
 	return flags;
 }
@@ -301,7 +301,8 @@ static inline
 int events_from_poll_flags(short flags) {
 	int events = 0;
 	
-	if (flags & POLLIN) events |= IO_EVENT_READABLE;
+	// See `epoll.c` for details regarding POLLHUP:
+	if (flags & (POLLIN|POLLHUP|POLLERR)) events |= IO_EVENT_READABLE;
 	if (flags & POLLPRI) events |= IO_EVENT_PRIORITY;
 	if (flags & POLLOUT) events |= IO_EVENT_WRITABLE;
 	
