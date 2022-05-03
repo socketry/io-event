@@ -15,7 +15,7 @@ Gem::Specification.new do |spec|
 	
 	spec.homepage = "https://github.com/socketry/io-event"
 	
-	spec.files = Dir["ext/extconf.rb", "ext/io/**/*.{c,h}", "lib/**/*.rb"]
+	spec.files = Dir["ext/extconf.rb", "ext/io/**/*.{c,h}", "lib/**/*.rb", base: __dir__]
 	
 	spec.require_paths = ['lib']
 	
