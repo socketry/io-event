@@ -241,7 +241,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 	rb_update_max_fd(process_wait_arguments.descriptor);
 	
 	struct epoll_event event = {
-		.events = EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,
+		.events = EPOLLIN|EPOLLERR|EPOLLHUP|EPOLLONESHOT,
 		.data = {.ptr = (void*)fiber},
 	};
 	

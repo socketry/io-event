@@ -349,7 +349,9 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber.transfer
 			
-			selector.select(1)
+			while fiber.alive?
+				selector.select(1)
+			end
 			
 			expect(events).to be == [:process_finished]
 			expect(result.success?).to be == true
@@ -360,7 +362,7 @@ Selector = Sus::Shared("a selector") do
 			events = []
 			
 			fiber = Fiber.new do
-				pid = Process.spawn("sleep 0.01")
+				pid = Process.spawn("sleep 0.1")
 				result = selector.process_wait(Fiber.current, pid, 0)
 				expect(result).to be(:success?)
 				events << :process_finished
@@ -368,7 +370,9 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber.transfer
 			
-			selector.select(2)
+			while fiber.alive?
+				selector.select(1)
+			end
 			
 			expect(events).to be == [:process_finished]
 			expect(result).to be(:success?)
