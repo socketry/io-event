@@ -7,12 +7,16 @@ Gem::Specification.new do |spec|
 	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
-	spec.authors = ["Samuel Williams", "machty", "Benoit Daloze", "Delton Ding"]
+	spec.authors = ["Samuel Williams", "Bruno Sutic", "Benoit Daloze", "Delton Ding", "machty"]
 	spec.license = "MIT"
+	
+	spec.cert_chain  = ['release.cert']
+	spec.signing_key = File.expand_path('~/.gem/release.pem')
 	
 	spec.homepage = "https://github.com/socketry/io-event"
 	
-	spec.files = Dir.glob('{ext,lib}/**/*', File::FNM_DOTMATCH, base: __dir__)
+	spec.files = Dir["ext/extconf.rb", "ext/io/**/*.{c,h}", "lib/**/*.rb"]
+	
 	spec.require_paths = ['lib']
 	
 	spec.extensions = ["ext/extconf.rb"]

@@ -15,15 +15,16 @@ jobs:
           - macos
         
         ruby:
+          - "2.6"
+          - "2.7"
           - "3.0"
-          - "3.1"
         
         experimental: [false]
         env: [""]
         
         include:
           - os: ubuntu
-            ruby: truffleruby-head
+            ruby: truffleruby
             experimental: true
           - os: ubuntu
             ruby: jruby
@@ -38,10 +39,6 @@ jobs:
       with:
         ruby-version: ${{matrix.ruby}}
         bundler-cache: true
-    
-    - name: Build extensions
-      timeout-minutes: 5
-      run: ${{matrix.env}} bundle exec bake build
     
     - name: Run tests
       timeout-minutes: 5
