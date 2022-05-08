@@ -98,7 +98,7 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
 	struct epoll_event event = {
-		.events = EPOLLIN|EPOLLRDHUP,
+		.events = EPOLLIN|EPOLLHUP|EPOLLEXCLUSIVE,
 		.data = {.ptr = NULL},
 	};
 	
@@ -266,8 +266,7 @@ uint32_t epoll_flags_from_events(int events) {
 	flags |= EPOLLHUP;
 	flags |= EPOLLERR;
 	
-	// Immediately remove this descriptor after reading one event:
-	flags |= EPOLLONESHOT;
+	flags |= EPOLLEXCLUSIVE;
 	
 	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
 	
