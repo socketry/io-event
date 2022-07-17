@@ -25,6 +25,17 @@ require 'mkmf'
 gem_name = File.basename(__dir__)
 extension_name = 'IO_Event'
 
+# Write a dummy Makefile on Windows because we use the pure Ruby implementation there
+if Gem.win_platform?
+  begin
+    require "devkit" if RUBY_PLATFORM.include?("mingw")
+  rescue LoadError => e
+  end
+  File.write("Makefile", "all install::\n")
+  File.write("IO_Event.so", "")
+  exit
+end
+
 # dir_config(extension_name)
 
 $CFLAGS << " -Wall -std=c99"
