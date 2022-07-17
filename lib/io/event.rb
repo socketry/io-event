@@ -24,7 +24,7 @@ require_relative 'event/selector'
 begin
 	require 'IO_Event'
 rescue LoadError => error
-	# We use pure ruby implemention on windows, so ignore the error without warning.
+	# On windows, we use pure ruby implemention, so ignore the error without warning.
 	warn "Could not load native event selector: #{error}" unless Gem.win_platform?
 
 	# Ignore.
