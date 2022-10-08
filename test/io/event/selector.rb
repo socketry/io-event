@@ -200,7 +200,7 @@ Selector = Sus::Shared("a selector") do
 						selector.io_wait(Fiber.current, local, IO::READABLE)
 						events << :readable
 					end
-				end.to raise_exception(RuntimeError, message: /Boom/)
+				end.to raise_exception(RuntimeError, message: be =~ /Boom/)
 				
 				events << :error
 			end
