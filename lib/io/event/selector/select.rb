@@ -20,6 +20,15 @@
 
 require_relative '../interrupt'
 
+unless Fiber.respond_to?(:blocking)
+	class Fiber
+		def self.blocking(&block)
+			fiber = Fiber.new(blocking: true, &block)
+			return fiber.resume(fiber)
+		end
+	end
+end
+
 module IO::Event
 	module Selector
 		class Select
@@ -157,7 +166,7 @@ module IO::Event
 					while true
 						maximum_size = buffer.size - offset
 						
-						case result = blocking{io.read_nonblock(maximum_size, exception: false)}
+						case result = Fiber.blocking{io.read_nonblock(maximum_size, exception: false)}
 						when :wait_readable
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
@@ -192,7 +201,7 @@ module IO::Event
 						maximum_size = buffer.size - offset
 						
 						chunk = buffer.get_string(offset, maximum_size)
-						case result = blocking{io.write_nonblock(chunk, exception: false)}
+						case result = Fiber.blocking{io.write_nonblock(chunk, exception: false)}
 						when :wait_readable
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
@@ -288,10 +297,6 @@ module IO::Event
 				end
 				
 				return ready.size
-			end
-			
-			private def blocking(&block)
-				Fiber.new(blocking: true, &block).resume
 			end
 		end
 	end
