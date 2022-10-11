@@ -1,6 +1,6 @@
 # ![Event](logo.svg)
 
-An event loop.
+Provides low level cross-platform primitives for constructing event loops, with support for `select`, `kqueue`, `epoll` and `io_uring`.
 
 [![Development Status](https://github.com/socketry/io-event/workflows/Test/badge.svg)](https://github.com/socketry/io-event/actions?workflow=Test)
 
