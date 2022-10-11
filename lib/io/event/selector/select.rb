@@ -145,7 +145,8 @@ module IO::Event
 			if IO.const_defined?(:Buffer)
 				EAGAIN = Errno::EAGAIN::Errno
 				
-				def io_read(fiber, io, buffer, length)
+				def io_read(fiber, _io, buffer, length)
+					io = IO.for_fd(_io.fileno, autoclose: false)
 					offset = 0
 					
 					while true
@@ -179,7 +180,8 @@ module IO::Event
 					return offset
 				end
 				
-				def io_write(fiber, io, buffer, length)
+				def io_write(fiber, _io, buffer, length)
+					io = IO.for_fd(_io.fileno, autoclose: false)
 					offset = 0
 					
 					while true
