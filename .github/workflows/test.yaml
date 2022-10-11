@@ -37,7 +37,7 @@ jobs:
             ruby: head
             experimental: true
           - os: windows
-            ruby: "3.1"
+            ruby: head
             experimental: true
     
     steps:
