@@ -252,7 +252,7 @@ Selector = Sus::Shared("a selector") do
 		with '#io_read' do
 			let(:message) {"Hello World"}
 			let(:events) {Array.new}
-			let(:sockets) {Socket.pair(Socket::AF_UNIX, Socket::SOCK_STREAM)}
+			let(:sockets) {UNIXSocket.pair}
 			let(:local) {sockets.first}
 			let(:remote) {sockets.last}
 			
