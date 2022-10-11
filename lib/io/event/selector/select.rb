@@ -30,7 +30,7 @@ module IO::Event
 			
 			attr :loop
 			
-			# If the event loop is currently blocked, 
+			# If the event loop is currently sleeping, wake it up.
 			def wakeup
 				if @blocked
 					@interrupt.signal
