@@ -249,6 +249,7 @@ module IO::Event
 				
 				readable = Array.new
 				writable = Array.new
+				priority = Array.new
 				
 				@waiting.each do |io, waiter|
 					waiter.each do |fiber, events|
@@ -259,12 +260,16 @@ module IO::Event
 						if (events & IO::WRITABLE) > 0
 							writable << io
 						end
+						
+						if (events & IO::PRIORITY) > 0
+							priority << io
+						end
 					end
 				end
 				
 				@blocked = true
 				duration = 0 unless @ready.empty?
-				readable, writable, _ = ::IO.select(readable, writable, nil, duration)
+				readable, writable, priority = ::IO.select(readable, writable, priority, duration)
 				@blocked = false
 				
 				ready = Hash.new(0)
@@ -275,6 +280,10 @@ module IO::Event
 				
 				writable&.each do |io|
 					ready[io] |= IO::WRITABLE
+				end
+				
+				priority&.each do |io|
+					ready[io] |= IO::PRIORITY
 				end
 				
 				ready.each do |io, events|
