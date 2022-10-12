@@ -5,6 +5,7 @@
 
 require_relative 'selector/select'
 require_relative 'debug/selector'
+require_relative 'support'
 
 module IO::Event
 	module Selector

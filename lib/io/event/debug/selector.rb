@@ -3,6 +3,8 @@
 # Released under the MIT License.
 # Copyright, 2021-2022, by Samuel Williams.
 
+require_relative '../support'
+
 module IO::Event
 	module Debug
 		# Enforces the selector interface and delegates operations to a wrapped selector instance.
@@ -65,13 +67,13 @@ module IO::Event
 				@selector.io_wait(fiber, io, events)
 			end
 			
-			if IO.const_defined?(:Buffer)
-				def io_read(fiber, io, buffer, length)
-					@selector.io_read(fiber, io, buffer, length)
+			if Support.buffer?
+				def io_read(fiber, io, buffer, length, offset)
+					@selector.io_read(fiber, io, buffer, length, offset)
 				end
 				
-				def io_write(fiber, io, buffer, length)
-					@selector.io_write(fiber, io, buffer, length)
+				def io_write(fiber, io, buffer, length, offset)
+					@selector.io_write(fiber, io, buffer, length, offset)
 				end
 			end
 			

@@ -10,6 +10,14 @@ require 'io/event/debug/selector'
 require 'socket'
 require 'fiber'
 
+unless Object.const_defined?(:UNIXSocket)
+	class UNIXSocket
+		def self.pair
+			Socket.pair(:INET, :STREAM, 0)
+		end
+	end
+end
+
 class FakeFiber
 	def initialize(alive = true)
 		@alive = alive
@@ -240,11 +248,11 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	if IO.const_defined?(:Buffer)
+	if IO::Event::Support.buffer?
 		with '#io_read' do
 			let(:message) {"Hello World"}
 			let(:events) {Array.new}
-			let(:sockets) {Socket.pair(Socket::AF_UNIX, Socket::SOCK_STREAM)}
+			let(:sockets) {UNIXSocket.pair}
 			let(:local) {sockets.first}
 			let(:remote) {sockets.last}
 			
@@ -290,7 +298,7 @@ Selector = Sus::Shared("a selector") do
 			end
 		end
 		
-		with '#io_write', if: IO.const_defined?(:Buffer) do
+		with '#io_write', if: IO::Event::Support.buffer? do
 			let(:message) {"Hello World"}
 			let(:events) {Array.new}
 			let(:sockets) {UNIXSocket.pair}
