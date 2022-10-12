@@ -403,9 +403,8 @@ VALUE io_read_loop(VALUE _arguments) {
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
-	
-	size_t offset = arguments->offset;
 	size_t length = arguments->length;
+	size_t offset = arguments->offset;
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
@@ -448,9 +447,8 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
-	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
 	
 	struct io_read_arguments io_read_arguments = {
 		.self = self,
@@ -463,6 +461,8 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.length = length,
 		.offset = offset,
 	};
+	
+	fprintf(stderr, "io_read_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
 	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
@@ -488,9 +488,8 @@ VALUE io_write_loop(VALUE _arguments) {
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
-	
-	size_t offset = arguments->offset;
 	size_t length = arguments->length;
+	size_t offset = arguments->offset;
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -537,9 +536,8 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
-	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
 	
 	struct io_write_arguments io_write_arguments = {
 		.self = self,
@@ -552,6 +550,8 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 		.length = length,
 		.offset = offset,
 	};
+	
+	fprintf(stderr, "io_write_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
@@ -740,8 +740,8 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read, 4);
-	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write, 4);
+	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read, 5);
+	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write, 5);
 #endif
 	
 	rb_define_method(IO_Event_Selector_KQueue, "process_wait", IO_Event_Selector_KQueue_process_wait, 3);
