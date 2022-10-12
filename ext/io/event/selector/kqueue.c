@@ -393,6 +393,7 @@ struct io_read_arguments {
 	
 	VALUE buffer;
 	size_t length;
+	size_t offset;
 };
 
 static
@@ -403,7 +404,7 @@ VALUE io_read_loop(VALUE _arguments) {
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
 	
-	size_t offset = 0;
+	size_t offset = arguments->offset;
 	size_t length = arguments->length;
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
@@ -442,12 +443,13 @@ VALUE io_read_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
+	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
 	
 	struct io_read_arguments io_read_arguments = {
@@ -459,6 +461,7 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length,
+		.offset = offset,
 	};
 	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
@@ -475,6 +478,7 @@ struct io_write_arguments {
 	
 	VALUE buffer;
 	size_t length;
+	size_t offset;
 };
 
 static
@@ -485,7 +489,7 @@ VALUE io_write_loop(VALUE _arguments) {
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
 	
-	size_t offset = 0;
+	size_t offset = arguments->offset;
 	size_t length = arguments->length;
 	
 	if (length > size) {
@@ -528,12 +532,13 @@ VALUE io_write_ensure(VALUE _arguments) {
 	return Qnil;
 };
 
-VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_KQueue *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
+	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
 	
 	struct io_write_arguments io_write_arguments = {
@@ -545,6 +550,7 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length,
+		.offset = offset,
 	};
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
