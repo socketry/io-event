@@ -248,7 +248,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	if IO.const_defined?(:Buffer)
+	if IO::Event::Support.buffer?
 		with '#io_read' do
 			let(:message) {"Hello World"}
 			let(:events) {Array.new}
@@ -298,7 +298,7 @@ Selector = Sus::Shared("a selector") do
 			end
 		end
 		
-		with '#io_write', if: IO.const_defined?(:Buffer) do
+		with '#io_write', if: IO::Event::Support.buffer? do
 			let(:message) {"Hello World"}
 			let(:events) {Array.new}
 			let(:sockets) {UNIXSocket.pair}

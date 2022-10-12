@@ -4,15 +4,7 @@
 # Copyright, 2021-2022, by Samuel Williams.
 
 require_relative '../interrupt'
-
-unless Fiber.respond_to?(:blocking)
-	class Fiber
-		def self.blocking(&block)
-			fiber = Fiber.new(blocking: true, &block)
-			return fiber.resume(fiber)
-		end
-	end
-end
+require_relative '../support'
 
 module IO::Event
 	module Selector
@@ -142,69 +134,55 @@ module IO::Event
 				waiter&.invalidate
 			end
 			
-			if IO.const_defined?(:Buffer)
+			if Support.buffer?
 				EAGAIN = Errno::EAGAIN::Errno
 				
-				def io_read(fiber, _io, buffer, length)
-					io = IO.for_fd(_io.fileno, autoclose: false)
-					offset = 0
+				def io_read(fiber, io, buffer, length, offset)
+					total = 0
+					io.nonblock = true
 					
 					while true
 						maximum_size = buffer.size - offset
+						result = Fiber.blocking{buffer.read(io, maximum_size, offset)}
 						
-						case result = Fiber.blocking{io.read_nonblock(maximum_size, exception: false)}
-						when :wait_readable
+						if result == -EAGAIN
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EAGAIN
+								return result
 							end
-						when :wait_writable
-							if length > 0
-								self.io_wait(fiber, io, IO::WRITABLE)
-							else
-								return -EAGAIN
-							end
-						when nil
-							break
+						elsif result < 0
+							return result
 						else
-							buffer.set_string(result, offset)
-							
-							size = result.bytesize
-							offset += size
-							break if size >= length
-							length -= size
+							total += result
+							offset += result
+							break if total >= length
 						end
 					end
 					
-					return offset
+					return total
 				end
 				
-				def io_write(fiber, _io, buffer, length)
-					io = IO.for_fd(_io.fileno, autoclose: false)
-					offset = 0
+				def io_write(fiber, io, buffer, length, offset)
+					total = 0
+					io.nonblock = true
 					
 					while true
 						maximum_size = buffer.size - offset
+						result = Fiber.blocking{buffer.write(io, maximum_size, offset)}
 						
-						chunk = buffer.get_string(offset, maximum_size)
-						case result = Fiber.blocking{io.write_nonblock(chunk, exception: false)}
-						when :wait_readable
+						if result == -EAGAIN
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EAGAIN
+								return result
 							end
-						when :wait_writable
-							if length > 0
-								self.io_wait(fiber, io, IO::WRITABLE)
-							else
-								return -EAGAIN
-							end
+						elsif result < 0
+							return result
 						else
+							total += result
 							offset += result
-							break if result >= length
-							length -= result
+							break if total >= length
 						end
 					end
 					
