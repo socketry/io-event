@@ -1,3 +1,4 @@
 async:
   url: https://github.com/socketry/async
   command: bundle exec rspec
+  branch: io-event-updates

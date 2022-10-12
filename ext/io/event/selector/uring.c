@@ -408,7 +408,7 @@ static int io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descri
 	return RB_NUM2INT(result);
 }
 
-VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
@@ -418,7 +418,7 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
-	size_t offset = 0;
+	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
 	
 	while (true) {
@@ -459,7 +459,7 @@ int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, 
 	return result;
 }
 
-VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
@@ -469,7 +469,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
-	size_t offset = 0;
+	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
 	
 	if (length > size) {
@@ -712,8 +712,8 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 4);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 4);
+	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 5);
+	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 5);
 #endif
 	
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
