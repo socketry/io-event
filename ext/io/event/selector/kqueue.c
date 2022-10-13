@@ -380,7 +380,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-#ifdef RUBY_FIBER_SCHEDULER_VERSION
+#ifdef HAVE_RUBY_IO_BUFFER_H
 
 struct io_read_arguments {
 	VALUE self;
