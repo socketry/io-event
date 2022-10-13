@@ -67,14 +67,16 @@ module IO::Event
 				@selector.io_wait(fiber, io, events)
 			end
 			
-			if Support.buffer?
-				def io_read(fiber, io, buffer, length, offset)
-					@selector.io_read(fiber, io, buffer, length, offset)
-				end
-				
-				def io_write(fiber, io, buffer, length, offset)
-					@selector.io_write(fiber, io, buffer, length, offset)
-				end
+			def io_read(...)
+				@selector.io_read(...)
+			end
+			
+			def io_write(...)
+				@selector.io_write(...)
+			end
+			
+			def respond_to?(name, include_private = false)
+				@selector.respond_to?(name, include_private)
 			end
 			
 			def select(duration = nil)

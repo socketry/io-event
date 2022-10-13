@@ -248,83 +248,87 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	if IO::Event::Support.buffer?
-		with '#io_read' do
-			let(:message) {"Hello World"}
-			let(:events) {Array.new}
-			let(:sockets) {UNIXSocket.pair}
-			let(:local) {sockets.first}
-			let(:remote) {sockets.last}
-			
-			let(:buffer) {IO::Buffer.new(1024, IO::Buffer::MAPPED)}
-			
-			it "can read a single message" do
-				fiber = Fiber.new do
-					events << :io_read
-					offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
-					expect(buffer.get_string(0, offset)).to be == message
-				end
-				
-				fiber.transfer
-				
-				events << :write
-				remote.write(message)
-				
-				selector.select(1)
-				
-				expect(events).to be == [
-					:io_read, :write
-				]
+	with '#io_read' do
+		let(:message) {"Hello World"}
+		let(:events) {Array.new}
+		let(:sockets) {UNIXSocket.pair}
+		let(:local) {sockets.first}
+		let(:remote) {sockets.last}
+		
+		let(:buffer) {IO::Buffer.new(1024, IO::Buffer::MAPPED)}
+		
+		it "can read a single message" do
+			return unless selector.respond_to?(:io_read)
+
+			fiber = Fiber.new do
+				events << :io_read
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.get_string(0, offset)).to be == message
 			end
 			
-			it "can handle partial reads" do
-				fiber = Fiber.new do
-					events << :io_read
-					offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
-					expect(buffer.get_string(0, offset)).to be == message
-				end
-				
-				fiber.transfer
-				
-				events << :write
-				remote.write(message[0...5])
-				selector.select(1)
-				remote.write(message[5...message.bytesize])
-				selector.select(1)
-				
-				expect(events).to be == [
-					:io_read, :write
-				]
-			end
+			fiber.transfer
+			
+			events << :write
+			remote.write(message)
+			
+			selector.select(1)
+			
+			expect(events).to be == [
+				:io_read, :write
+			]
 		end
 		
-		with '#io_write', if: IO::Event::Support.buffer? do
-			let(:message) {"Hello World"}
-			let(:events) {Array.new}
-			let(:sockets) {UNIXSocket.pair}
-			let(:local) {sockets.first}
-			let(:remote) {sockets.last}
-			
-			it "can write a single message" do
-				fiber = Fiber.new do
-					events << :io_write
-					buffer = IO::Buffer.for(message.dup)
-					result = selector.io_write(Fiber.current, local, buffer, buffer.size)
-					expect(result).to be == message.bytesize
-					local.close
-				end
-				
-				fiber.transfer
-				
-				selector.select(1)
-				
-				events << :read
-				expect(remote.read).to be == message
-				
-				expect(events).to be == [
-					:io_write, :read
-				]
+		it "can handle partial reads" do
+			return unless selector.respond_to?(:io_read)
+
+			fiber = Fiber.new do
+				events << :io_read
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.get_string(0, offset)).to be == message
 			end
+			
+			fiber.transfer
+			
+			events << :write
+			remote.write(message[0...5])
+			selector.select(1)
+			remote.write(message[5...message.bytesize])
+			selector.select(1)
+			
+			expect(events).to be == [
+				:io_read, :write
+			]
+		end
+	end
+	
+	with '#io_write' do
+		let(:message) {"Hello World"}
+		let(:events) {Array.new}
+		let(:sockets) {UNIXSocket.pair}
+		let(:local) {sockets.first}
+		let(:remote) {sockets.last}
+		
+		it "can write a single message" do
+			return unless selector.respond_to?(:io_write)
+
+			fiber = Fiber.new do
+				events << :io_write
+				buffer = IO::Buffer.for(message.dup)
+				result = selector.io_write(Fiber.current, local, buffer, buffer.size)
+				expect(result).to be == message.bytesize
+				local.close
+			end
+			
+			fiber.transfer
+			
+			selector.select(1)
+			
+			events << :read
+			expect(remote.read).to be == message
+			
+			expect(events).to be == [
+				:io_write, :read
+			]
 		end
 	end
 	
@@ -396,9 +400,11 @@ IO::Event::Selector.constants.each do |name|
 			def before
 				@loop = Fiber.current
 				@selector = subject.new(@loop)
+				super
 			end
 			
 			def after
+				super
 				@selector&.close
 			end
 			
@@ -414,9 +420,11 @@ describe IO::Event::Debug::Selector do
 	def before
 		@loop = Fiber.current
 		@selector = subject.new(IO::Event::Selector.new(loop))
+		super
 	end
 	
 	def after
+		super
 		@selector&.close
 	end
 	

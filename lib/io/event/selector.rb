@@ -18,12 +18,14 @@ module IO::Event
 				end
 			end
 			
-			if self.const_defined?(:EPoll)
-				return EPoll
+			if self.const_defined?(:URing)
+				URing
+			elsif self.const_defined?(:EPoll)
+				EPoll
 			elsif self.const_defined?(:KQueue)
-				return KQueue
+				KQueue
 			else
-				return Select
+				Select
 			end
 		end
 		

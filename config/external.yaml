@@ -1,4 +1,11 @@
+# async-v2.0.3:
+#   url: https://github.com/socketry/async
+#   command: bundle exec rspec
+#   branch: v2.0.3
+# async-v2.1.0:
+#   url: https://github.com/socketry/async
+#   command: bundle exec rspec
+#   branch: v2.1.0
 async:
   url: https://github.com/socketry/async
   command: bundle exec rspec
-  branch: io-event-updates

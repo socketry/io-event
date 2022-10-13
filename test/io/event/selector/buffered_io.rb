@@ -3,11 +3,11 @@
 # Released under the MIT License.
 # Copyright, 2021, by Samuel Williams.
 
+return unless IO.const_defined?(:Buffer)
+
 require 'io/event'
 require 'io/event/selector'
 require 'socket'
-
-return unless IO::Event::Support.buffer?
 
 BufferedIO = Sus::Shared("buffered io") do
 	with 'a pipe' do
@@ -37,6 +37,7 @@ end
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
+	# Don't run the test if the selector doesn't support `io_read`/`io_write`:
 	next unless klass.instance_methods.include?(:io_read)
 	
 	describe(klass, unique: name) do

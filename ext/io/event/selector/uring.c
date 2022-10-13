@@ -23,6 +23,7 @@
 
 #include <liburing.h>
 #include <poll.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "pidfd.c"
@@ -324,7 +325,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	
 	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
-	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
+	io_uring_prep_poll_remove(sqe, (uintptr_t)arguments->fiber);
 	io_uring_submit_now(data);
 
 	rb_exc_raise(exception);
@@ -375,7 +376,7 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-#ifdef HAVE_RUBY_IO_BUFFER_H
+#ifdef RUBY_FIBER_SCHEDULER_VERSION
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0)
 static inline off_t io_seekable(int descriptor) {
@@ -418,8 +419,8 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
-	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
 	
 	while (true) {
 		size_t maximum_size = size - offset;
@@ -441,6 +442,19 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	}
 	
 	return rb_fiber_scheduler_io_result(offset, 0);
+}
+
+static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, VALUE self)
+{
+	rb_check_arity(argc, 4, 5);
+	
+	VALUE _offset = SIZET2NUM(0);
+	
+	if (argc == 5) {
+		_offset = argv[4];
+	}
+	
+	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
 static
@@ -469,8 +483,8 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
-	size_t offset = NUM2SIZET(_offset);
 	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -494,6 +508,19 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	}
 	
 	return rb_fiber_scheduler_io_result(offset, 0);
+}
+
+static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, VALUE self)
+{
+	rb_check_arity(argc, 4, 5);
+	
+	VALUE _offset = SIZET2NUM(0);
+	
+	if (argc == 5) {
+		_offset = argv[4];
+	}
+	
+	return IO_Event_Selector_URing_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
 #endif
@@ -710,11 +737,9 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "close", IO_Event_Selector_URing_close, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
-	
-#ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 5);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 5);
-#endif
+
+	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
+	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
