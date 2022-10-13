@@ -3,11 +3,11 @@
 # Released under the MIT License.
 # Copyright, 2021-2022, by Samuel Williams.
 
+return unless IO.respond_to?(:Buffer)
+
 require 'io/event'
 require 'io/event/selector'
 require 'tempfile'
-
-return unless IO::Event::Support.buffer?
 
 FileIO = Sus::Shared("file io") do
 	with 'a file' do
@@ -46,6 +46,9 @@ end
 
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
+	
+	# Don't run the test if the selector doesn't support `io_read`/`io_write`:
+	next unless klass.instance_methods.include?(:io_read)
 	
 	describe(klass, unique: name) do
 		def before
