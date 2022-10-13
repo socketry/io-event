@@ -9,6 +9,17 @@ require_relative 'support'
 
 module IO::Event
 	module Selector
+		BEST_SELECTOR =
+			if self.const_defined?(:URing)
+				URing
+			elsif self.const_defined?(:EPoll)
+				EPoll
+			elsif self.const_defined?(:KQueue)
+				KQueue
+			else
+				Select
+			end
+		
 		def self.default(env = ENV)
 			if name = env['IO_EVENT_SELECTOR']&.to_sym
 				if const_defined?(name)
@@ -18,13 +29,7 @@ module IO::Event
 				end
 			end
 			
-			if self.const_defined?(:EPoll)
-				return EPoll
-			elsif self.const_defined?(:KQueue)
-				return KQueue
-			else
-				return Select
-			end
+			BEST_SELECTOR
 		end
 		
 		def self.new(loop, env = ENV)

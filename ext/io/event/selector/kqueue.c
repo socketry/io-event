@@ -380,7 +380,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-#ifdef HAVE_RUBY_IO_BUFFER_H
+#ifdef RUBY_FIBER_SCHEDULER_VERSION
 
 struct io_read_arguments {
 	VALUE self;
@@ -403,6 +403,7 @@ VALUE io_read_loop(VALUE _arguments) {
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
+	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
 	
@@ -447,6 +448,7 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
+	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	
@@ -465,6 +467,10 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	fprintf(stderr, "io_read_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
 	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
+}
+
+static VALUE IO_Event_Selector_KQueue_io_read_v1(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	return IO_Event_Selector_KQueue_io_read(self, fiber, io, buffer, _length, SIZET2NUM(0));
 }
 
 struct io_write_arguments {
@@ -488,6 +494,7 @@ VALUE io_write_loop(VALUE _arguments) {
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
+	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
 	
@@ -536,6 +543,7 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
+	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	
@@ -554,6 +562,10 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	fprintf(stderr, "io_write_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
+}
+
+static VALUE IO_Event_Selector_KQueue_io_write_v1(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length) {
+	return IO_Event_Selector_KQueue_io_write(self, fiber, io, buffer, _length, SIZET2NUM(0));
 }
 
 #endif
@@ -738,8 +750,11 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "close", IO_Event_Selector_KQueue_close, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);
-	
-#ifdef HAVE_RUBY_IO_BUFFER_H
+
+#if RUBY_FIBER_SCHEDULER_VERSION == 1
+	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read_v1, 4);
+	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write_v1, 4);
+#if RUBY_FIBER_SCHEDULER_VERSION == 2
 	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read, 5);
 	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write, 5);
 #endif

@@ -29,6 +29,10 @@
 #include <ruby/fiber/scheduler.h>
 #endif
 
+#ifndef RUBY_FIBER_SCHEDULER_VERSION
+#define RUBY_FIBER_SCHEDULER_VERSION 1
+#endif
+
 #include <time.h>
 
 enum IO_Event {
