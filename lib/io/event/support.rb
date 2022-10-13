@@ -6,7 +6,7 @@
 class IO
 	module Event
 		module Support
-			def buffer?
+			def self.buffer?
 				IO.const_defined?(:Buffer)
 			end
 			
