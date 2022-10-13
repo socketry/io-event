@@ -11,11 +11,11 @@ class IO
 			end
 			
 			def self.fiber_scheduler_v1?
-				IO.const_defined?(:Buffer) && !Fiber.respond_to?(:blocking)
+				IO.const_defined?(:Buffer) and !Fiber.respond_to?(:blocking)
 			end
 			
 			def self.fiber_scheduler_v2?
-				IO.const_defined?(:Buffer) && Fiber.respond_to?(:blocking)
+				IO.const_defined?(:Buffer) and Fiber.respond_to?(:blocking) and IO::Buffer.instance_method(:read).arity == -1
 			end
 		end
 	end
