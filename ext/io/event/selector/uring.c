@@ -23,6 +23,7 @@
 
 #include <liburing.h>
 #include <poll.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "pidfd.c"
@@ -324,7 +325,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	
 	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
-	io_uring_prep_poll_remove(sqe, (void*)arguments->fiber);
+	io_uring_prep_poll_remove(sqe, (uintptr_t)arguments->fiber);
 	io_uring_submit_now(data);
 
 	rb_exc_raise(exception);
@@ -443,9 +444,17 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
-static VALUE IO_Event_Selector_URing_io_read_v1(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length)
+static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, VALUE self)
 {
-	return IO_Event_Selector_URing_io_read(self, fiber, io, buffer, _length, SIZET2NUM(0));
+	rb_check_arity(argc, 4, 5);
+	
+	VALUE _offset = SIZET2NUM(0);
+	
+	if (argc == 5) {
+		_offset = argv[4];
+	}
+	
+	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
 static
@@ -501,9 +510,17 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_fiber_scheduler_io_result(offset, 0);
 }
 
-static VALUE IO_Event_Selector_URing_io_write_v1(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length)
+static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, VALUE self)
 {
-	return IO_Event_Selector_URing_io_write(self, fiber, io, buffer, _length, SIZET2NUM(0));
+	rb_check_arity(argc, 4, 5);
+	
+	VALUE _offset = SIZET2NUM(0);
+	
+	if (argc == 5) {
+		_offset = argv[4];
+	}
+	
+	return IO_Event_Selector_URing_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
 #endif
@@ -721,13 +738,8 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 
-#if RUBY_FIBER_SCHEDULER_VERSION == 1
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_v1, 4);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_v1, 4);
-#elif RUBY_FIBER_SCHEDULER_VERSION == 2
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 5);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 5);
-#endif
+	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
+	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	

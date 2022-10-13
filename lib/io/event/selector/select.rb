@@ -191,11 +191,10 @@ module IO::Event
 					return offset
 				end
 			elsif Support.fiber_scheduler_v1?
+				# This implementation is potentially data corrupting, and probably needs to either be removed or fixed.
 				EAGAIN = Errno::EAGAIN::Errno
 				
-				def io_read(fiber, io, buffer, length)
-					offset = 0
-					
+				def io_read(fiber, io, buffer, length, offset = 0)
 					while true
 						maximum_size = buffer.size - offset
 						
@@ -227,9 +226,7 @@ module IO::Event
 					return offset
 				end
 				
-				def io_write(fiber, io, buffer, length)
-					offset = 0
-					
+				def io_write(fiber, io, buffer, length, offset = 0)
 					while true
 						maximum_size = buffer.size - offset
 						
