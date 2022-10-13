@@ -264,21 +264,9 @@ module IO::Event
 			end
 			
 			def process_wait(fiber, pid, flags)
-				r, w = IO.pipe
-				
-				thread = Thread.new do
+				Thread.new do
 					Process::Status.wait(pid, flags)
-				ensure
-					w.close
-				end
-				
-				self.io_wait(fiber, r, IO::READABLE)
-				
-				return thread.value
-			ensure
-				r.close
-				w.close
-				thread&.kill
+				end.value
 			end
 			
 			private def pop_ready
