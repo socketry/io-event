@@ -464,8 +464,6 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.offset = offset,
 	};
 	
-	fprintf(stderr, "io_read_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
-	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
 
@@ -567,8 +565,6 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 		.length = length,
 		.offset = offset,
 	};
-	
-	fprintf(stderr, "io_write_arguments(%d, %zu, %zu)\n", descriptor, length, offset);
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
