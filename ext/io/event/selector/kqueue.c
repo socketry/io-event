@@ -754,7 +754,7 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 #if RUBY_FIBER_SCHEDULER_VERSION == 1
 	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read_v1, 4);
 	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write_v1, 4);
-#if RUBY_FIBER_SCHEDULER_VERSION == 2
+#elif RUBY_FIBER_SCHEDULER_VERSION == 2
 	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read, 5);
 	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write, 5);
 #endif
