@@ -376,7 +376,7 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
 }
 
-#ifdef RUBY_FIBER_SCHEDULER_VERSION
+#ifdef HAVE_RUBY_IO_BUFFER_H
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0)
 static inline off_t io_seekable(int descriptor) {
