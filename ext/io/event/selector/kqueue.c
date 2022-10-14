@@ -764,9 +764,11 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "close", IO_Event_Selector_KQueue_close, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);
-
+	
+#ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read_compatible, -1);
 	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write_compatible, -1);
+#endif
 	
 	rb_define_method(IO_Event_Selector_KQueue, "process_wait", IO_Event_Selector_KQueue_process_wait, 3);
 }

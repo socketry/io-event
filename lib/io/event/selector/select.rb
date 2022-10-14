@@ -6,8 +6,6 @@
 require_relative '../interrupt'
 require_relative '../support'
 
-require 'io/nonblock'
-
 module IO::Event
 	module Selector
 		class Select
@@ -136,29 +134,35 @@ module IO::Event
 				waiter&.invalidate
 			end
 			
+			EAGAIN = -Errno::EAGAIN::Errno
+			EWOULDBLOCK = -Errno::EWOULDBLOCK::Errno
+			
+			def again?(errno)
+				errno == EAGAIN or errno == EWOULDBLOCK
+			end
+			
 			if Support.fiber_scheduler_v2?
-				EAGAIN = Errno::EAGAIN::Errno
-				
 				def io_read(fiber, io, buffer, length, offset = 0)
 					total = 0
-					io.nonblock = true
 					
-					while true
-						maximum_size = buffer.size - offset
-						result = Fiber.blocking{buffer.read(io, maximum_size, offset)}
-						
-						if result == -EAGAIN
-							if length > 0
-								self.io_wait(fiber, io, IO::READABLE)
-							else
+					Selector.nonblock(io) do
+						while true
+							maximum_size = buffer.size - offset
+							result = Fiber.blocking{buffer.read(io, maximum_size, offset)}
+							
+							if again?(result)
+								if length > 0
+									self.io_wait(fiber, io, IO::READABLE)
+								else
+									return result
+								end
+							elsif result < 0
 								return result
+							else
+								total += result
+								offset += result
+								break if total >= length
 							end
-						elsif result < 0
-							return result
-						else
-							total += result
-							offset += result
-							break if total >= length
 						end
 					end
 					
@@ -167,34 +171,34 @@ module IO::Event
 				
 				def io_write(fiber, io, buffer, length, offset = 0)
 					total = 0
-					io.nonblock = true
 					
-					while true
-						maximum_size = buffer.size - offset
-						result = Fiber.blocking{buffer.write(io, maximum_size, offset)}
-						
-						if result == -EAGAIN
-							if length > 0
-								self.io_wait(fiber, io, IO::READABLE)
-							else
+					Selector.nonblock(io) do
+						while true
+							maximum_size = buffer.size - offset
+							result = Fiber.blocking{buffer.write(io, maximum_size, offset)}
+							
+							if again?(result)
+								if length > 0
+									self.io_wait(fiber, io, IO::READABLE)
+								else
+									return result
+								end
+							elsif result < 0
 								return result
+							else
+								total += result
+								offset += result
+								break if total >= length
 							end
-						elsif result < 0
-							return result
-						else
-							total += result
-							offset += result
-							break if total >= length
 						end
 					end
 					
-					return offset
+					return total
 				end
 			elsif Support.fiber_scheduler_v1?
-				EAGAIN = Errno::EAGAIN::Errno
-				
 				def io_read(fiber, _io, buffer, length, offset = 0)
 					io = IO.for_fd(_io.fileno, autoclose: false)
+					total = 0
 					
 					while true
 						maximum_size = buffer.size - offset
@@ -204,13 +208,13 @@ module IO::Event
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EAGAIN
+								return EWOULDBLOCK
 							end
 						when :wait_writable
 							if length > 0
 								self.io_wait(fiber, io, IO::WRITABLE)
 							else
-								return -EAGAIN
+								return EWOULDBLOCK
 							end
 						when nil
 							break
@@ -218,17 +222,19 @@ module IO::Event
 							buffer.set_string(result, offset)
 							
 							size = result.bytesize
+							total += size
 							offset += size
 							break if size >= length
 							length -= size
 						end
 					end
 					
-					return offset
+					return total
 				end
 				
 				def io_write(fiber, _io, buffer, length, offset = 0)
 					io = IO.for_fd(_io.fileno, autoclose: false)
+					total = 0
 					
 					while true
 						maximum_size = buffer.size - offset
@@ -239,22 +245,23 @@ module IO::Event
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EAGAIN
+								return EWOULDBLOCK
 							end
 						when :wait_writable
 							if length > 0
 								self.io_wait(fiber, io, IO::WRITABLE)
 							else
-								return -EAGAIN
+								return EWOULDBLOCK
 							end
 						else
+							total += result
 							offset += result
 							break if result >= length
 							length -= result
 						end
 					end
 					
-					return offset
+					return total
 				end
 				
 				def blocking(&block)

@@ -10,5 +10,5 @@ begin
 	require 'IO_Event'
 rescue LoadError => error
 	warn "Could not load native event selector: #{error}"
-	# Ignore.
+	require_relative 'event/selector/nonblock'
 end
