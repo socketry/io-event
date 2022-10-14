@@ -1,0 +1,14 @@
+# frozen_string_literal: true
+
+# Released under the MIT License.
+# Copyright, 2022, by Samuel Williams.
+
+require 'io/nonblock'
+
+module IO::Event
+	module Selector
+		def self.nonblock(io, &block)
+			io.nonblock(&block)
+		end
+	end
+end

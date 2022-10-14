@@ -84,20 +84,59 @@ VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid)
 
 int IO_Event_Selector_nonblock_set(int file_descriptor)
 {
+#ifdef _WIN32
+	u_long nonblock = 1;
+	int result = ioctlsocket(file_descriptor, FIONBIO, &nonblock);
+	// Windows does not provide any way to know this, so we always restore it back to unset:
+	return 0;
+#else
+	// Get the current mode:
 	int flags = fcntl(file_descriptor, F_GETFL, 0);
 	
+	// Set the non-blocking flag if it isn't already:
 	if (!(flags & O_NONBLOCK)) {
 		fcntl(file_descriptor, F_SETFL, flags | O_NONBLOCK);
 	}
 	
 	return flags;
+#endif
 }
 
 void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags)
 {
+#ifdef _WIN32
+	// Yolo...
+	u_long nonblock = flags;
+	int result = ioctlsocket(file_descriptor, FIONBIO, &nonblock);
+#else
+	// The flags didn't have O_NONBLOCK set, so it would have been set, so we need to restore it:
 	if (!(flags & O_NONBLOCK)) {
-		fcntl(file_descriptor, F_SETFL, flags & ~flags);
+		fcntl(file_descriptor, F_SETFL, flags);
 	}
+#endif
+}
+
+struct IO_Event_Selector_nonblock_arguments {
+	int file_descriptor;
+	int flags;
+};
+
+static VALUE IO_Event_Selector_nonblock_ensure(VALUE _arguments) {
+	struct IO_Event_Selector_nonblock_arguments *arguments = (struct IO_Event_Selector_nonblock_arguments *)_arguments;
+	
+	IO_Event_Selector_nonblock_restore(arguments->file_descriptor, arguments->flags);
+	
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
+{
+	struct IO_Event_Selector_nonblock_arguments arguments = {
+		.file_descriptor = IO_Event_Selector_io_descriptor(io),
+		.flags = IO_Event_Selector_nonblock_set(arguments.file_descriptor)
+	};
+	
+	return rb_ensure(rb_yield, io, IO_Event_Selector_nonblock_ensure, (VALUE)&arguments);
 }
 
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
@@ -122,6 +161,8 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
 	rb_gc_register_mark_object(rb_Process_Status);
 #endif
+
+	rb_define_singleton_method(IO_Event_Selector, "nonblock", IO_Event_Selector_nonblock, 1);
 }
 
 struct wait_and_transfer_arguments {
