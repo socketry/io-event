@@ -208,13 +208,13 @@ module IO::Event
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EWOULDBLOCK
+								return EWOULDBLOCK
 							end
 						when :wait_writable
 							if length > 0
 								self.io_wait(fiber, io, IO::WRITABLE)
 							else
-								return -EWOULDBLOCK
+								return EWOULDBLOCK
 							end
 						when nil
 							break
@@ -245,13 +245,13 @@ module IO::Event
 							if length > 0
 								self.io_wait(fiber, io, IO::READABLE)
 							else
-								return -EWOULDBLOCK
+								return EWOULDBLOCK
 							end
 						when :wait_writable
 							if length > 0
 								self.io_wait(fiber, io, IO::WRITABLE)
 							else
-								return -EWOULDBLOCK
+								return EWOULDBLOCK
 							end
 						else
 							total += result

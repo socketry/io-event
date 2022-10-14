@@ -10,13 +10,7 @@ require 'io/event/debug/selector'
 require 'socket'
 require 'fiber'
 
-unless Object.const_defined?(:UNIXSocket)
-	class UNIXSocket
-		def self.pair
-			Socket.pair(:INET, :STREAM, 0)
-		end
-	end
-end
+require 'unix_socket'
 
 class FakeFiber
 	def initialize(alive = true)

@@ -9,6 +9,8 @@ require 'io/event'
 require 'io/event/selector'
 require 'socket'
 
+require 'unix_socket'
+
 BufferedIO = Sus::Shared("buffered io") do
 	with 'a pipe' do
 		let(:pipe) {IO.pipe}
