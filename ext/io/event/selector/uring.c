@@ -326,6 +326,7 @@ VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_poll_remove(%p)\n", (void*)arguments->fiber);
 	
 	io_uring_prep_poll_remove(sqe, (uintptr_t)arguments->fiber);
+	io_uring_sqe_set_data(sqe, NULL);
 	io_uring_submit_now(data);
 
 	rb_exc_raise(exception);
@@ -707,6 +708,8 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 		}
 		
 		io_uring_prep_nop(sqe);
+		// If you don't set this line, the SQE will eventually be recycled and have valid user data which can cause odd behaviour:
+		io_uring_sqe_set_data(sqe, NULL);
 		io_uring_submit(&data->ring);
 		
 		return Qtrue;
