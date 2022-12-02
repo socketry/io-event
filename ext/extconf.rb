@@ -24,6 +24,8 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+return if RUBY_DESCRIPTION =~ /jruby/
+
 require 'mkmf'
 
 gem_name = File.basename(__dir__)
