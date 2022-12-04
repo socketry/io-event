@@ -8,4 +8,4 @@
 #   branch: v2.1.0
 async:
   url: https://github.com/socketry/async
-  command: bundle exec rspec
+  command: bundle exec bake test
