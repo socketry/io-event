@@ -29,6 +29,8 @@ module IO::Event
 		def signal
 			@output.write('.')
 			@output.flush
+		rescue IOError
+			# Ignore.
 		end
 		
 		def close
