@@ -656,6 +656,9 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_URing *data = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, data);
 	
+	// Flush any pending events:
+	io_uring_submit_flush(data);
+	
 	int ready = IO_Event_Selector_queue_flush(&data->backend);
 	
 	int result = select_process_completions(&data->ring);
