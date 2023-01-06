@@ -134,6 +134,12 @@ module IO::Event
 				waiter&.invalidate
 			end
 			
+			def io_select(readable, writable, priority, timeout)
+				Thread.new do
+					IO.select(readable, writable, priority, timeout)
+				end.value
+			end
+			
 			if Support.fiber_scheduler_v2?
 				EAGAIN = -Errno::EAGAIN::Errno
 				EWOULDBLOCK = -Errno::EWOULDBLOCK::Errno
