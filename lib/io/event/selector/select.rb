@@ -134,14 +134,14 @@ module IO::Event
 				waiter&.invalidate
 			end
 			
-			EAGAIN = -Errno::EAGAIN::Errno
-			EWOULDBLOCK = -Errno::EWOULDBLOCK::Errno
-			
-			def again?(errno)
-				errno == EAGAIN or errno == EWOULDBLOCK
-			end
-			
 			if Support.fiber_scheduler_v2?
+				EAGAIN = -Errno::EAGAIN::Errno
+				EWOULDBLOCK = -Errno::EWOULDBLOCK::Errno
+				
+				def again?(errno)
+					errno == EAGAIN or errno == EWOULDBLOCK
+				end
+				
 				def io_read(fiber, io, buffer, length, offset = 0)
 					total = 0
 					
