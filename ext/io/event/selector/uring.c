@@ -179,6 +179,7 @@ VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	return data->backend.ready ? Qtrue : Qfalse;
 }
 
+// Flush the submission queue if pending operations are present.
 static
 int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 	if (data->pending) {
@@ -200,6 +201,7 @@ int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 	return 0;
 }
 
+// Immediately flush the submission queue, yielding to the event loop if it was not successful.
 static
 int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
 	while (true) {
@@ -680,9 +682,6 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		if (!data->backend.ready && !timeout_nonblocking(arguments.timeout)) {
 			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
-		} else {
-			// The timeout specified required "nonblocking" behaviour so we just flush the SQ if required:
-			io_uring_submit_flush(data);
 		}
 		
 		// After waiting/flushing the SQ, check if there are any completions:
