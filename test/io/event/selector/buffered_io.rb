@@ -3,8 +3,6 @@
 # Released under the MIT License.
 # Copyright, 2021, by Samuel Williams.
 
-return unless IO.const_defined?(:Buffer)
-
 require 'io/event'
 require 'io/event/selector'
 require 'socket'

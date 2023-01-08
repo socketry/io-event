@@ -376,8 +376,8 @@ IO::Event::Selector.constants.each do |name|
 	
 	describe(klass, unique: name) do
 		with '.new' do
-			def count = 8
-			def loop = Fiber.current
+			let(:count) {8}
+			let(:loop) {Fiber.current}
 			
 			it "can create multiple selectors" do
 				selectors = count.times.map do |i|
