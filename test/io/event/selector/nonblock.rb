@@ -5,6 +5,7 @@
 
 require 'io/event'
 require 'io/nonblock'
+require 'io/event/selector'
 
 describe IO::Event::Selector do
 	with '.nonblock' do
@@ -17,9 +18,12 @@ describe IO::Event::Selector do
 				
 				IO::Event::Selector.nonblock(input) do
 					executed = true
+					
 					# This does not work on Windows...
-					# expect(input).to be(:nonblock?)
-					# expect(output).not.to be(:nonblock?)
+					unless RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+						expect(input).to be(:nonblock?)
+						expect(output).not.to be(:nonblock?)
+					end
 				end
 			end
 			
