@@ -9,6 +9,9 @@ module IO::Event
 	module Selector
 		def self.nonblock(io, &block)
 			io.nonblock(&block)
+		rescue Errno::EBADF
+			# Windows.
+			yield
 		end
 	end
 end
