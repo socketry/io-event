@@ -39,6 +39,8 @@ static VALUE IO_Event_Selector_URing = Qnil;
 
 enum {URING_ENTRIES = 64};
 
+#pragma mark - Data Type
+
 struct IO_Event_Selector_URing {
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
@@ -97,6 +99,8 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	
 	return instance;
 }
+
+#pragma mark - Methods
 
 VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_URing *data = NULL;
@@ -179,6 +183,8 @@ VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	return data->backend.ready ? Qtrue : Qfalse;
 }
 
+#pragma mark - Submission Queue
+
 // Flush the submission queue if pending operations are present.
 static
 int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
@@ -238,6 +244,8 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *data) {
 	return sqe;
 }
 
+#pragma mark - Process.wait
+
 struct process_wait_arguments {
 	struct IO_Event_Selector_URing *data;
 	pid_t pid;
@@ -285,6 +293,8 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
+
+#pragma mark - IO#wait
 
 static inline
 short poll_flags_from_events(int events) {
@@ -381,6 +391,8 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 
+#pragma mark - IO#read
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5,16,0)
 static inline off_t io_seekable(int descriptor) {
 	return -1;
@@ -460,6 +472,8 @@ static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, V
 	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
+#pragma mark - IO#write
+
 static
 int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
 	struct io_uring_sqe *sqe = io_get_sqe(data);
@@ -528,6 +542,8 @@ static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, 
 
 #endif
 
+#pragma mark - IO#close
+
 static const int ASYNC_CLOSE = 1;
 
 VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
@@ -549,6 +565,8 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 	// We don't wait for the result of close since it has no use in pratice:
 	return Qtrue;
 }
+
+#pragma mark - Event Loop
 
 static
 struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec *storage) {
@@ -719,6 +737,8 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 	
 	return Qfalse;
 }
+
+#pragma mark - Native Methods
 
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	IO_Event_Selector_URing = rb_define_class_under(IO_Event_Selector, "URing", rb_cObject);
