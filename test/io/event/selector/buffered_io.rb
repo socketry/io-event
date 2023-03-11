@@ -33,6 +33,8 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 		
 		it "can't write to the read end of a pipe" do
+			skip "Windows is bonkers" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				result = selector.io_write(Fiber.current, input, buffer, 64)
