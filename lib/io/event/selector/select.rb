@@ -236,6 +236,10 @@ module IO::Event
 					end
 					
 					return total
+				rescue IOError => error
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
 				end
 				
 				def io_write(fiber, _io, buffer, length, offset = 0)
@@ -268,6 +272,10 @@ module IO::Event
 					end
 					
 					return total
+				rescue IOError => error
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
 				end
 				
 				def blocking(&block)

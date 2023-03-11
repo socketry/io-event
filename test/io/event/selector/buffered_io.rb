@@ -31,6 +31,19 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			expect(selector.select(1)).to be >= 1
 		end
+		
+		it "can't write to the read end of a pipe" do
+			skip "Windows is bonkers" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+			
+			writer = Fiber.new do
+				buffer = IO::Buffer.new(64)
+				result = selector.io_write(Fiber.current, input, buffer, 64)
+				expect(result).to be == -Errno::EBADF::Errno
+			end
+			
+			writer.transfer
+			selector.select(1)
+		end
 	end
 end
 

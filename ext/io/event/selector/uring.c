@@ -210,6 +210,8 @@ int io_uring_submit_flush(struct IO_Event_Selector_URing *data) {
 // Immediately flush the submission queue, yielding to the event loop if it was not successful.
 static
 int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
+	if (DEBUG && data->pending) fprintf(stderr, "io_uring_submit_now(pending=%ld)\n", data->pending);
+
 	while (true) {
 		int result = io_uring_submit(&data->ring);
 		
@@ -226,9 +228,12 @@ int io_uring_submit_now(struct IO_Event_Selector_URing *data) {
 	}
 }
 
+// Submit a pending operation. This does not submit the operation immediately, but instead defers it to the next call to `io_uring_submit_flush` or `io_uring_submit_now`. This is useful for operations that are not urgent, but should be used with care as it can lead to a deadlock if the submission queue is not flushed.
 static
 void io_uring_submit_pending(struct IO_Event_Selector_URing *data) {
 	data->pending += 1;
+	
+	if (DEBUG) fprintf(stderr, "io_uring_submit_pending(ring=%p, pending=%ld)\n", &data->ring, data->pending);
 }
 
 struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *data) {
@@ -409,19 +414,67 @@ static inline off_t io_seekable(int descriptor)
 }
 #endif
 
-static int io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
+#pragma mark - IO#read
+
+struct io_read_arguments {
+	struct IO_Event_Selector_URing *data;
+	VALUE fiber;
+	int descriptor;
+	char *buffer;
+	size_t length;
+};
+
+static VALUE
+io_read_submit(VALUE _arguments)
+{
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	struct IO_Event_Selector_URing *data = arguments->data;
 	struct io_uring_sqe *sqe = io_get_sqe(data);
-
-	if (DEBUG) fprintf(stderr, "io_read:io_uring_prep_read(fiber=%p)\n", (void*)fiber);
-
-	io_uring_prep_read(sqe, descriptor, buffer, length, io_seekable(descriptor));
-	io_uring_sqe_set_data(sqe, (void*)fiber);
+	
+	if (DEBUG) fprintf(stderr, "io_read_submit:io_uring_prep_read(fiber=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->fiber, arguments->descriptor, arguments->buffer, arguments->length);
+	
+	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
+	io_uring_sqe_set_data(sqe, (void*)arguments->fiber);
 	io_uring_submit_now(data);
 	
-	VALUE result = IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
-	if (DEBUG) fprintf(stderr, "io_read:IO_Event_Selector_fiber_transfer -> %d\n", RB_NUM2INT(result));
+	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+}
 
-	return RB_NUM2INT(result);
+static VALUE
+io_read_cancel(VALUE _arguments, VALUE exception)
+{
+	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
+	struct IO_Event_Selector_URing *data = arguments->data;
+	
+	struct io_uring_sqe *sqe = io_get_sqe(data);
+	
+	if (DEBUG) fprintf(stderr, "io_read_cancel:io_uring_prep_cancel(fiber=%p)\n", (void*)arguments->fiber);
+	
+	io_uring_prep_cancel(sqe, (void*)arguments->fiber, 0);
+	io_uring_sqe_set_data(sqe, NULL);
+	io_uring_submit_now(data);
+	
+	rb_exc_raise(exception);
+}
+
+static int
+io_read(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length)
+{
+	struct io_read_arguments io_read_arguments = {
+		.data = data,
+		.fiber = fiber,
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.length = length
+	};
+	
+	int result = RB_NUM2INT(
+		rb_rescue(io_read_submit, (VALUE)&io_read_arguments, io_read_cancel, (VALUE)&io_read_arguments)
+	);
+	
+	if (DEBUG) fprintf(stderr, "io_read:IO_Event_Selector_fiber_transfer -> %d\n", result);
+	
+	return result;
 }
 
 VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
@@ -474,19 +527,65 @@ static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, V
 
 #pragma mark - IO#write
 
-static
-int io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length) {
+struct io_write_arguments {
+	struct IO_Event_Selector_URing *data;
+	VALUE fiber;
+	int descriptor;
+	char *buffer;
+	size_t length;
+};
+
+static VALUE
+io_write_submit(VALUE _argument)
+{
+	struct io_write_arguments *arguments = (struct io_write_arguments*)_argument;
+	struct IO_Event_Selector_URing *data = arguments->data;
+	
 	struct io_uring_sqe *sqe = io_get_sqe(data);
 	
-	if (DEBUG) fprintf(stderr, "io_write:io_uring_prep_write(fiber=%p)\n", (void*)fiber);
-
-	io_uring_prep_write(sqe, descriptor, buffer, length, io_seekable(descriptor));
-	io_uring_sqe_set_data(sqe, (void*)fiber);
+	if (DEBUG) fprintf(stderr, "io_write_submit:io_uring_prep_write(fiber=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->fiber, arguments->descriptor, arguments->buffer, arguments->length);
+	
+	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
+	io_uring_sqe_set_data(sqe, (void*)arguments->fiber);
 	io_uring_submit_pending(data);
 	
-	int result = RB_NUM2INT(IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL));
-	if (DEBUG) fprintf(stderr, "io_write:IO_Event_Selector_fiber_transfer -> %d\n", result);
+	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+}
 
+static VALUE
+io_write_cancel(VALUE _argument, VALUE exception)
+{
+	struct io_write_arguments *arguments = (struct io_write_arguments*)_argument;
+	struct IO_Event_Selector_URing *data = arguments->data;
+	
+	struct io_uring_sqe *sqe = io_get_sqe(data);
+	
+	if (DEBUG) fprintf(stderr, "io_wait_rescue:io_uring_prep_cancel(%p)\n", (void*)arguments->fiber);
+	
+	io_uring_prep_cancel(sqe, (void*)arguments->fiber, 0);
+	io_uring_sqe_set_data(sqe, NULL);
+	io_uring_submit_now(data);
+	
+	rb_exc_raise(exception);
+}
+
+static int
+io_write(struct IO_Event_Selector_URing *data, VALUE fiber, int descriptor, char *buffer, size_t length)
+{
+	struct io_write_arguments arguments = {
+		.data = data,
+		.fiber = fiber,
+		.descriptor = descriptor,
+		.buffer = buffer,
+		.length = length,
+	};
+	
+	int result = RB_NUM2INT(
+		rb_rescue(io_write_submit, (VALUE)&arguments, io_write_cancel, (VALUE)&arguments)
+	);
+	
+	if (DEBUG) fprintf(stderr, "io_write:IO_Event_Selector_fiber_transfer -> %d\n", result);
+	
 	return result;
 }
 
@@ -667,7 +766,7 @@ unsigned select_process_completions(struct io_uring *ring) {
 	
 	// io_uring_cq_advance(ring, completed);
 	
-	if (DEBUG) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
+	if (DEBUG && completed > 0) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
 	
 	return completed;
 }
