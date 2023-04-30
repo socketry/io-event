@@ -569,8 +569,40 @@ VALUE IO_Event_Selector_EPoll_io_write_compatible(int argc, VALUE *argv, VALUE s
 
 #endif
 
+#if defined(HAVE_EPOLL_PWAIT2)
 static
-int make_timeout(VALUE duration) {
+struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
+	if (duration == Qnil) {
+		return NULL;
+	}
+	
+	if (FIXNUM_P(duration)) {
+		storage->tv_sec = NUM2TIMET(duration);
+		storage->tv_nsec = 0;
+		
+		return storage;
+	}
+	
+	else if (RB_FLOAT_TYPE_P(duration)) {
+		double value = RFLOAT_VALUE(duration);
+		time_t seconds = value;
+		
+		storage->tv_sec = seconds;
+		storage->tv_nsec = (value - seconds) * 1000000000L;
+		
+		return storage;
+	}
+	
+	rb_raise(rb_eRuntimeError, "unable to convert timeout");
+}
+
+static
+int timeout_nonblocking(struct timespec * timespec) {
+	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
+}
+#else
+static
+int make_timeout(VALUE duration, void *storage) {
 	if (duration == Qnil) {
 		return -1;
 	}
@@ -588,20 +620,36 @@ int make_timeout(VALUE duration) {
 	rb_raise(rb_eRuntimeError, "unable to convert timeout");
 }
 
+static
+int timeout_nonblocking(int timeout) {
+	return timeout == 0;
+}
+#endif
+
 struct select_arguments {
 	struct IO_Event_Selector_EPoll *data;
 	
 	int count;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
-	
+
+#if defined(HAVE_EPOLL_PWAIT2)
+	struct timespec * timeout;
+	struct timespec storage;
+#else
 	int timeout;
+	void storage;
+#endif
 };
 
 static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
+#if defined(HAVE_EPOLL_PWAIT2)
+	arguments->count = epoll_pwait2(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout, NULL);
+#else
 	arguments->count = epoll_wait(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout);
+#endif
 	
 	return NULL;
 }
@@ -642,8 +690,13 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	
 	struct select_arguments arguments = {
 		.data = data,
-		.timeout = 0
+		.storage = {
+			.tv_sec = 0,
+			.tv_nsec = 0
+		}
 	};
+	
+	arguments.timeout = &arguments.storage;
 	
 	// Process any currently pending events:
 	select_internal_with_gvl(&arguments);
@@ -654,9 +707,9 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
 	if (!ready && !arguments.count && !data->backend.ready) {
-		arguments.timeout = make_timeout(duration);
+		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (arguments.timeout != 0) {
+		if (!timeout_nonblocking(arguments.timeout)) {
 			// Wait for events to occur
 			select_internal_without_gvl(&arguments);
 		}
