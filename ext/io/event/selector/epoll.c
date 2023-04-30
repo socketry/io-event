@@ -602,7 +602,7 @@ int timeout_nonblocking(struct timespec * timespec) {
 }
 #else
 static
-int make_timeout(VALUE duration, void *storage) {
+int make_timeout(VALUE duration) {
 	if (duration == Qnil) {
 		return -1;
 	}
@@ -637,7 +637,6 @@ struct select_arguments {
 	struct timespec storage;
 #else
 	int timeout;
-	void storage;
 #endif
 };
 
@@ -690,13 +689,19 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	
 	struct select_arguments arguments = {
 		.data = data,
+#if defined(HAVE_EPOLL_PWAIT2)
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
 		}
+#else
+		.timeout = 0
+#endif
 	};
 	
+#if defined(HAVE_EPOLL_PWAIT2)
 	arguments.timeout = &arguments.storage;
+#endif
 	
 	// Process any currently pending events:
 	select_internal_with_gvl(&arguments);
@@ -707,7 +712,11 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
 	if (!ready && !arguments.count && !data->backend.ready) {
+#if defined(HAVE_EPOLL_PWAIT2)
 		arguments.timeout = make_timeout(duration, &arguments.storage);
+#else
+		arguments.timeout = make_timeout(duration);
+#endif
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
 			// Wait for events to occur
