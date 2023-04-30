@@ -43,7 +43,7 @@ enum IO_Event {
 	IO_EVENT_HANGUP = 16
 };
 
-void Init_IO_Event_Selector();
+void Init_IO_Event_Selector(VALUE IO_Event_Selector);
 
 static inline int IO_Event_try_again(int error) {
 	return error == EAGAIN || error == EWOULDBLOCK;
