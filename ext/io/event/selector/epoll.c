@@ -569,7 +569,6 @@ VALUE IO_Event_Selector_EPoll_io_write_compatible(int argc, VALUE *argv, VALUE s
 
 #endif
 
-#if defined(HAVE_EPOLL_PWAIT2)
 static
 struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 	if (duration == Qnil) {
@@ -600,31 +599,6 @@ static
 int timeout_nonblocking(struct timespec * timespec) {
 	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
 }
-#else
-static
-int make_timeout(VALUE duration) {
-	if (duration == Qnil) {
-		return -1;
-	}
-	
-	if (FIXNUM_P(duration)) {
-		return NUM2LONG(duration) * 1000L;
-	}
-	
-	else if (RB_FLOAT_TYPE_P(duration)) {
-		double value = RFLOAT_VALUE(duration);
-		
-		return value * 1000;
-	}
-	
-	rb_raise(rb_eRuntimeError, "unable to convert timeout");
-}
-
-static
-int timeout_nonblocking(int timeout) {
-	return timeout == 0;
-}
-#endif
 
 struct select_arguments {
 	struct IO_Event_Selector_EPoll *data;
@@ -632,13 +606,30 @@ struct select_arguments {
 	int count;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
 
-#if defined(HAVE_EPOLL_PWAIT2)
 	struct timespec * timeout;
 	struct timespec storage;
-#else
-	int timeout;
-#endif
 };
+
+static int make_timeout_ms(struct timespec * timeout) {
+	if (timeout == NULL) {
+		return -1;
+	}
+	
+	if (timeout_nonblocking(timeout)) {
+		return 0;
+	}
+	
+	return (timeout->tv_sec * 1000) + (timeout->tv_nsec / 1000000);
+}
+
+static
+int enosys_error(int result) {
+	if (result == -1) {
+		return errno == ENOSYS;
+	}
+	
+	return 0;
+}
 
 static
 void * select_internal(void *_arguments) {
@@ -646,9 +637,20 @@ void * select_internal(void *_arguments) {
 	
 #if defined(HAVE_EPOLL_PWAIT2)
 	arguments->count = epoll_pwait2(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout, NULL);
-#else
-	arguments->count = epoll_wait(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout);
+	
+	// Comment out the above line and enable the below lines to test ENOSYS code path.
+	// arguments->count = -1;
+	// errno = ENOSYS;
+	
+	if (!enosys_error(arguments->count)) {
+		return NULL;
+	}
+	else {
+		// Fall through and execute epoll_wait fallback.
+	}
 #endif
+	
+	arguments->count = epoll_wait(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, make_timeout_ms(arguments->timeout));
 	
 	return NULL;
 }
@@ -689,20 +691,14 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	
 	struct select_arguments arguments = {
 		.data = data,
-#if defined(HAVE_EPOLL_PWAIT2)
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
-		}
-#else
-		.timeout = 0
-#endif
+		},
 	};
-	
-#if defined(HAVE_EPOLL_PWAIT2)
+
 	arguments.timeout = &arguments.storage;
-#endif
-	
+
 	// Process any currently pending events:
 	select_internal_with_gvl(&arguments);
 	
@@ -712,11 +708,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
 	if (!ready && !arguments.count && !data->backend.ready) {
-#if defined(HAVE_EPOLL_PWAIT2)
 		arguments.timeout = make_timeout(duration, &arguments.storage);
-#else
-		arguments.timeout = make_timeout(duration);
-#endif
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
 			// Wait for events to occur
