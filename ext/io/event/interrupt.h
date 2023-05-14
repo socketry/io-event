@@ -27,7 +27,7 @@ struct IO_Event_Interrupt {
 	int descriptor;
 };
 
-inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
+static inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
 	return interrupt->descriptor;
 }
 #else
@@ -35,7 +35,7 @@ struct IO_Event_Interrupt {
 	int descriptor[2];
 };
 
-inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
+static inline int IO_Event_Interrupt_descriptor(struct IO_Event_Interrupt *interrupt) {
 	return interrupt->descriptor[0];
 }
 #endif
