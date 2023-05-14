@@ -32,6 +32,11 @@ BufferedIO = Sus::Shared("buffered io") do
 			expect(selector.select(1)).to be >= 1
 		end
 		
+		it "can write zero length buffers" do
+			buffer = IO::Buffer.new(1).slice(0, 0)
+			expect(selector.io_write(Fiber.current, output, buffer, 0)).to be == 0
+		end
+		
 		it "can't write to the read end of a pipe" do
 			skip "Windows is bonkers" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
 			
