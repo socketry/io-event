@@ -178,6 +178,48 @@ Selector = Sus::Shared("a selector") do
 			expect(writable).to be == true
 		end
 		
+		it "can read and write from two different fibers (alternate)" do
+			read_fiber = Fiber.new do
+				events << :wait_readable
+				
+				expect(
+					selector.io_wait(Fiber.current, local, IO::READABLE)
+				).to be == IO::READABLE
+				
+				events << :readable
+			end
+			
+			write_fiber = Fiber.new do
+				events << :wait_writable
+				
+				expect(
+					selector.io_wait(Fiber.current, local, IO::WRITABLE)
+				).to be == IO::WRITABLE
+				
+				events << :writable
+			end
+			
+			events << :transfer
+			read_fiber.transfer
+			write_fiber.transfer
+			
+			events << :select1
+			selector.select(1)
+			remote.puts "Hello World"
+			events << :select2
+			selector.select(1)
+			
+			expect(events).to be == [
+				:transfer,
+				:wait_readable,
+				:wait_writable,
+				:select1,
+				:writable,
+				:select2,
+				:readable,
+			]
+		end
+		
 		it "can handle exception during wait" do
 			fiber = Fiber.new do
 				events << :wait_readable

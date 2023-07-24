@@ -103,14 +103,23 @@ module IO::Event
 					self.fiber&.alive?
 				end
 				
-				def transfer(events)
+				def dispatch(events, &reactivate)
+					tail = self.tail
 					if fiber = self.fiber
-						self.fiber = nil
-						
-						fiber.transfer(events & self.events) if fiber.alive?
+						if fiber.alive?
+							revents = events & self.events
+							if revents.zero?
+								reactivate.call(self)
+							else
+								self.fiber = nil
+								fiber.transfer(revents)
+							end
+						else
+							self.fiber = nil
+						end
 					end
-				
-					self.tail&.transfer(events)
+
+					tail&.dispatch(events, &reactivate)
 				end
 				
 				def invalidate
@@ -349,7 +358,10 @@ module IO::Event
 				end
 				
 				ready.each do |io, events|
-					@waiting.delete(io).transfer(events)
+					@waiting.delete(io).dispatch(events) do |waiter|
+						waiter.tail = @waiting[io]
+						@waiting[io] = waiter
+					end
 				end
 				
 				return ready.size
