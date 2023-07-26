@@ -103,8 +103,11 @@ module IO::Event
 					self.fiber&.alive?
 				end
 				
+				# Dispatch the given events to the list of waiting fibers. If the fiber was not waiting for the given events, it is reactivated by calling the given block.
 				def dispatch(events, &reactivate)
+					# We capture the tail here, because calling reactivate might modify it:
 					tail = self.tail
+					
 					if fiber = self.fiber
 						if fiber.alive?
 							revents = events & self.events
@@ -118,7 +121,7 @@ module IO::Event
 							self.fiber = nil
 						end
 					end
-
+					
 					tail&.dispatch(events, &reactivate)
 				end
 				
@@ -359,6 +362,7 @@ module IO::Event
 				
 				ready.each do |io, events|
 					@waiting.delete(io).dispatch(events) do |waiter|
+						# Re-schedule the waiting IO:
 						waiter.tail = @waiting[io]
 						@waiting[io] = waiter
 					end
