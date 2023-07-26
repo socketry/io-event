@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
 	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
-	spec.authors = ["Samuel Williams", "Bruno Sutic", "Benoit Daloze", "Delton Ding", "machty"]
+	spec.authors = ["Samuel Williams", "Bruno Sutic", "Math Ieu", "Alex Matchneer", "Benoit Daloze", "Delton Ding"]
 	spec.license = "MIT"
 	
 	spec.cert_chain  = ['release.cert']
@@ -21,9 +21,4 @@ Gem::Specification.new do |spec|
 	spec.extensions = ["ext/extconf.rb"]
 	
 	spec.required_ruby_version = ">= 3.0"
-	
-	spec.add_development_dependency "bake"
-	spec.add_development_dependency "bundler"
-	spec.add_development_dependency "covered"
-	spec.add_development_dependency "sus", "~> 0.6"
 end
