@@ -13,7 +13,8 @@ module IO::Event
 			def initialize(loop)
 				@loop = loop
 				
-				@waiting = Hash.new.compare_by_identity
+				# Fibers waiting on IO are stored in a hash of hashes.  First keyed by IO object, then by fiber, with the value being the event types bitfield the fiber is waiting on.
+				@waiting = Hash.new { |h, io| h[io] = Hash.new.compare_by_identity }.compare_by_identity
 				
 				@blocked = false
 				
@@ -99,52 +100,15 @@ module IO::Event
 				!@ready.empty?
 			end
 			
-			Waiter = Struct.new(:fiber, :events, :tail) do
-				def alive?
-					self.fiber&.alive?
-				end
-				
-				# Dispatch the given events to the list of waiting fibers. If the fiber was not waiting for the given events, it is reactivated by calling the given block.
-				def dispatch(events, &reactivate)
-					# We capture the tail here, because calling reactivate might modify it:
-					tail = self.tail
-					
-					if fiber = self.fiber
-						if fiber.alive?
-							revents = events & self.events
-							if revents.zero?
-								reactivate.call(self)
-							else
-								self.fiber = nil
-								fiber.transfer(revents)
-							end
-						else
-							self.fiber = nil
-						end
-					end
-					
-					tail&.dispatch(events, &reactivate)
-				end
-				
-				def invalidate
-					self.fiber = nil
-				end
-				
-				def each(&block)
-					if fiber = self.fiber
-						yield fiber, self.events
-					end
-					
-					self.tail&.each(&block)
-				end
-			end
-			
 			def io_wait(fiber, io, events)
-				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+				@waiting[io][fiber] = events
 				
 				@loop.transfer
 			ensure
-				waiter&.invalidate
+				if @waiting && @waiting.key?(io)
+					@waiting[io].delete(fiber)
+					@waiting.delete(io) if @waiting[io].empty?
+				end
 			end
 			
 			def io_select(readable, writable, priority, timeout)
@@ -326,8 +290,8 @@ module IO::Event
 				writable = Array.new
 				priority = Array.new
 				
-				@waiting.each do |io, waiter|
-					waiter.each do |fiber, events|
+				@waiting.each do |io, h|
+					h.each do |_fiber, events|
 						if (events & IO::READABLE) > 0
 							readable << io
 						end
@@ -361,11 +325,16 @@ module IO::Event
 					ready[io] |= IO::PRIORITY
 				end
 				
-				ready.each do |io, events|
-					@waiting.delete(io).dispatch(events) do |waiter|
-						# Re-schedule the waiting IO:
-						waiter.tail = @waiting[io]
-						@waiting[io] = waiter
+				ready.each do |io, events_ready|
+					@waiting.delete(io).each do |fiber, events_polled|
+						next unless fiber.alive?
+						events_matched = events_ready & events_polled
+						if events_matched.zero?
+							# Re-schedule the waiting IO:
+							@waiting[io][fiber] = events_polled
+						else
+							fiber.transfer(events_matched)
+						end
 					end
 				end
 				
