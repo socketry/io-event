@@ -101,11 +101,14 @@ module IO::Event
 			end
 			
 			def io_wait(fiber, io, events)
-				@waiting[io][fiber] = events
+				(fibers = @waiting[io])[fiber] = events
 				
 				@loop.transfer
 			ensure
-				if @waiting && @waiting.key?(io)
+				# Make sure this fiber won't be resumed by the IO ready loop in #select.  The loop will delete the fibers hash from @waiting before iterating over it to dispatch events, and skip the fibers that have a nil value.
+				fibers[fiber] = nil
+				# Remove from @waiting (if it hasn't been removed by #select yet).  Note that @waiting[io] could now be a different hash than the one we inserted the fiber into.
+				if @waiting&.key?(io)
 					@waiting[io].delete(fiber)
 					@waiting.delete(io) if @waiting[io].empty?
 				end
@@ -290,8 +293,8 @@ module IO::Event
 				writable = Array.new
 				priority = Array.new
 				
-				@waiting.each do |io, h|
-					h.each do |_fiber, events|
+				@waiting.each do |io, fibers|
+					fibers.each do |fiber, events|
 						if (events & IO::READABLE) > 0
 							readable << io
 						end
@@ -327,7 +330,8 @@ module IO::Event
 				
 				ready.each do |io, events_ready|
 					@waiting.delete(io).each do |fiber, events_polled|
-						next unless fiber.alive?
+						# Fibers that are cancelled will set their polled events to nil in #io_wait.
+						next unless fiber.alive? && events_polled
 						events_matched = events_ready & events_polled
 						if events_matched.zero?
 							# Re-schedule the waiting IO:
