@@ -43,32 +43,32 @@ struct IO_Event_Selector_EPoll {
 	struct IO_Event_Interrupt interrupt;
 };
 
-void IO_Event_Selector_EPoll_Type_mark(void *_data)
+void IO_Event_Selector_EPoll_Type_mark(void *_selector)
 {
-	struct IO_Event_Selector_EPoll *data = _data;
-	IO_Event_Selector_mark(&data->backend);
+	struct IO_Event_Selector_EPoll *selector = _selector;
+	IO_Event_Selector_mark(&selector->backend);
 }
 
 static
-void close_internal(struct IO_Event_Selector_EPoll *data) {
-	if (data->descriptor >= 0) {
-		close(data->descriptor);
-		data->descriptor = -1;
+void close_internal(struct IO_Event_Selector_EPoll *selector) {
+	if (selector->descriptor >= 0) {
+		close(selector->descriptor);
+		selector->descriptor = -1;
 		
-		IO_Event_Interrupt_close(&data->interrupt);
+		IO_Event_Interrupt_close(&selector->interrupt);
 	}
 }
 
-void IO_Event_Selector_EPoll_Type_free(void *_data)
+void IO_Event_Selector_EPoll_Type_free(void *_selector)
 {
-	struct IO_Event_Selector_EPoll *data = _data;
+	struct IO_Event_Selector_EPoll *selector = _selector;
 	
-	close_internal(data);
+	close_internal(selector);
 	
-	free(data);
+	free(selector);
 }
 
-size_t IO_Event_Selector_EPoll_Type_size(const void *data)
+size_t IO_Event_Selector_EPoll_Type_size(const void *selector)
 {
 	return sizeof(struct IO_Event_Selector_EPoll);
 }
@@ -85,16 +85,16 @@ static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
 };
 
 VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_initialize(&data->backend, Qnil);
-	data->descriptor = -1;
+	IO_Event_Selector_initialize(&selector->backend, Qnil);
+	selector->descriptor = -1;
 	
 	return instance;
 }
 
-void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Event_Selector_EPoll *data) {
+void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Event_Selector_EPoll *selector) {
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
 	struct epoll_event event = {
@@ -102,7 +102,7 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 		.data = {.ptr = NULL},
 	};
 	
-	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	
 	if (result == -1) {
 		rb_sys_fail("IO_Event_Interrupt_add:epoll_ctl");
@@ -110,93 +110,93 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 }
 
 VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_initialize(&data->backend, loop);
+	IO_Event_Selector_initialize(&selector->backend, loop);
 	int result = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (result == -1) {
 		rb_sys_fail("IO_Event_Selector_EPoll_initialize:epoll_create");
 	} else {
-		data->descriptor = result;
+		selector->descriptor = result;
 		
-		rb_update_max_fd(data->descriptor);
+		rb_update_max_fd(selector->descriptor);
 	}
 	
-	IO_Event_Interrupt_open(&data->interrupt);
-	IO_Event_Interrupt_add(&data->interrupt, data);
+	IO_Event_Interrupt_open(&selector->interrupt);
+	IO_Event_Interrupt_add(&selector->interrupt, selector);
 	
 	return self;
 }
 
 VALUE IO_Event_Selector_EPoll_loop(VALUE self) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return data->backend.loop;
+	return selector->backend.loop;
 }
 
 VALUE IO_Event_Selector_EPoll_close(VALUE self) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	close_internal(data);
+	close_internal(selector);
 	
 	return Qnil;
 }
 
 VALUE IO_Event_Selector_EPoll_transfer(VALUE self)
 {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	return IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
 }
 
 VALUE IO_Event_Selector_EPoll_resume(int argc, VALUE *argv, VALUE self)
 {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return IO_Event_Selector_resume(&data->backend, argc, argv);
+	return IO_Event_Selector_resume(&selector->backend, argc, argv);
 }
 
 VALUE IO_Event_Selector_EPoll_yield(VALUE self)
 {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return IO_Event_Selector_yield(&data->backend);
+	return IO_Event_Selector_yield(&selector->backend);
 }
 
 VALUE IO_Event_Selector_EPoll_push(VALUE self, VALUE fiber)
 {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_queue_push(&data->backend, fiber);
+	IO_Event_Selector_queue_push(&selector->backend, fiber);
 	
 	return Qnil;
 }
 
 VALUE IO_Event_Selector_EPoll_raise(int argc, VALUE *argv, VALUE self)
 {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return IO_Event_Selector_raise(&data->backend, argc, argv);
+	return IO_Event_Selector_raise(&selector->backend, argc, argv);
 }
 
 VALUE IO_Event_Selector_EPoll_ready_p(VALUE self) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return data->backend.ready ? Qtrue : Qfalse;
+	return selector->backend.ready ? Qtrue : Qfalse;
 }
 
 struct process_wait_arguments {
-	struct IO_Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *selector;
 	pid_t pid;
 	int flags;
 	int descriptor;
@@ -206,7 +206,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	return IO_Event_Selector_process_status_wait(arguments->pid);
 }
@@ -223,11 +223,11 @@ VALUE process_wait_ensure(VALUE _arguments) {
 }
 
 VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	struct process_wait_arguments process_wait_arguments = {
-		.data = data,
+		.selector = selector,
 		.pid = NUM2PIDT(pid),
 		.flags = NUM2INT(flags),
 	};
@@ -245,7 +245,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, V
 		.data = {.ptr = (void*)fiber},
 	};
 	
-	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
+	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
 	
 	if (result == -1) {
 		close(process_wait_arguments.descriptor);
@@ -290,7 +290,7 @@ int events_from_epoll_flags(uint32_t flags) {
 }
 
 struct io_wait_arguments {
-	struct IO_Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *selector;
 	int descriptor;
 	int duplicate;
 };
@@ -300,11 +300,11 @@ VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
 	if (arguments->duplicate >= 0) {
-		epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->duplicate, NULL);
+		epoll_ctl(arguments->selector->descriptor, EPOLL_CTL_DEL, arguments->duplicate, NULL);
 		
 		close(arguments->duplicate);
 	} else {
-		epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
+		epoll_ctl(arguments->selector->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
 	}
 	
 	return Qnil;
@@ -314,7 +314,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	VALUE result = IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	if (DEBUG) fprintf(stderr, "io_wait_transfer errno=%d\n", errno);
 	
@@ -330,8 +330,8 @@ VALUE io_wait_transfer(VALUE _arguments) {
 };
 
 VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	struct epoll_event event = {0};
 	
@@ -344,7 +344,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	if (DEBUG) fprintf(stderr, "<- fiber=%p descriptor=%d\n", (void*)fiber, descriptor);
 	
 	// A better approach is to batch all changes:
-	int result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	
 	if (result == -1 && errno == EEXIST) {
 		// The file descriptor was already inserted into epoll.
@@ -358,7 +358,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		
 		rb_update_max_fd(descriptor);
 		
-		result = epoll_ctl(data->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+		result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
 	}
 	
 	if (result == -1) {
@@ -368,8 +368,8 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		}
 		
 		if (errno == EPERM) {
-			IO_Event_Selector_queue_push(&data->backend, fiber);
-			IO_Event_Selector_yield(&data->backend);
+			IO_Event_Selector_queue_push(&selector->backend, fiber);
+			IO_Event_Selector_yield(&selector->backend);
 			return events;
 		}
 		
@@ -377,7 +377,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
-		.data = data,
+		.selector = selector,
 		.descriptor = descriptor,
 		.duplicate = duplicate
 	};
@@ -601,7 +601,7 @@ int timeout_nonblocking(struct timespec * timespec) {
 }
 
 struct select_arguments {
-	struct IO_Event_Selector_EPoll *data;
+	struct IO_Event_Selector_EPoll *selector;
 	
 	int count;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
@@ -636,7 +636,7 @@ void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
 #if defined(HAVE_EPOLL_PWAIT2)
-	arguments->count = epoll_pwait2(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout, NULL);
+	arguments->count = epoll_pwait2(arguments->selector->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout, NULL);
 	
 	// Comment out the above line and enable the below lines to test ENOSYS code path.
 	// arguments->count = -1;
@@ -650,16 +650,16 @@ void * select_internal(void *_arguments) {
 	}
 #endif
 	
-	arguments->count = epoll_wait(arguments->data->descriptor, arguments->events, EPOLL_MAX_EVENTS, make_timeout_ms(arguments->timeout));
+	arguments->count = epoll_wait(arguments->selector->descriptor, arguments->events, EPOLL_MAX_EVENTS, make_timeout_ms(arguments->timeout));
 	
 	return NULL;
 }
 
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
-	arguments->data->blocked = 1;
+	arguments->selector->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
-	arguments->data->blocked = 0;
+	arguments->selector->blocked = 0;
 	
 	if (arguments->count == -1) {
 		if (errno != EINTR) {
@@ -684,13 +684,13 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	int ready = IO_Event_Selector_queue_flush(&data->backend);
+	int ready = IO_Event_Selector_queue_flush(&selector->backend);
 	
 	struct select_arguments arguments = {
-		.data = data,
+		.selector = selector,
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
@@ -707,7 +707,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !arguments.count && !data->backend.ready) {
+	if (!ready && !arguments.count && !selector->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
@@ -726,7 +726,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 			
 			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
 		} else {
-			IO_Event_Interrupt_clear(&data->interrupt);
+			IO_Event_Interrupt_clear(&selector->interrupt);
 		}
 	}
 	
@@ -734,12 +734,12 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 }
 
 VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
-	struct IO_Event_Selector_EPoll *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, data);
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	// If we are blocking, we can schedule a nop event to wake up the selector:
-	if (data->blocked) {
-		IO_Event_Interrupt_signal(&data->interrupt);
+	if (selector->blocked) {
+		IO_Event_Interrupt_signal(&selector->interrupt);
 		
 		return Qtrue;
 	}

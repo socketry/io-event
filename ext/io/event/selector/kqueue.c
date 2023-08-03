@@ -44,30 +44,30 @@ struct IO_Event_Selector_KQueue {
 	int blocked;
 };
 
-void IO_Event_Selector_KQueue_Type_mark(void *_data)
+void IO_Event_Selector_KQueue_Type_mark(void *_selector)
 {
-	struct IO_Event_Selector_KQueue *data = _data;
-	IO_Event_Selector_mark(&data->backend);
+	struct IO_Event_Selector_KQueue *selector = _selector;
+	IO_Event_Selector_mark(&selector->backend);
 }
 
 static
-void close_internal(struct IO_Event_Selector_KQueue *data) {
-	if (data->descriptor >= 0) {
-		close(data->descriptor);
-		data->descriptor = -1;
+void close_internal(struct IO_Event_Selector_KQueue *selector) {
+	if (selector->descriptor >= 0) {
+		close(selector->descriptor);
+		selector->descriptor = -1;
 	}
 }
 
-void IO_Event_Selector_KQueue_Type_free(void *_data)
+void IO_Event_Selector_KQueue_Type_free(void *_selector)
 {
-	struct IO_Event_Selector_KQueue *data = _data;
+	struct IO_Event_Selector_KQueue *selector = _selector;
 	
-	close_internal(data);
+	close_internal(selector);
 	
-	free(data);
+	free(selector);
 }
 
-size_t IO_Event_Selector_KQueue_Type_size(const void *data)
+size_t IO_Event_Selector_KQueue_Type_size(const void *selector)
 {
 	return sizeof(struct IO_Event_Selector_KQueue);
 }
@@ -84,102 +84,102 @@ static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
 };
 
 VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	IO_Event_Selector_initialize(&data->backend, Qnil);
-	data->descriptor = -1;
-	data->blocked = 0;
+	IO_Event_Selector_initialize(&selector->backend, Qnil);
+	selector->descriptor = -1;
+	selector->blocked = 0;
 	
 	return instance;
 }
 
 VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	IO_Event_Selector_initialize(&data->backend, loop);
+	IO_Event_Selector_initialize(&selector->backend, loop);
 	int result = kqueue();
 	
 	if (result == -1) {
 		rb_sys_fail("IO_Event_Selector_KQueue_initialize:kqueue");
 	} else {
 		ioctl(result, FIOCLEX);
-		data->descriptor = result;
+		selector->descriptor = result;
 		
-		rb_update_max_fd(data->descriptor);
+		rb_update_max_fd(selector->descriptor);
 	}
 	
 	return self;
 }
 
 VALUE IO_Event_Selector_KQueue_loop(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return data->backend.loop;
+	return selector->backend.loop;
 }
 
 VALUE IO_Event_Selector_KQueue_close(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	close_internal(data);
+	close_internal(selector);
 	
 	return Qnil;
 }
 
 VALUE IO_Event_Selector_KQueue_transfer(VALUE self)
 {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return IO_Event_Selector_fiber_transfer(data->backend.loop, 0, NULL);
+	return IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
 }
 
 VALUE IO_Event_Selector_KQueue_resume(int argc, VALUE *argv, VALUE self)
 {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return IO_Event_Selector_resume(&data->backend, argc, argv);
+	return IO_Event_Selector_resume(&selector->backend, argc, argv);
 }
 
 VALUE IO_Event_Selector_KQueue_yield(VALUE self)
 {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return IO_Event_Selector_yield(&data->backend);
+	return IO_Event_Selector_yield(&selector->backend);
 }
 
 VALUE IO_Event_Selector_KQueue_push(VALUE self, VALUE fiber)
 {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	IO_Event_Selector_queue_push(&data->backend, fiber);
+	IO_Event_Selector_queue_push(&selector->backend, fiber);
 	
 	return Qnil;
 }
 
 VALUE IO_Event_Selector_KQueue_raise(int argc, VALUE *argv, VALUE self)
 {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return IO_Event_Selector_raise(&data->backend, argc, argv);
+	return IO_Event_Selector_raise(&selector->backend, argc, argv);
 }
 
 VALUE IO_Event_Selector_KQueue_ready_p(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return data->backend.ready ? Qtrue : Qfalse;
+	return selector->backend.ready ? Qtrue : Qfalse;
 }
 
 struct process_wait_arguments {
-	struct IO_Event_Selector_KQueue *data;
+	struct IO_Event_Selector_KQueue *selector;
 	pid_t pid;
 	int flags;
 };
@@ -225,7 +225,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	return IO_Event_Selector_process_status_wait(arguments->pid);
 }
@@ -234,17 +234,17 @@ static
 VALUE process_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	process_remove_filters(arguments->data->descriptor, arguments->pid);
+	process_remove_filters(arguments->selector->descriptor, arguments->pid);
 	
 	rb_exc_raise(exception);
 }
 
 VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	struct process_wait_arguments process_wait_arguments = {
-		.data = data,
+		.selector = selector,
 		.pid = NUM2PIDT(pid),
 		.flags = RB_NUM2INT(flags),
 	};
@@ -253,7 +253,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, 
 	
 	// This loop should not be needed but I have seen a race condition between NOTE_EXIT and `waitpid`, thus the result would be (unexpectedly) nil. So we put this in a loop to retry if the race condition shows up:
 	while (NIL_P(result)) {
-		int waiting = process_add_filters(data->descriptor, process_wait_arguments.pid, fiber);
+		int waiting = process_add_filters(selector->descriptor, process_wait_arguments.pid, fiber);
 	
 		if (waiting) {
 			result = rb_rescue(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_rescue, (VALUE)&process_wait_arguments);
@@ -327,7 +327,7 @@ void io_remove_filters(int descriptor, int ident, int events) {
 }
 
 struct io_wait_arguments {
-	struct IO_Event_Selector_KQueue *data;
+	struct IO_Event_Selector_KQueue *selector;
 	int events;
 	int descriptor;
 };
@@ -336,7 +336,7 @@ static
 VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	io_remove_filters(arguments->data->descriptor, arguments->descriptor, arguments->events);
+	io_remove_filters(arguments->selector->descriptor, arguments->descriptor, arguments->events);
 	
 	rb_exc_raise(exception);
 }
@@ -353,7 +353,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = IO_Event_Selector_fiber_transfer(arguments->data->backend.loop, 0, NULL);
+	VALUE result = IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	// If the fiber is being cancelled, it might be resumed with nil:
 	if (!RTEST(result)) {
@@ -364,14 +364,14 @@ VALUE io_wait_transfer(VALUE _arguments) {
 }
 
 VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_wait_arguments io_wait_arguments = {
-		.events = io_add_filters(data->descriptor, descriptor, RB_NUM2INT(events), fiber),
-		.data = data,
+		.events = io_add_filters(selector->descriptor, descriptor, RB_NUM2INT(events), fiber),
+		.selector = selector,
 		.descriptor = descriptor,
 	};
 	
@@ -444,8 +444,8 @@ VALUE io_read_ensure(VALUE _arguments) {
 }
 
 VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
@@ -546,8 +546,8 @@ VALUE io_write_ensure(VALUE _arguments) {
 };
 
 VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
@@ -616,7 +616,7 @@ int timeout_nonblocking(struct timespec * timespec) {
 }
 
 struct select_arguments {
-	struct IO_Event_Selector_KQueue *data;
+	struct IO_Event_Selector_KQueue *selector;
 	
 	int count;
 	struct kevent events[KQUEUE_MAX_EVENTS];
@@ -629,17 +629,17 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->count = kevent(arguments->data->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
+	arguments->count = kevent(arguments->selector->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
 	
 	return NULL;
 }
 
 static
 void select_internal_without_gvl(struct select_arguments *arguments) {
-	arguments->data->blocked = 1;
+	arguments->selector->blocked = 1;
 	
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
-	arguments->data->blocked = 0;
+	arguments->selector->blocked = 0;
 	
 	if (arguments->count == -1) {
 		if (errno != EINTR) {
@@ -664,13 +664,13 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	int ready = IO_Event_Selector_queue_flush(&data->backend);
+	int ready = IO_Event_Selector_queue_flush(&selector->backend);
 	
 	struct select_arguments arguments = {
-		.data = data,
+		.selector = selector,
 		.count = KQUEUE_MAX_EVENTS,
 		.storage = {
 			.tv_sec = 0,
@@ -696,7 +696,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !arguments.count && !data->backend.ready) {
+	if (!ready && !arguments.count && !selector->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
@@ -720,17 +720,17 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 }
 
 VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
-	struct IO_Event_Selector_KQueue *data = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, data);
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	if (data->blocked) {
+	if (selector->blocked) {
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
 		trigger.flags = EV_ADD | EV_CLEAR | EV_UDATA_SPECIFIC;
 		trigger.fflags = NOTE_TRIGGER;
 		
-		int result = kevent(data->descriptor, &trigger, 1, NULL, 0, NULL);
+		int result = kevent(selector->descriptor, &trigger, 1, NULL, 0, NULL);
 		
 		if (result == -1) {
 			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
