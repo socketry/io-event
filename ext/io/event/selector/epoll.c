@@ -21,6 +21,7 @@
 #include "kqueue.h"
 #include "selector.h"
 #include "list.h"
+#include "array.h"
 
 #include <sys/epoll.h>
 #include <time.h>
@@ -48,39 +49,13 @@ struct IO_Event_Selector_EPoll_Waiting {
 	VALUE fiber;
 };
 
-// This represents zero or more fibers waiting for a specific descriptor.
-struct IO_Event_Selector_EPoll_Descriptor {
-	struct IO_Event_List list;
-	
-	// The union of all events we are currently waiting on.
-	enum IO_Event events;
-};
-
-struct IO_Event_Selector_EPoll_Descriptors {
-	size_t count;
-	struct IO_Event_Selector_EPoll_Descriptor *base;
-};
-
-inline static
-struct IO_Event_Selector_EPoll_Descriptor * IO_Event_Selector_EPoll_Descriptor_lookup(struct IO_Event_Selector_EPoll_Descriptors *descriptors, int descriptor) {
-	void *new_base = IO_Event_Array_resize(descriptors->base, descriptors->count, descriptor, sizeof(struct IO_Event_Selector_EPoll_Descriptor));
-	
-	if (new_base) {
-		descriptors->base = new_base;
-	} else {
-		rb_sys_fail("IO_Event_Selector_EPoll_Descriptor_lookup:IO_Event_Array_resize");
-	}
-	
-	return descriptors->base + descriptor;
-}
-
 struct IO_Event_Selector_EPoll {
 	struct IO_Event_Selector backend;
 	int descriptor;
 	int blocked;
 	
 	struct IO_Event_Interrupt interrupt;
-	struct IO_Event_Selector_EPoll_Descriptors descriptors;
+	struct IO_Event_Array descriptors;
 };
 
 void IO_Event_Selector_EPoll_Type_mark(void *_selector)
@@ -97,9 +72,6 @@ void close_internal(struct IO_Event_Selector_EPoll *selector) {
 		
 		IO_Event_Interrupt_close(&selector->interrupt);
 	}
-	
-	if (selector->descriptors.base)
-		free(selector->descriptors.base);
 }
 
 void IO_Event_Selector_EPoll_Type_free(void *_selector)
@@ -107,6 +79,8 @@ void IO_Event_Selector_EPoll_Type_free(void *_selector)
 	struct IO_Event_Selector_EPoll *selector = _selector;
 	
 	close_internal(selector);
+	
+	IO_Event_Array_free(&selector->descriptors);
 	
 	free(selector);
 }
@@ -127,6 +101,40 @@ static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
+// This represents zero or more fibers waiting for a specific descriptor.
+struct IO_Event_Selector_EPoll_Descriptor {
+	struct IO_Event_List list;
+	
+	// The union of all events we are currently waiting on.
+	enum IO_Event events;
+};
+
+inline static
+struct IO_Event_Selector_EPoll_Descriptor * IO_Event_Selector_EPoll_Descriptor_lookup(struct IO_Event_Selector_EPoll *selector, int descriptor)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Array_lookup(&selector->descriptors, descriptor);
+	
+	if (!epoll_descriptor) {
+		rb_sys_fail("IO_Event_Selector_EPoll_Descriptor_lookup:IO_Event_Array_lookup");
+	}
+	
+	return epoll_descriptor;
+}
+
+void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
+	IO_Event_List_initialize(&epoll_descriptor->list);
+	epoll_descriptor->events = 0;
+}
+
+void IO_Event_Selector_EPoll_Descriptor_free(void *element)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
+	
+	IO_Event_List_free(&epoll_descriptor->list);
+}
+
 VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
@@ -135,8 +143,9 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	selector->descriptor = -1;
 	selector->blocked = 0;
 	
-	selector->descriptors.count = 0;
-	selector->descriptors.base = NULL;
+	selector->descriptors.element_initialize = IO_Event_Selector_EPoll_Descriptor_initialize;
+	selector->descriptors.element_free = IO_Event_Selector_EPoll_Descriptor_free;
+	IO_Event_Array_allocate(&selector->descriptors, 1024, sizeof(struct IO_Event_Selector_EPoll_Descriptor));
 	
 	return instance;
 }
@@ -284,7 +293,9 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	rb_update_max_fd(descriptor);
 	
-	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(&selector->descriptors, descriptor);
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
+	
+	epoll_descriptor->events = IO_EVENT_READABLE;
 	
 	struct epoll_event event = {
 		.events = EPOLLIN|EPOLLERR|EPOLLHUP|EPOLLONESHOT,
@@ -300,9 +311,10 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
 		.fiber = fiber,
+		.events = IO_EVENT_READABLE,
 	};
 	
-	IO_Event_List_append(&epoll_descriptor->list, &waiting.list);
+	IO_Event_List_prepend(&epoll_descriptor->list, &waiting.list);
 	
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
@@ -324,9 +336,6 @@ uint32_t epoll_flags_from_events(int events) {
 	
 	flags |= EPOLLHUP;
 	flags |= EPOLLERR;
-	
-	// Immediately remove this descriptor after reading one event:
-	flags |= EPOLLONESHOT;
 	
 	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
 	
@@ -386,22 +395,17 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io); 
-	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(&selector->descriptors, descriptor);
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
 		.fiber = fiber,
 		.events = NUM2INT(events),
 	};
 	
-	struct io_wait_arguments io_wait_arguments = {
-		.selector = selector,
-		.waiting = &waiting,
-	};
-	
 	if ((epoll_descriptor->events & waiting.events) != waiting.events) {
 		// The descriptor is not already armed for the requested events, so we need to re-arm it:
 		struct epoll_event event = {
-			.events = epoll_flags_from_events(waiting.events),
+			.events = epoll_flags_from_events((epoll_descriptor->events | waiting.events)),
 			.data = {.fd = descriptor},
 		};
 		
@@ -417,9 +421,16 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 			
 			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
 		}
+		
+		epoll_descriptor->events |= waiting.events;
 	}
 	
-	IO_Event_List_append(&epoll_descriptor->list, &waiting.list);
+	IO_Event_List_prepend(&epoll_descriptor->list, &waiting.list);
+	
+	struct io_wait_arguments io_wait_arguments = {
+		.selector = selector,
+		.waiting = &waiting,
+	};
 	
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
@@ -722,6 +733,61 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 	}
 }
 
+static
+void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event)
+{
+	int descriptor = event->data.fd;
+	
+	// This is the mask of all events that occured for the given descriptor:
+	enum IO_Event io_event = events_from_epoll_flags(event->events);
+	
+	// This is the mask of all events that we could process:
+	enum IO_Event matched_events = 0;
+	
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
+	struct IO_Event_List *list = &epoll_descriptor->list;
+	struct IO_Event_List *node = list->tail;
+	struct IO_Event_List saved = {NULL, NULL};
+	
+	// It's possible (but unlikely) that the address of list will changing during iteration.
+	while (node != list) {
+		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
+		
+		enum IO_Event matching_events = waiting->events & io_event;
+		
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, events=%d, matching_events=%d\n", descriptor, io_event, matching_events);
+		
+		if (matching_events) {
+			matched_events |= matching_events;
+			
+			IO_Event_List_append(node, &saved);
+			
+			VALUE argument = RB_INT2NUM(matching_events);
+			IO_Event_Selector_fiber_transfer(waiting->fiber, 1, &argument);
+			
+			node = saved.tail;
+			IO_Event_List_pop(&saved);
+		} else {
+			node = node->tail;
+		}
+	}
+	
+	// ... if we receive events we are not waiting for, we should disable them:
+	if (io_event != matched_events) {
+		struct epoll_event epoll_event = {
+			.events = epoll_flags_from_events(epoll_descriptor->events),
+			.data = {.fd = descriptor}
+		};
+	
+		if (epoll_descriptor->events) {
+			epoll_ctl(selector->descriptor, EPOLL_CTL_MOD, descriptor, &epoll_event);
+		} else {
+			epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, &epoll_event);
+		}
+	}
+}
+
+// TODO This function is not re-entrant and we should document and assert as such.
 VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
@@ -759,35 +825,8 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		const struct epoll_event *event = &arguments.events[i];
 		if (DEBUG) fprintf(stderr, "-> ptr=%p events=%d\n", event->data.ptr, event->events);
 		
-		int descriptor = event->data.fd;
-		if (descriptor >= 0) {
-			enum IO_Event io_event = events_from_epoll_flags(event->events);
-			
-			struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = selector->descriptors.base + descriptor;
-			struct IO_Event_List * list = &epoll_descriptor->list;
-			struct IO_Event_List * node = list->tail;
-			
-			while (node != list) {
-				struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
-				if (waiting->events & io_event) {
-					VALUE argument = RB_INT2NUM(io_event);
-					IO_Event_Selector_fiber_transfer(waiting->fiber, 1, &argument);
-				}
-			}
-			
-			// If we get here, it means no fibers were waiting for the event, so let's unregister it.
-			epoll_descriptor->events &= ~io_event;
-			
-			struct epoll_event event = {
-				.events = epoll_flags_from_events(epoll_descriptor->events),
-				.data = {.fd = descriptor}
-			};
-			
-			if (epoll_descriptor->events) {
-				epoll_ctl(selector->descriptor, EPOLL_CTL_MOD, descriptor, &event);
-			} else {
-				epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, &event);
-			}
+		if (event->data.fd >= 0) {
+			IO_Event_Selector_EPoll_handle(selector, event);
 		} else {
 			IO_Event_Interrupt_clear(&selector->interrupt);
 		}

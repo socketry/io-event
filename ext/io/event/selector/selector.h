@@ -132,28 +132,3 @@ void IO_Event_Selector_current_time(struct timespec *time);
 
 #define PRINTF_TIMESPEC "%lld.%.9ld"
 #define PRINTF_TIMESPEC_ARGS(ts) (long long)((ts).tv_sec), (ts).tv_nsec
-
-inline static void* IO_Event_Array_resize(void *base, size_t size, size_t new_size, size_t element_size)
-{
-	assert(new_size >= size);
-	
-	if (new_size == size) {
-		return base;
-	}
-	
-	void *new_base = realloc(base, new_size * element_size);
-	
-	if (new_base == NULL) {
-		return NULL;
-	}
-	
-	// Zero the new memory.
-	memset((char*)new_base + size * element_size, 0, (new_size - size) * element_size);
-	
-	return new_base;
-}
-
-inline static void IO_Event_Array_free(void *base)
-{
-	free(base);
-}
