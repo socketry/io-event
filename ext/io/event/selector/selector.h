@@ -40,7 +40,10 @@ enum IO_Event {
 	IO_EVENT_PRIORITY = 2,
 	IO_EVENT_WRITABLE = 4,
 	IO_EVENT_ERROR = 8,
-	IO_EVENT_HANGUP = 16
+	IO_EVENT_HANGUP = 16,
+	
+	// Used by kqueue to differentiate between process exit and file descriptor events:
+	IO_EVENT_EXIT = 32,
 };
 
 void Init_IO_Event_Selector(VALUE IO_Event_Selector);

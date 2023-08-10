@@ -20,6 +20,8 @@
 
 #include "kqueue.h"
 #include "selector.h"
+#include "list.h"
+#include "array.h"
 
 #include <sys/event.h>
 #include <sys/ioctl.h>
@@ -37,11 +39,23 @@ static VALUE IO_Event_Selector_KQueue = Qnil;
 
 enum {KQUEUE_MAX_EVENTS = 64};
 
+// This represents an actual fiber waiting for a specific event.
+struct IO_Event_Selector_KQueue_Waiting {
+	struct IO_Event_List list;
+	
+	// The events the fiber is waiting for.
+	enum IO_Event events;
+	
+	// The fiber value itself.
+	VALUE fiber;
+};
+
 struct IO_Event_Selector_KQueue {
 	struct IO_Event_Selector backend;
 	int descriptor;
-	
 	int blocked;
+	
+	struct IO_Event_Array descriptors;
 };
 
 void IO_Event_Selector_KQueue_Type_mark(void *_selector)
@@ -64,6 +78,8 @@ void IO_Event_Selector_KQueue_Type_free(void *_selector)
 	
 	close_internal(selector);
 	
+	IO_Event_Array_free(&selector->descriptors);
+	
 	free(selector);
 }
 
@@ -83,6 +99,43 @@ static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
+// This represents zero or more fibers waiting for a specific descriptor.
+struct IO_Event_Selector_KQueue_Descriptor {
+	struct IO_Event_List list;
+	
+	// The union of all events we are currently waiting on.
+	enum IO_Event events;
+	
+	// The events that are currently ready:
+	enum IO_Event ready;
+};
+
+inline static
+struct IO_Event_Selector_KQueue_Descriptor * IO_Event_Selector_KQueue_Descriptor_lookup(struct IO_Event_Selector_KQueue *selector, int descriptor)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Array_lookup(&selector->descriptors, descriptor);
+	
+	if (!kqueue_descriptor) {
+		rb_sys_fail("IO_Event_Selector_KQueue_Descriptor_lookup:IO_Event_Array_lookup");
+	}
+	
+	return kqueue_descriptor;
+}
+
+void IO_Event_Selector_KQueue_Descriptor_initialize(void *element)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = element;
+	IO_Event_List_initialize(&kqueue_descriptor->list);
+	kqueue_descriptor->events = 0;
+}
+
+void IO_Event_Selector_KQueue_Descriptor_free(void *element)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = element;
+	
+	IO_Event_List_free(&kqueue_descriptor->list);
+}
+
 VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -90,6 +143,10 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	IO_Event_Selector_initialize(&selector->backend, Qnil);
 	selector->descriptor = -1;
 	selector->blocked = 0;
+	
+	selector->descriptors.element_initialize = IO_Event_Selector_KQueue_Descriptor_initialize;
+	selector->descriptors.element_free = IO_Event_Selector_KQueue_Descriptor_free;
+	IO_Event_Array_allocate(&selector->descriptors, 1024, sizeof(struct IO_Event_Selector_KQueue_Descriptor));
 	
 	return instance;
 }
@@ -104,7 +161,9 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	if (result == -1) {
 		rb_sys_fail("IO_Event_Selector_KQueue_initialize:kqueue");
 	} else {
+		// Make sure the descriptor is closed on exec.
 		ioctl(result, FIOCLEX);
+		
 		selector->descriptor = result;
 		
 		rb_update_max_fd(selector->descriptor);
@@ -178,48 +237,88 @@ VALUE IO_Event_Selector_KQueue_ready_p(VALUE self) {
 	return selector->backend.ready ? Qtrue : Qfalse;
 }
 
-struct process_wait_arguments {
-	struct IO_Event_Selector_KQueue *selector;
-	pid_t pid;
-	int flags;
-};
-
-static
-int process_add_filters(int descriptor, int ident, VALUE fiber) {
-	struct kevent event = {0};
+inline static
+int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, int ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor, struct IO_Event_Selector_KQueue_Waiting *waiting)
+{
+	int count = 0;
+	struct kevent kevents[3] = {0};
 	
-	event.ident = ident;
-	event.filter = EVFILT_PROC;
-	event.flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
-	event.fflags = NOTE_EXIT;
-	event.udata = (void*)fiber;
+	// This operation is additive:
+	enum IO_Event events = kqueue_descriptor->events;
 	
-	int result = kevent(descriptor, &event, 1, NULL, 0, NULL);
+	if (waiting) events |= waiting->events;
+	
+	if (events & IO_EVENT_READABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_READ;
+		kevents[count].flags = EV_ADD | EV_ENABLE;
+		kevents[count].udata = (void *)kqueue_descriptor;
+		
+// #ifdef EV_OOBAND
+// 		if (events & IO_EVENT_PRIORITY) {
+// 			kevents[count].flags |= EV_OOBAND;
+// 		}
+// #endif
+		
+		count++;
+	}
+	
+	if (events & IO_EVENT_WRITABLE) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_WRITE;
+		kevents[count].flags = EV_ADD | EV_ENABLE;
+		kevents[count].udata = (void *)kqueue_descriptor;
+		count++;
+	}
+	
+	if (events & IO_EVENT_EXIT) {
+		kevents[count].ident = ident;
+		kevents[count].filter = EVFILT_PROC;
+		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].fflags = NOTE_EXIT;
+		kevents[count].udata = (void *)kqueue_descriptor;
+		count++;
+	}
+	
+	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
 		// No such process - the process has probably already terminated:
-		if (errno == ESRCH) {
-			return 0;
-		}
+		// if (errno == ESRCH) {
+		// 	return 0;
+		// }
 		
-		rb_sys_fail("process_add_filters:kevent");
+		rb_sys_fail("IO_Event_Selector_KQueue_arm:kevent");
 	}
 	
-	return 1;
+	kqueue_descriptor->events = events;
+	
+	if (waiting) {
+		IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
+	}
+	
+	return count;
 }
 
-static
-void process_remove_filters(int descriptor, int ident) {
-	struct kevent event = {0};
-	
-	event.ident = ident;
-	event.filter = EVFILT_PROC;
-	event.flags = EV_DELETE | EV_UDATA_SPECIFIC;
-	event.fflags = NOTE_EXIT;
-	
-	// Ignore the result.
-	kevent(descriptor, &event, 1, NULL, 0, NULL);
+inline static
+events_from_kevent_filter(int filter) {
+	switch (filter) {
+		case EVFILT_READ:
+			return IO_EVENT_READABLE;
+		case EVFILT_WRITE:
+			return IO_EVENT_WRITABLE;
+		case EVFILT_PROC:
+			return IO_EVENT_EXIT;
+		default:
+			return 0;
+	}
 }
+
+struct process_wait_arguments {
+	struct IO_Event_Selector_KQueue *selector;
+	struct IO_Event_Selector_KQueue_Waiting *waiting;
+	pid_t pid;
+};
 
 static
 VALUE process_wait_transfer(VALUE _arguments) {
@@ -231,122 +330,52 @@ VALUE process_wait_transfer(VALUE _arguments) {
 }
 
 static
-VALUE process_wait_rescue(VALUE _arguments, VALUE exception) {
+VALUE process_wait_ensure(VALUE _arguments, VALUE exception) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	process_remove_filters(arguments->selector->descriptor, arguments->pid);
+	IO_Event_List_pop(&arguments->waiting->list);
 	
-	rb_exc_raise(exception);
+	return Qnil;
 }
 
-VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
+	pid_t pid = NUM2PIDT(_pid);
+	
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Selector_KQueue_Descriptor_lookup(selector, pid);
+	
+	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.fiber = fiber,
+		.events = IO_EVENT_EXIT,
+	};
+	
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
-		.pid = NUM2PIDT(pid),
-		.flags = RB_NUM2INT(flags),
+		.waiting = &waiting,
+		.pid = pid,
 	};
 	
 	VALUE result = Qnil;
 	
-	// This loop should not be needed but I have seen a race condition between NOTE_EXIT and `waitpid`, thus the result would be (unexpectedly) nil. So we put this in a loop to retry if the race condition shows up:
-	while (NIL_P(result)) {
-		int waiting = process_add_filters(selector->descriptor, process_wait_arguments.pid, fiber);
+	IO_Event_Selector_KQueue_arm(selector, pid, kqueue_descriptor, IO_EVENT_EXIT);
 	
-		if (waiting) {
-			result = rb_rescue(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_rescue, (VALUE)&process_wait_arguments);
-		} else {
-			result = IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
-		}
-	}
-	
-	return result;
-}
-
-static
-int io_add_filters(int descriptor, int ident, int events, VALUE fiber) {
-	int count = 0;
-	struct kevent kevents[2] = {0};
-	
-	if (events & IO_EVENT_READABLE) {
-		kevents[count].ident = ident;
-		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
-		kevents[count].udata = (void*)fiber;
-		
-// #ifdef EV_OOBAND
-// 		if (events & PRIORITY) {
-// 			kevents[count].flags |= EV_OOBAND;
-// 		}
-// #endif
-		
-		count++;
-	}
-	
-	if (events & IO_EVENT_WRITABLE) {
-		kevents[count].ident = ident;
-		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT | EV_UDATA_SPECIFIC;
-		kevents[count].udata = (void*)fiber;
-		count++;
-	}
-	
-	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
-	
-	if (result == -1) {
-		rb_sys_fail("io_add_filters:kevent");
-	}
-	
-	return events;
-}
-
-static
-void io_remove_filters(int descriptor, int ident, int events) {
-	int count = 0;
-	struct kevent kevents[2] = {0};
-	
-	if (events & IO_EVENT_READABLE) {
-		kevents[count].ident = ident;
-		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_DELETE | EV_UDATA_SPECIFIC;
-		
-		count++;
-	}
-	
-	if (events & IO_EVENT_WRITABLE) {
-		kevents[count].ident = ident;
-		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_DELETE | EV_UDATA_SPECIFIC;
-		count++;
-	}
-	
-	// Ignore the result.
-	kevent(descriptor, kevents, count, NULL, 0, NULL);
+	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
 struct io_wait_arguments {
 	struct IO_Event_Selector_KQueue *selector;
-	int events;
-	int descriptor;
+	struct IO_Event_Selector_KQueue_Waiting *waiting;
 };
 
 static
-VALUE io_wait_rescue(VALUE _arguments, VALUE exception) {
+VALUE io_wait_ensure(VALUE _arguments, VALUE exception) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	io_remove_filters(arguments->selector->descriptor, arguments->descriptor, arguments->events);
+	IO_Event_List_pop(&arguments->waiting->list);
 	
-	rb_exc_raise(exception);
-}
-
-static inline
-int events_from_kqueue_filter(int filter) {
-	if (filter == EVFILT_READ) return IO_EVENT_READABLE;
-	if (filter == EVFILT_WRITE) return IO_EVENT_WRITABLE;
-	
-	return 0;
+	return Qnil;
 }
 
 static
@@ -368,16 +397,23 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Array_lookup(&selector->descriptors, descriptor);
+	
+	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.fiber = fiber,
+		.events = RB_NUM2INT(events),
+	};
+	
+	IO_Event_Selector_KQueue_arm(selector, descriptor, kqueue_descriptor, &waiting);
 	
 	struct io_wait_arguments io_wait_arguments = {
-		.events = io_add_filters(selector->descriptor, descriptor, RB_NUM2INT(events), fiber),
 		.selector = selector,
 		.descriptor = descriptor,
 	};
 	
 	if (DEBUG_IO_WAIT) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait descriptor=%d\n", descriptor);
 	
-	return rb_rescue(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_rescue, (VALUE)&io_wait_arguments);
+	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
@@ -670,6 +706,56 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 	}
 }
 
+static
+void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, int ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
+{
+	// This is the mask of all events that occured for the given descriptor:
+	enum IO_Event io_event = kqueue_descriptor->ready;
+	
+	if (io_event) {
+		kqueue_descriptor->ready = 0;
+	} else {
+		return;
+	}
+	
+	// This is the mask of all events that we could process:
+	enum IO_Event matched_events = 0, waiting_events = 0;
+	
+	struct IO_Event_List *list = &kqueue_descriptor->list;
+	struct IO_Event_List *node = list->tail;
+	struct IO_Event_List saved = {NULL, NULL};
+	
+	// It's possible (but unlikely) that the address of list will changing during iteration.
+	while (node != list) {
+		struct IO_Event_Selector_KQueue_Waiting *waiting = (struct IO_Event_Selector_KQueue_Waiting *)node;
+		
+		enum IO_Event matching_events = waiting->events & io_event;
+		waiting_events |= waiting->events;
+		
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: descriptor=%d, events=%d, matching_events=%d\n", descriptor, io_event, matching_events);
+		
+		if (matching_events) {
+			matched_events |= matching_events;
+			
+			IO_Event_List_append(node, &saved);
+			
+			VALUE argument = RB_INT2NUM(matching_events);
+			IO_Event_Selector_fiber_transfer(waiting->fiber, 1, &argument);
+			
+			node = saved.tail;
+			IO_Event_List_pop(&saved);
+		} else {
+			node = node->tail;
+		}
+	}
+	
+	// ... if we receive events we are not waiting for, we should disable them:
+	if (kqueue_descriptor->events != waiting_events) {
+		kqueue_descriptor->events = waiting_events;
+		IO_Event_Selector_KQueue_arm(selector, ident, kqueue_descriptor, NULL);
+	}
+}
+
 VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -716,14 +802,19 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	
 	for (int i = 0; i < arguments.count; i += 1) {
 		if (arguments.events[i].udata) {
-			VALUE fiber = (VALUE)arguments.events[i].udata;
-			VALUE result = INT2NUM(arguments.events[i].filter);
-			
-			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
+			kqueue_descriptor->ready |= events_from_kevent_filter(arguments.events[i].filter);
 		}
 	}
 	
-	return INT2NUM(arguments.count);
+	for (int i = 0; i < arguments.count; i += 1) {
+		if (arguments.events[i].udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
+			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor);
+		}
+	}
+	
+	return RB_INT2NUM(arguments.count);
 }
 
 VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {

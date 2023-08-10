@@ -294,7 +294,6 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	rb_update_max_fd(descriptor);
 	
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
-	
 	epoll_descriptor->events = IO_EVENT_READABLE;
 	
 	struct epoll_event event = {
@@ -750,7 +749,7 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 	enum IO_Event io_event = events_from_epoll_flags(event->events);
 	
 	// This is the mask of all events that we could process:
-	enum IO_Event matched_events = 0;
+	enum IO_Event matched_events = 0, waiting_events = 0;
 	
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
 	struct IO_Event_List *list = &epoll_descriptor->list;
@@ -762,6 +761,7 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
 		
 		enum IO_Event matching_events = waiting->events & io_event;
+		waiting_events |= waiting->events;
 		
 		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, events=%d, matching_events=%d\n", descriptor, io_event, matching_events);
 		
@@ -781,7 +781,9 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 	}
 	
 	// ... if we receive events we are not waiting for, we should disable them:
-	if (io_event != matched_events) {
+	if (epoll_descriptor->events != waiting_events) {
+		epoll_descriptor->events = waiting_events;
+		
 		struct epoll_event epoll_event = {
 			.events = epoll_flags_from_events(epoll_descriptor->events),
 			.data = {.fd = descriptor}
