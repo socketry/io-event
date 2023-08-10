@@ -388,7 +388,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 		return Qfalse;
 	}
 	
-	return RB_INT2NUM(events_from_kevent_filter(RB_NUM2INT(result)));
+	return result;
 }
 
 VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
