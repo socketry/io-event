@@ -68,7 +68,7 @@ inline static int IO_Event_Array_resize(struct IO_Event_Array *array, size_t cou
 		new_count *= 2;
 	}
 	
-	void **new_base = (void**)reallocarray(array->base, new_count, sizeof(void*));
+	void **new_base = (void**)realloc(array->base, new_count * sizeof(void*));
 	
 	if (new_base == NULL) {
 		return -1;

@@ -238,7 +238,7 @@ VALUE IO_Event_Selector_KQueue_ready_p(VALUE self) {
 }
 
 inline static
-int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, int ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor, struct IO_Event_Selector_KQueue_Waiting *waiting)
+int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uintptr_t ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor, struct IO_Event_Selector_KQueue_Waiting *waiting)
 {
 	int count = 0;
 	struct kevent kevents[3] = {0};
@@ -280,7 +280,7 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, int 
 		count++;
 	}
 	
-	int result = kevent(descriptor, kevents, count, NULL, 0, NULL);
+	int result = kevent(selector->descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
 		// No such process - the process has probably already terminated:
@@ -301,7 +301,7 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, int 
 }
 
 inline static
-events_from_kevent_filter(int filter) {
+enum IO_Event events_from_kevent_filter(int filter) {
 	switch (filter) {
 		case EVFILT_READ:
 			return IO_EVENT_READABLE;
@@ -330,7 +330,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 }
 
 static
-VALUE process_wait_ensure(VALUE _arguments, VALUE exception) {
+VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
 	IO_Event_List_pop(&arguments->waiting->list);
@@ -357,9 +357,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 		.pid = pid,
 	};
 	
-	VALUE result = Qnil;
-	
-	IO_Event_Selector_KQueue_arm(selector, pid, kqueue_descriptor, IO_EVENT_EXIT);
+	IO_Event_Selector_KQueue_arm(selector, pid, kqueue_descriptor, &waiting);
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
@@ -370,7 +368,7 @@ struct io_wait_arguments {
 };
 
 static
-VALUE io_wait_ensure(VALUE _arguments, VALUE exception) {
+VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
 	IO_Event_List_pop(&arguments->waiting->list);
@@ -389,7 +387,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 		return Qfalse;
 	}
 	
-	return INT2NUM(events_from_kqueue_filter(RB_NUM2INT(result)));
+	return RB_INT2NUM(events_from_kevent_filter(RB_NUM2INT(result)));
 }
 
 VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
@@ -408,7 +406,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
-		.descriptor = descriptor,
+		.waiting = &waiting,
 	};
 	
 	if (DEBUG_IO_WAIT) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait descriptor=%d\n", descriptor);
@@ -707,7 +705,7 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 static
-void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, int ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
+void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, uintptr_t ident, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
 {
 	// This is the mask of all events that occured for the given descriptor:
 	enum IO_Event io_event = kqueue_descriptor->ready;
@@ -719,7 +717,7 @@ void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, 
 	}
 	
 	// This is the mask of all events that we could process:
-	enum IO_Event matched_events = 0, waiting_events = 0;
+	enum IO_Event waiting_events = 0;
 	
 	struct IO_Event_List *list = &kqueue_descriptor->list;
 	struct IO_Event_List *node = list->tail;
@@ -732,11 +730,9 @@ void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, 
 		enum IO_Event matching_events = waiting->events & io_event;
 		waiting_events |= waiting->events;
 		
-		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: descriptor=%d, events=%d, matching_events=%d\n", descriptor, io_event, matching_events);
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: ident=%lu, events=%d, matching_events=%d\n", ident, io_event, matching_events);
 		
 		if (matching_events) {
-			matched_events |= matching_events;
-			
 			IO_Event_List_append(node, &saved);
 			
 			VALUE argument = RB_INT2NUM(matching_events);
