@@ -406,11 +406,12 @@ VALUE io_read_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, offset, maximum_size);
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
 		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
@@ -428,10 +429,12 @@ VALUE io_read_loop(VALUE _arguments) {
 			if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 static
@@ -504,6 +507,7 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -511,13 +515,14 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, offset, maximum_size, length);
 		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
 		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -530,10 +535,12 @@ VALUE io_write_loop(VALUE _arguments) {
 			if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 };
 
 static

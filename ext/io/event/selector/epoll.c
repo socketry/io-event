@@ -461,12 +461,14 @@ VALUE io_read_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -477,9 +479,11 @@ VALUE io_read_loop(VALUE _arguments) {
 		} else {
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 static
@@ -549,16 +553,18 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -569,9 +575,11 @@ VALUE io_write_loop(VALUE _arguments) {
 		} else {
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 };
 
 static
