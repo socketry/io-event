@@ -127,6 +127,7 @@ void IO_Event_Selector_KQueue_Descriptor_initialize(void *element)
 	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = element;
 	IO_Event_List_initialize(&kqueue_descriptor->list);
 	kqueue_descriptor->events = 0;
+	kqueue_descriptor->ready = 0;
 }
 
 void IO_Event_Selector_KQueue_Descriptor_free(void *element)
@@ -451,6 +452,7 @@ VALUE io_read_loop(VALUE _arguments) {
 		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
