@@ -32,7 +32,6 @@
 
 enum {
 	DEBUG = 0,
-	DEBUG_IO_READ = 0,
 };
 
 static VALUE IO_Event_Selector_URing = Qnil;
@@ -510,14 +509,14 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
+	size_t total = 0;
 	
-	while (true) {
-		size_t maximum_size = size - offset;
-		if (DEBUG_IO_READ) fprintf(stderr, "io_read(%d, +%ld, %ld)\n", descriptor, offset, maximum_size);
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size);
-		if (DEBUG_IO_READ) fprintf(stderr, "io_read(%d, +%ld, %ld) -> %d\n", descriptor, offset, maximum_size, result);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -528,9 +527,11 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 		} else {
 			return rb_fiber_scheduler_io_result(-1, -result);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, VALUE self)
@@ -628,16 +629,18 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
+	size_t total = 0;
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
-	
-	while (true) {
-		size_t maximum_size = size - offset;
+
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -648,9 +651,11 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 		} else {
 			return rb_fiber_scheduler_io_result(-1, -result);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, VALUE self)
