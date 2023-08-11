@@ -246,7 +246,6 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
-		kevents[count].udata = (void *)kqueue_descriptor;
 		
 // #ifdef EV_OOBAND
 // 		if (events & IO_EVENT_PRIORITY) {
@@ -261,7 +260,6 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
-		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
 	
@@ -270,7 +268,6 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 		kevents[count].filter = EVFILT_PROC;
 		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
 		kevents[count].fflags = NOTE_EXIT;
-		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
 	
@@ -778,15 +775,15 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	}
 	
 	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
+		struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Selector_KQueue_Descriptor_lookup(selector, (int)arguments.events[i].ident);
+		if (kqueue_descriptor) {
 			kqueue_descriptor->ready |= events_from_kevent_filter(arguments.events[i].filter);
 		}
 	}
 	
 	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
+		struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Selector_KQueue_Descriptor_lookup(selector, (int)arguments.events[i].ident);
+		if (kqueue_descriptor) {
 			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor);
 		}
 	}
