@@ -748,9 +748,6 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 	// This is the mask of all events that occured for the given descriptor:
 	enum IO_Event io_event = events_from_epoll_flags(event->events);
 	
-	// This is the mask of all events that we could process:
-	enum IO_Event matched_events = 0, waiting_events = 0;
-	
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
 	struct IO_Event_List *list = &epoll_descriptor->list;
 	struct IO_Event_List *node = list->tail;
@@ -761,13 +758,10 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
 		
 		enum IO_Event matching_events = waiting->events & io_event;
-		waiting_events |= waiting->events;
 		
 		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, events=%d, matching_events=%d\n", descriptor, io_event, matching_events);
 		
 		if (matching_events) {
-			matched_events |= matching_events;
-			
 			IO_Event_List_append(node, &saved);
 			
 			VALUE argument = RB_INT2NUM(matching_events);
@@ -778,6 +772,14 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 		} else {
 			node = node->tail;
 		}
+	}
+	
+	// Now that fibers have had a chance to change what events they are waiting on, gather the new union set of events we should be waiting on next for this descriptor.
+	enum IO_Event waiting_events = 0;
+	
+	for (node = list->tail; node != list; node = node->tail) {
+		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
+		waiting_events |= waiting->events;
 	}
 	
 	// ... if we receive events we are not waiting for, we should disable them:

@@ -379,6 +379,29 @@ Selector = Sus::Shared("a selector") do
 				:io_read, :write
 			]
 		end
+		
+		it "can stop reading when reads are ready" do
+			# This could trigger a busy-loop in the KQueue selector.
+			return unless selector.respond_to?(:io_read)
+			
+			fiber = Fiber.new do
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.get_string(0, offset)).to be == message
+				sleep(0.1)
+			end
+			
+			fiber.transfer
+			
+			remote.write(message)
+			
+			expect(selector.select(0)).to be == 1
+			
+			remote.write(message)
+			
+			10.times do
+				expect(selector.select(0)).to be == 0
+			end
+		end
 	end
 	
 	with '#io_write' do
