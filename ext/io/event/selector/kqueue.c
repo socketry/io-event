@@ -823,10 +823,19 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
-		trigger.flags = EV_ADD | EV_CLEAR | EV_UDATA_SPECIFIC;
-		trigger.fflags = NOTE_TRIGGER;
+		trigger.flags = EV_ADD | EV_CLEAR;
 		
 		int result = kevent(selector->descriptor, &trigger, 1, NULL, 0, NULL);
+		
+		if (result == -1) {
+			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
+		}
+		
+		// FreeBSD apparently only works if the NOTE_TRIGGER is done as a separate call.
+		trigger.flags = 0;
+		trigger.fflags = NOTE_TRIGGER;
+		
+		result = kevent(selector->descriptor, &trigger, 1, NULL, 0, NULL);
 		
 		if (result == -1) {
 			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
