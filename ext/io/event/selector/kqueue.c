@@ -103,6 +103,9 @@ static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
 struct IO_Event_Selector_KQueue_Descriptor {
 	struct IO_Event_List list;
 	
+	// The union of all events we are currently waiting on.
+	enum IO_Event events;
+	
 	// The events that are currently ready:
 	enum IO_Event ready;
 };
@@ -123,6 +126,7 @@ void IO_Event_Selector_KQueue_Descriptor_initialize(void *element)
 {
 	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = element;
 	IO_Event_List_initialize(&kqueue_descriptor->list);
+	kqueue_descriptor->events = 0;
 	kqueue_descriptor->ready = 0;
 }
 
@@ -240,12 +244,15 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 	int count = 0;
 	struct kevent kevents[3] = {0};
 	
-	enum IO_Event events = waiting->events;
+	// This operation is additive:
+	enum IO_Event events = kqueue_descriptor->events;
+	
+	if (waiting) events |= waiting->events;
 	
 	if (events & IO_EVENT_READABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].flags = EV_ADD | EV_ENABLE;
 		kevents[count].udata = (void *)kqueue_descriptor;
 		
 // #ifdef EV_OOBAND
@@ -260,7 +267,7 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 	if (events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = ident;
 		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].flags = EV_ADD | EV_ENABLE;
 		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
@@ -285,7 +292,11 @@ int IO_Event_Selector_KQueue_arm(struct IO_Event_Selector_KQueue *selector, uint
 		rb_sys_fail("IO_Event_Selector_KQueue_arm:kevent");
 	}
 	
-	IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
+	kqueue_descriptor->events = events;
+	
+	if (waiting) {
+		IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
+	}
 	
 	return count;
 }
@@ -707,6 +718,9 @@ void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, 
 		return;
 	}
 	
+	// This is the mask of all events that we could process:
+	enum IO_Event waiting_events = 0;
+	
 	struct IO_Event_List *list = &kqueue_descriptor->list;
 	struct IO_Event_List *node = list->tail;
 	struct IO_Event_List saved = {NULL, NULL};
@@ -716,6 +730,7 @@ void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, 
 		struct IO_Event_Selector_KQueue_Waiting *waiting = (struct IO_Event_Selector_KQueue_Waiting *)node;
 		
 		enum IO_Event matching_events = waiting->events & io_event;
+		waiting_events |= waiting->events;
 		
 		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: ident=%lu, events=%d, matching_events=%d\n", ident, io_event, matching_events);
 		
@@ -730,6 +745,12 @@ void IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, 
 		} else {
 			node = node->tail;
 		}
+	}
+	
+	// ... if we receive events we are not waiting for, we should disable them:
+	if (kqueue_descriptor->events != waiting_events) {
+		kqueue_descriptor->events = waiting_events;
+		IO_Event_Selector_KQueue_arm(selector, ident, kqueue_descriptor, NULL);
 	}
 }
 
