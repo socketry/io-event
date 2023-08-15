@@ -784,7 +784,7 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 static
-void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event)
+int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event)
 {
 	int descriptor = event->data.fd;
 	
@@ -824,7 +824,7 @@ void IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, co
 		}
 	}
 	
-	IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
+	return IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
 }
 
 // TODO This function is not re-entrant and we should document and assert as such.

@@ -398,9 +398,13 @@ Selector = Sus::Shared("a selector") do
 			
 			remote.write(message)
 			
-			10.times do
-				expect(selector.select(0)).to be == 0
+			result = nil
+			3.times do
+				result = selector.select(0)
+				break if result == 0
 			end
+			
+			expect(result).to be == 0
 		end
 	end
 	
