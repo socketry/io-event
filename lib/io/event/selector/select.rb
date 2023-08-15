@@ -165,8 +165,8 @@ module IO::Event
 					total = 0
 					
 					Selector.nonblock(io) do
-						while true
-							maximum_size = buffer.size - offset
+						maximum_size = buffer.size - offset
+						while maximum_size > 0
 							result = Fiber.blocking{buffer.read(io, maximum_size, offset)}
 							
 							if again?(result)
@@ -182,6 +182,8 @@ module IO::Event
 								offset += result
 								break if total >= length
 							end
+							
+							maximum_size = buffer.size - offset
 						end
 					end
 					
@@ -192,8 +194,8 @@ module IO::Event
 					total = 0
 					
 					Selector.nonblock(io) do
-						while true
-							maximum_size = buffer.size - offset
+						maximum_size = buffer.size - offset
+						while maximum_size > 0
 							result = Fiber.blocking{buffer.write(io, maximum_size, offset)}
 							
 							if again?(result)
@@ -209,6 +211,8 @@ module IO::Event
 								offset += result
 								break if total >= length
 							end
+							
+							maximum_size = buffer.size - offset
 						end
 					end
 					
@@ -219,9 +223,8 @@ module IO::Event
 					io = IO.for_fd(_io.fileno, autoclose: false)
 					total = 0
 					
-					while true
-						maximum_size = buffer.size - offset
-						
+					maximum_size = buffer.size - offset
+					while maximum_size > 0
 						case result = blocking{io.read_nonblock(maximum_size, exception: false)}
 						when :wait_readable
 							if length > 0
@@ -246,6 +249,8 @@ module IO::Event
 							break if size >= length
 							length -= size
 						end
+						
+						maximum_size = buffer.size - offset
 					end
 					
 					return total
@@ -259,9 +264,8 @@ module IO::Event
 					io = IO.for_fd(_io.fileno, autoclose: false)
 					total = 0
 					
-					while true
-						maximum_size = buffer.size - offset
-						
+					maximum_size = buffer.size - offset
+					while maximum_size > 0
 						chunk = buffer.get_string(offset, maximum_size)
 						case result = blocking{io.write_nonblock(chunk, exception: false)}
 						when :wait_readable
@@ -282,6 +286,8 @@ module IO::Event
 							break if result >= length
 							length -= result
 						end
+						
+						maximum_size = buffer.size - offset
 					end
 					
 					return total

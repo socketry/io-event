@@ -283,6 +283,49 @@ Selector = Sus::Shared("a selector") do
 				:select, :readable, :readable
 			]
 		end
+		
+		it "can handle exception raised during wait from another fiber that was waiting on the same io" do
+			[false, true].each do |swapped| # Try both orderings.
+				writable1 = writable2 = false
+				error1 = false
+				raised1 = false
+				
+				boom = Class.new(RuntimeError)
+				
+				fiber1 = fiber2 = nil
+				
+				fiber1 = Fiber.new do
+					begin
+						selector.io_wait(Fiber.current, local, IO::WRITABLE)
+					rescue boom
+						error1 = true
+						# Transfer back to the signaling fiber to simulate doing something similar to raising an exception in an asynchronous task or thread.
+						fiber2.transfer
+					end
+					writable1 = true
+				end
+				
+				fiber2 = Fiber.new do
+					selector.io_wait(Fiber.current, local, IO::WRITABLE)
+					# Don't do anything if the other fiber was resumed before we were by the selector.
+					unless writable1
+						raised1 = true
+						fiber1.raise(boom) # Will return here.
+					end
+					writable2 = true
+				end
+				
+				fiber1.transfer unless swapped
+				fiber2.transfer
+				fiber1.transfer if swapped
+				selector.select(0)
+				
+				# If fiber2 did manage to be resumed by the selector before fiber1, it should have raised an exception in fiber1, and fiber1 should not have been resumed by the selector since its #io_wait call should have been cancelled.
+				expect(error1).to be == raised1
+				expect(writable1).to be == !raised1
+				expect(writable2).to be == true
+			end
+		end
 	end
 	
 	with '#io_read' do
@@ -335,6 +378,33 @@ Selector = Sus::Shared("a selector") do
 			expect(events).to be == [
 				:io_read, :write
 			]
+		end
+		
+		it "can stop reading when reads are ready" do
+			# This could trigger a busy-loop in the KQueue selector.
+			return unless selector.respond_to?(:io_read)
+			
+			fiber = Fiber.new do
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				expect(buffer.get_string(0, offset)).to be == message
+				sleep(0.1)
+			end
+			
+			fiber.transfer
+			
+			remote.write(message)
+			
+			expect(selector.select(0)).to be == 1
+			
+			remote.write(message)
+			
+			result = nil
+			3.times do
+				result = selector.select(0)
+				break if result == 0
+			end
+			
+			expect(result).to be == 0
 		end
 	end
 	

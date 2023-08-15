@@ -20,6 +20,8 @@
 
 #include "kqueue.h"
 #include "selector.h"
+#include "list.h"
+#include "array.h"
 
 #include <sys/epoll.h>
 #include <time.h>
@@ -36,11 +38,29 @@ static VALUE IO_Event_Selector_EPoll = Qnil;
 
 enum {EPOLL_MAX_EVENTS = 64};
 
-struct IO_Event_Selector_EPoll {
+// This represents an actual fiber waiting for a specific event.
+struct IO_Event_Selector_EPoll_Waiting
+{
+	struct IO_Event_List list;
+	
+	// The events the fiber is waiting for.
+	enum IO_Event events;
+	
+	// The events that are currently ready.
+	enum IO_Event ready;
+	
+	// The fiber value itself.
+	VALUE fiber;
+};
+
+struct IO_Event_Selector_EPoll
+{
 	struct IO_Event_Selector backend;
 	int descriptor;
 	int blocked;
+	
 	struct IO_Event_Interrupt interrupt;
+	struct IO_Event_Array descriptors;
 };
 
 void IO_Event_Selector_EPoll_Type_mark(void *_selector)
@@ -50,7 +70,8 @@ void IO_Event_Selector_EPoll_Type_mark(void *_selector)
 }
 
 static
-void close_internal(struct IO_Event_Selector_EPoll *selector) {
+void close_internal(struct IO_Event_Selector_EPoll *selector)
+{
 	if (selector->descriptor >= 0) {
 		close(selector->descriptor);
 		selector->descriptor = -1;
@@ -64,6 +85,8 @@ void IO_Event_Selector_EPoll_Type_free(void *_selector)
 	struct IO_Event_Selector_EPoll *selector = _selector;
 	
 	close_internal(selector);
+	
+	IO_Event_Array_free(&selector->descriptors);
 	
 	free(selector);
 }
@@ -84,12 +107,145 @@ static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
+// This represents zero or more fibers waiting for a specific descriptor.
+struct IO_Event_Selector_EPoll_Descriptor
+{
+	struct IO_Event_List list;
+	
+	// The union of all events we are waiting for:
+	enum IO_Event waiting_events;
+	
+	// The union of events we are registered for:
+	enum IO_Event registered_events;
+};
+
+inline static
+struct IO_Event_Selector_EPoll_Descriptor * IO_Event_Selector_EPoll_Descriptor_lookup(struct IO_Event_Selector_EPoll *selector, int descriptor)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Array_lookup(&selector->descriptors, descriptor);
+	
+	if (!epoll_descriptor) {
+		rb_sys_fail("IO_Event_Selector_EPoll_Descriptor_lookup:IO_Event_Array_lookup");
+	}
+	
+	return epoll_descriptor;
+}
+
+static inline
+uint32_t epoll_flags_from_events(int events)
+{
+	uint32_t flags = 0;
+	
+	if (events & IO_EVENT_READABLE) flags |= EPOLLIN;
+	if (events & IO_EVENT_PRIORITY) flags |= EPOLLPRI;
+	if (events & IO_EVENT_WRITABLE) flags |= EPOLLOUT;
+	
+	flags |= EPOLLHUP;
+	flags |= EPOLLERR;
+	
+	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
+	
+	return flags;
+}
+
+static inline
+int events_from_epoll_flags(uint32_t flags)
+{
+	int events = 0;
+	
+	if (DEBUG) fprintf(stderr, "events_from_epoll_flags flags=%d\n", flags);
+	
+	// Occasionally, (and noted specifically when dealing with child processes stdout), flags will only be POLLHUP. In this case, we arm the file descriptor for reading so that the HUP will be noted, rather than potentially ignored, since there is no dedicated event for it.
+	// if (flags & (EPOLLIN)) events |= IO_EVENT_READABLE;
+	if (flags & (EPOLLIN|EPOLLHUP|EPOLLERR)) events |= IO_EVENT_READABLE;
+	if (flags & EPOLLPRI) events |= IO_EVENT_PRIORITY;
+	if (flags & EPOLLOUT) events |= IO_EVENT_WRITABLE;
+	
+	return events;
+}
+
+inline static
+int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *selector, int descriptor, struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor)
+{
+	if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
+		// All the events we are interested in are already registered.
+		return 0;
+	}
+	
+	if (epoll_descriptor->waiting_events == 0) {
+		// We are no longer interested in any events.
+		int result = epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
+		if (result == -1) return -1;
+		
+		epoll_descriptor->registered_events = 0;
+		
+		return 0;
+	}
+	
+	// We need to register for additional events:
+	struct epoll_event event = {
+		.events = epoll_flags_from_events(epoll_descriptor->waiting_events),
+		.data = {.fd = descriptor},
+	};
+	
+	int operation;
+	
+	if (epoll_descriptor->registered_events) {
+		operation = EPOLL_CTL_MOD;
+	} else {
+		operation = EPOLL_CTL_ADD;
+	}
+	
+	int result = epoll_ctl(selector->descriptor, operation, descriptor, &event);
+	if (result == -1) return -1;
+	
+	epoll_descriptor->registered_events = epoll_descriptor->waiting_events;
+	
+	return 1;
+}
+
+inline static
+int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *selector, int descriptor, struct IO_Event_Selector_EPoll_Waiting *waiting)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
+	
+	// We are waiting for these events:
+	epoll_descriptor->waiting_events |= waiting->events;
+	
+	int result = IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
+	if (result == -1) return -1;
+	
+	IO_Event_List_prepend(&epoll_descriptor->list, &waiting->list);
+	
+	return result;
+}
+
+void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
+	IO_Event_List_initialize(&epoll_descriptor->list);
+	epoll_descriptor->waiting_events = 0;
+	epoll_descriptor->registered_events = 0;
+}
+
+void IO_Event_Selector_EPoll_Descriptor_free(void *element)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
+	
+	IO_Event_List_free(&epoll_descriptor->list);
+}
+
 VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	IO_Event_Selector_initialize(&selector->backend, Qnil);
 	selector->descriptor = -1;
+	selector->blocked = 0;
+	
+	selector->descriptors.element_initialize = IO_Event_Selector_EPoll_Descriptor_initialize;
+	selector->descriptors.element_free = IO_Event_Selector_EPoll_Descriptor_free;
+	IO_Event_Array_allocate(&selector->descriptors, 1024, sizeof(struct IO_Event_Selector_EPoll_Descriptor));
 	
 	return instance;
 }
@@ -98,8 +254,8 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
 	struct epoll_event event = {
-		.events = EPOLLIN|EPOLLRDHUP,
-		.data = {.ptr = NULL},
+		.events = EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,
+		.data = {.fd = -1},
 	};
 	
 	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
@@ -197,8 +353,8 @@ VALUE IO_Event_Selector_EPoll_ready_p(VALUE self) {
 
 struct process_wait_arguments {
 	struct IO_Event_Selector_EPoll *selector;
-	pid_t pid;
-	int flags;
+	struct IO_Event_Selector_EPoll_Waiting *waiting;
+	int pid;
 	int descriptor;
 };
 
@@ -208,104 +364,71 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
-	return IO_Event_Selector_process_status_wait(arguments->pid);
+	if (arguments->waiting->ready) {
+		return IO_Event_Selector_process_status_wait(arguments->pid);
+	} else {
+		return Qfalse;
+	}
 }
 
 static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	// epoll_ctl(arguments->data->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
-	
 	close(arguments->descriptor);
+	
+	IO_Event_List_pop(&arguments->waiting->list);
 	
 	return Qnil;
 }
 
-VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE pid, VALUE flags) {
+VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	struct process_wait_arguments process_wait_arguments = {
-		.selector = selector,
-		.pid = NUM2PIDT(pid),
-		.flags = NUM2INT(flags),
-	};
+	pid_t pid = NUM2PIDT(_pid);
+	// int flags = NUM2INT(_flags);
 	
-	process_wait_arguments.descriptor = pidfd_open(process_wait_arguments.pid, 0);
+	int descriptor = pidfd_open(pid, 0);
 	
-	if (process_wait_arguments.descriptor == -1) {
+	if (descriptor == -1) {
 		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:pidfd_open");
 	}
 	
-	rb_update_max_fd(process_wait_arguments.descriptor);
+	rb_update_max_fd(descriptor);
 	
-	struct epoll_event event = {
-		.events = EPOLLIN|EPOLLERR|EPOLLHUP|EPOLLONESHOT,
-		.data = {.ptr = (void*)fiber},
+	struct IO_Event_Selector_EPoll_Waiting waiting = {
+		.fiber = fiber,
+		.events = IO_EVENT_READABLE,
 	};
 	
-	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, process_wait_arguments.descriptor, &event);
+	int result = IO_Event_Selector_EPoll_Waiting_register(selector, descriptor, &waiting);
 	
 	if (result == -1) {
-		close(process_wait_arguments.descriptor);
-		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:epoll_ctl");
+		close(descriptor);
+		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:IO_Event_Selector_EPoll_Waiting_register");
 	}
+	
+	struct process_wait_arguments process_wait_arguments = {
+		.selector = selector,
+		.pid = pid,
+		.descriptor = descriptor,
+		.waiting = &waiting,
+	};
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
-static inline
-uint32_t epoll_flags_from_events(int events) {
-	uint32_t flags = 0;
-	
-	if (events & IO_EVENT_READABLE) flags |= EPOLLIN;
-	if (events & IO_EVENT_PRIORITY) flags |= EPOLLPRI;
-	if (events & IO_EVENT_WRITABLE) flags |= EPOLLOUT;
-	
-	flags |= EPOLLHUP;
-	flags |= EPOLLERR;
-	
-	// Immediately remove this descriptor after reading one event:
-	flags |= EPOLLONESHOT;
-	
-	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
-	
-	return flags;
-}
-
-static inline
-int events_from_epoll_flags(uint32_t flags) {
-	int events = 0;
-	
-	if (DEBUG) fprintf(stderr, "events_from_epoll_flags flags=%d\n", flags);
-	
-	// Occasionally, (and noted specifically when dealing with child processes stdout), flags will only be POLLHUP. In this case, we arm the file descriptor for reading so that the HUP will be noted, rather than potentially ignored, since there is no dedicated event for it.
-	// if (flags & (EPOLLIN)) events |= IO_EVENT_READABLE;
-	if (flags & (EPOLLIN|EPOLLHUP|EPOLLERR)) events |= IO_EVENT_READABLE;
-	if (flags & EPOLLPRI) events |= IO_EVENT_PRIORITY;
-	if (flags & EPOLLOUT) events |= IO_EVENT_WRITABLE;
-	
-	return events;
-}
-
 struct io_wait_arguments {
 	struct IO_Event_Selector_EPoll *selector;
-	int descriptor;
-	int duplicate;
+	struct IO_Event_Selector_EPoll_Waiting *waiting;
 };
 
 static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	if (arguments->duplicate >= 0) {
-		epoll_ctl(arguments->selector->descriptor, EPOLL_CTL_DEL, arguments->duplicate, NULL);
-		
-		close(arguments->duplicate);
-	} else {
-		epoll_ctl(arguments->selector->descriptor, EPOLL_CTL_DEL, arguments->descriptor, NULL);
-	}
+	IO_Event_List_pop(&arguments->waiting->list);
 	
 	return Qnil;
 };
@@ -314,72 +437,41 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	VALUE result = IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
+	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
-	if (DEBUG) fprintf(stderr, "io_wait_transfer errno=%d\n", errno);
-	
-	// If the fiber is being cancelled, it might be resumed with nil:
-	if (!RTEST(result)) {
-		if (DEBUG) fprintf(stderr, "io_wait_transfer flags=false\n");
+	if (arguments->waiting->ready) {
+		return RB_INT2NUM(arguments->waiting->ready);
+	} else {
 		return Qfalse;
 	}
-	
-	if (DEBUG) fprintf(stderr, "io_wait_transfer flags=%d\n", NUM2INT(result));
-	
-	return INT2NUM(events_from_epoll_flags(NUM2INT(result)));
 };
 
 VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	struct epoll_event event = {0};
+	int descriptor = IO_Event_Selector_io_descriptor(io); 
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	int duplicate = -1;
+	struct IO_Event_Selector_EPoll_Waiting waiting = {
+		.fiber = fiber,
+		.events = RB_NUM2INT(events),
+	};
 	
-	event.events = epoll_flags_from_events(NUM2INT(events));
-	event.data.ptr = (void*)fiber;
-	
-	if (DEBUG) fprintf(stderr, "<- fiber=%p descriptor=%d\n", (void*)fiber, descriptor);
-	
-	// A better approach is to batch all changes:
-	int result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
-	
-	if (result == -1 && errno == EEXIST) {
-		// The file descriptor was already inserted into epoll.
-		duplicate = dup(descriptor);
-		
-		if (duplicate == -1) {
-			rb_sys_fail("IO_Event_Selector_EPoll_io_wait:dup");
-		}
-		
-		descriptor = duplicate;
-		
-		rb_update_max_fd(descriptor);
-		
-		result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
-	}
+	int result = IO_Event_Selector_EPoll_Waiting_register(selector, descriptor, &waiting);
 	
 	if (result == -1) {
-		// If we duplicated the file descriptor, ensure it's closed:
-		if (duplicate >= 0) {
-			close(duplicate);
-		}
-		
 		if (errno == EPERM) {
 			IO_Event_Selector_queue_push(&selector->backend, fiber);
 			IO_Event_Selector_yield(&selector->backend);
 			return events;
 		}
 		
-		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:epoll_ctl");
+		rb_sys_fail("IO_Event_Selector_EPoll_io_wait:IO_Event_Selector_EPoll_Waiting_register");
 	}
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
-		.descriptor = descriptor,
-		.duplicate = duplicate
+		.waiting = &waiting,
 	};
 	
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
@@ -411,12 +503,14 @@ VALUE io_read_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -427,9 +521,11 @@ VALUE io_read_loop(VALUE _arguments) {
 		} else {
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 static
@@ -499,16 +595,18 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	size_t length = arguments->length;
 	size_t offset = arguments->offset;
+	size_t total = 0;
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 	
-	while (true) {
-		size_t maximum_size = size - offset;
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
 		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
 		
 		if (result > 0) {
+			total += result;
 			offset += result;
 			if ((size_t)result >= length) break;
 			length -= result;
@@ -519,9 +617,11 @@ VALUE io_write_loop(VALUE _arguments) {
 		} else {
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
+		
+		maximum_size = size - offset;
 	}
 	
-	return rb_fiber_scheduler_io_result(offset, 0);
+	return rb_fiber_scheduler_io_result(total, 0);
 };
 
 static
@@ -683,6 +783,51 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 	}
 }
 
+static
+int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event)
+{
+	int descriptor = event->data.fd;
+	
+	// This is the mask of all events that occured for the given descriptor:
+	enum IO_Event ready_events = events_from_epoll_flags(event->events);
+	
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
+	struct IO_Event_List *list = &epoll_descriptor->list;
+	struct IO_Event_List *node = list->tail;
+	struct IO_Event_List saved = {NULL, NULL};
+	
+	// Reset the events back to 0 so that we can re-arm if necessary:
+	epoll_descriptor->waiting_events = 0;
+	
+	// It's possible (but unlikely) that the address of list will changing during iteration.
+	while (node != list) {
+		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
+		
+		// Compute the intersection of the events we are waiting for and the events that occured:
+		enum IO_Event matching_events = waiting->events & ready_events;
+		
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, ready_events=%d, matching_events=%d\n", descriptor, ready_events, matching_events);
+		
+		if (matching_events) {
+			IO_Event_List_append(node, &saved);
+			
+			// Resume the fiber:
+			waiting->ready = matching_events;
+			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
+			
+			node = saved.tail;
+			IO_Event_List_pop(&saved);
+		} else {
+			// We are still waiting for the events:
+			epoll_descriptor->waiting_events |= waiting->events;
+			node = node->tail;
+		}
+	}
+	
+	return IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
+}
+
+// TODO This function is not re-entrant and we should document and assert as such.
 VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
@@ -720,11 +865,8 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		const struct epoll_event *event = &arguments.events[i];
 		if (DEBUG) fprintf(stderr, "-> ptr=%p events=%d\n", event->data.ptr, event->events);
 		
-		if (event->data.ptr) {
-			VALUE fiber = (VALUE)event->data.ptr;
-			VALUE result = INT2NUM(event->events);
-			
-			IO_Event_Selector_fiber_transfer(fiber, 1, &result);
+		if (event->data.fd >= 0) {
+			IO_Event_Selector_EPoll_handle(selector, event);
 		} else {
 			IO_Event_Interrupt_clear(&selector->interrupt);
 		}

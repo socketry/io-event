@@ -38,6 +38,23 @@ BufferedIO = Sus::Shared("buffered io") do
 			expect(selector.io_write(Fiber.current, output, buffer, 0)).to be == 0
 		end
 		
+		it "can read and write at the specified offset" do
+			writer = Fiber.new do
+				buffer = IO::Buffer.new(128)
+				expect(selector.io_write(Fiber.current, output, buffer, 128, 64)).to be == 64
+			end
+			
+			reader = Fiber.new do
+				buffer = IO::Buffer.new(128)
+				expect(selector.io_read(Fiber.current, input, buffer, 1, 64)).to be == 64
+			end
+			
+			reader.transfer
+			writer.transfer
+			
+			expect(selector.select(1)).to be >= 1
+		end
+		
 		it "can't write to the read end of a pipe" do
 			skip "Windows is bonkers" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
 			bsd = RUBY_PLATFORM =~ /bsd/
