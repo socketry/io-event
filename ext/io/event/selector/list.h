@@ -59,3 +59,8 @@ inline static void IO_Event_List_free(struct IO_Event_List *node)
 		IO_Event_List_pop(node);
 	}
 }
+
+inline static int IO_Event_List_empty(struct IO_Event_List *list)
+{
+	return list->head == list->tail;
+}
