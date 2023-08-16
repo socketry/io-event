@@ -236,6 +236,68 @@ Selector = Sus::Shared("a selector") do
 			]
 		end
 		
+		it "can wait consecutively on two different io objects that share a fd" do
+			fiber = Fiber.new do
+				events << :write1
+				remote.puts "Hello World"
+				
+				events << :wait_readable1
+				
+				expect(
+					selector.io_wait(Fiber.current, local, IO::READABLE)
+				).to be == IO::READABLE
+				
+				events << :readable1
+				
+				events << :new_io
+				fileno = local.fileno
+				local.close
+				new_local, new_remote = UNIXSocket.pair
+				# Make sure we attempt to wait on the same FD.
+				if new_remote.fileno == fileno
+					new_local, new_remote = new_remote, new_local
+				end
+				if new_local.fileno != fileno
+					warn "Could not create new IO object with same FD, test ineffective!"
+				end
+				
+				events << :write2
+				new_remote.puts "Hello World"
+				
+				events << :wait_readable2
+				
+				expect(
+					selector.io_wait(Fiber.current, new_local, IO::READABLE)
+				).to be == IO::READABLE
+				
+				events << :readable2
+			end
+			
+			events << :transfer
+			fiber.transfer
+			
+			events << :select1
+			
+			selector.select(1)
+			
+			events << :select2
+			
+			selector.select(1)
+			
+			expect(events).to be == [
+				:transfer,
+				:write1,
+				:wait_readable1,
+				:select1,
+				:readable1,
+				:new_io,
+				:write2,
+				:wait_readable2,
+				:select2,
+				:readable2,
+			]
+		end
+		
 		it "can handle exception during wait" do
 			fiber = Fiber.new do
 				events << :wait_readable
