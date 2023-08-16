@@ -20,6 +20,7 @@
 
 #include "uring.h"
 #include "selector.h"
+#include "list.h"
 
 #include <liburing.h>
 #include <poll.h>
@@ -40,14 +41,19 @@ enum {URING_ENTRIES = 64};
 
 #pragma mark - Data Type
 
-struct IO_Event_Selector_URing {
+struct IO_Event_Selector_URing
+{
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
 	size_t pending;
 	int blocked;
+	
+	struct IO_Event_List free_list;
 };
 
 struct IO_Event_Selector_URing_Waiting {
+	struct IO_Event_List list;
+	
 	VALUE fiber;
 };
 
@@ -58,7 +64,8 @@ void IO_Event_Selector_URing_Type_mark(void *_selector)
 }
 
 static
-void close_internal(struct IO_Event_Selector_URing *selector) {
+void close_internal(struct IO_Event_Selector_URing *selector)
+{
 	if (selector->ring.ring_fd >= 0) {
 		io_uring_queue_exit(&selector->ring);
 		selector->ring.ring_fd = -1;
