@@ -167,15 +167,15 @@ int events_from_epoll_flags(uint32_t flags)
 inline static
 int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *selector, int descriptor, struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor)
 {
-	if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
-		// All the events we are interested in are already registered.
-		return 0;
-	}
+	// if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
+	// 	// All the events we are interested in are already registered.
+	// 	return 0;
+	// }
 	
 	if (epoll_descriptor->waiting_events == 0) {
 		// We are no longer interested in any events.
 		int result = epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
-		if (result == -1) return -1;
+		// if (result == -1) return -1;
 		
 		epoll_descriptor->registered_events = 0;
 		
@@ -197,7 +197,15 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 	}
 	
 	int result = epoll_ctl(selector->descriptor, operation, descriptor, &event);
-	if (result == -1) return -1;
+	if (result == -1) {
+		if (errno == ENOENT) {
+			result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+		}
+		
+		if (result == -1) {
+			return -1;
+		}
+	}
 	
 	epoll_descriptor->registered_events = epoll_descriptor->waiting_events;
 	
