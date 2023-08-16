@@ -167,6 +167,8 @@ void IO_Event_Selector_URing_Waiting_free(void *element)
 {
 	struct IO_Event_Selector_URing_Waiting *waiting = element;
 	IO_Event_List_free(&waiting->list);
+	
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_Waiting_free: %p reference_count=%ld\n", waiting, waiting->reference_count);
 }
 
 VALUE IO_Event_Selector_URing_allocate(VALUE self) {
