@@ -150,10 +150,10 @@ enum IO_Event events_from_kevent_filter(int filter)
 inline static
 int IO_Event_Selector_KQueue_Descriptor_update(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
 {
-	if (kqueue_descriptor->registered_events == kqueue_descriptor->waiting_events) {
-		// All the events we are interested in are already registered.
-		return 0;
-	}
+	// if (kqueue_descriptor->registered_events == kqueue_descriptor->waiting_events) {
+	// 	// All the events we are interested in are already registered.
+	// 	return 0;
+	// }
 	
 	int count = 0;
 	struct kevent kevents[3] = {0};
