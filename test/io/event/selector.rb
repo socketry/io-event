@@ -61,6 +61,21 @@ Selector = Sus::Shared("a selector") do
 			thread.join
 		end
 		
+		it "can wakeup selector from different thread twice in a row" do
+			2.times do
+				thread = Thread.new do
+					sleep 0.1
+					selector.wakeup
+				end
+				
+				expect do
+					selector.select(0.5)
+				end.to have_duration(be < 0.5)
+			ensure
+				thread.join
+			end
+		end
+		
 		it "ignores wakeup if not selecting" do
 			expect(selector.wakeup).to be == false
 		end

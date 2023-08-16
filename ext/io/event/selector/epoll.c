@@ -254,7 +254,7 @@ void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Even
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
 	struct epoll_event event = {
-		.events = EPOLLIN|EPOLLRDHUP|EPOLLONESHOT,
+		.events = EPOLLIN|EPOLLRDHUP,
 		.data = {.fd = -1},
 	};
 	
