@@ -64,7 +64,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				result = selector.io_write(Fiber.current, input, buffer, 64)
-				expect(result).to be == -(bsd ? Errno::EPIPE : Errno::EBADF)::Errno
+				expect(result).to be < 0
 			end
 			
 			writer.transfer

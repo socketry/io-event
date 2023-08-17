@@ -54,9 +54,7 @@ if have_header('sys/epoll.h')
 	$srcs << "io/event/selector/epoll.c"
 end
 
-# The order matters, because we MUST have EVFILT_USER.
-# The `have_header` call is just to add the -D to the compiler flags.
-if have_const('EVFILT_USER', 'sys/event.h') and have_header('sys/event.h')
+if have_header('sys/event.h')
 	$srcs << "io/event/selector/kqueue.c"
 end
 

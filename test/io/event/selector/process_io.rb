@@ -29,7 +29,10 @@ ProcessIO = Sus::Shared("process io") do
 		end
 		
 		fiber.transfer
-		selector.select(1)
+		if selector.select(1) == 0
+			# Selector sometimes gets interrupted with SIGCHLD.
+			selector.select(1)
+		end
 		
 		expect(result.success?).to be == true
 	end
