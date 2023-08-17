@@ -112,6 +112,9 @@ struct IO_Event_Selector_EPoll_Descriptor
 {
 	struct IO_Event_List list;
 	
+	// The last IO object that was used to register events.
+	VALUE io;
+	
 	// The union of all events we are waiting for:
 	enum IO_Event waiting_events;
 	
@@ -165,19 +168,24 @@ int events_from_epoll_flags(uint32_t flags)
 }
 
 inline static
-int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *selector, int descriptor, struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor)
+int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *selector, VALUE io, int descriptor, struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor)
 {
-	// if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
-	// 	// All the events we are interested in are already registered.
-	// 	return 0;
-	// }
+	if (epoll_descriptor->io == io) {
+		if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
+			// All the events we are interested in are already registered.
+			return 0;
+		}
+	} else {
+		epoll_descriptor->registered_events = 0;
+		epoll_descriptor->io = io;
+	}
 	
 	if (epoll_descriptor->waiting_events == 0) {
-		// We are no longer interested in any events.
-		int result = epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
-		// if (result == -1) return -1;
-		
-		epoll_descriptor->registered_events = 0;
+		if (epoll_descriptor->registered_events) {
+			// We are no longer interested in any events.
+			epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
+			epoll_descriptor->registered_events = 0;
+		}
 		
 		return 0;
 	}
@@ -213,14 +221,14 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 }
 
 inline static
-int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *selector, int descriptor, struct IO_Event_Selector_EPoll_Waiting *waiting)
+int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *selector, VALUE io, int descriptor, struct IO_Event_Selector_EPoll_Waiting *waiting)
 {
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
 	
 	// We are waiting for these events:
 	epoll_descriptor->waiting_events |= waiting->events;
 	
-	int result = IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
+	int result = IO_Event_Selector_EPoll_Descriptor_update(selector, io, descriptor, epoll_descriptor);
 	if (result == -1) return -1;
 	
 	IO_Event_List_prepend(&epoll_descriptor->list, &waiting->list);
@@ -234,6 +242,7 @@ void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
 	IO_Event_List_initialize(&epoll_descriptor->list);
 	epoll_descriptor->waiting_events = 0;
 	epoll_descriptor->registered_events = 0;
+	epoll_descriptor->io = 0;
 }
 
 void IO_Event_Selector_EPoll_Descriptor_free(void *element)
@@ -410,7 +419,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.events = IO_EVENT_READABLE,
 	};
 	
-	int result = IO_Event_Selector_EPoll_Waiting_register(selector, descriptor, &waiting);
+	int result = IO_Event_Selector_EPoll_Waiting_register(selector, 0, descriptor, &waiting);
 	
 	if (result == -1) {
 		close(descriptor);
@@ -465,7 +474,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		.events = RB_NUM2INT(events),
 	};
 	
-	int result = IO_Event_Selector_EPoll_Waiting_register(selector, descriptor, &waiting);
+	int result = IO_Event_Selector_EPoll_Waiting_register(selector, io, descriptor, &waiting);
 	
 	if (result == -1) {
 		if (errno == EPERM) {
@@ -832,7 +841,7 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 		}
 	}
 	
-	return IO_Event_Selector_EPoll_Descriptor_update(selector, descriptor, epoll_descriptor);
+	return IO_Event_Selector_EPoll_Descriptor_update(selector, epoll_descriptor->io, descriptor, epoll_descriptor);
 }
 
 // TODO This function is not re-entrant and we should document and assert as such.
