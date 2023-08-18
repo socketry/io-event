@@ -39,6 +39,10 @@ enum {
 	DEBUG_IO_WAIT = 0
 };
 
+#ifndef EVFILT_USER
+#define IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+#endif
+
 static VALUE IO_Event_Selector_KQueue = Qnil;
 
 enum {KQUEUE_MAX_EVENTS = 64};
@@ -64,7 +68,7 @@ struct IO_Event_Selector_KQueue
 	int descriptor;
 	int blocked;
 	
-#ifndef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 	struct IO_Event_Interrupt interrupt;
 #endif
 	struct IO_Event_Array descriptors;
@@ -277,7 +281,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	return instance;
 }
 
-#ifndef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Event_Selector_KQueue *selector) {
 	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
 	
@@ -313,7 +317,7 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 		rb_update_max_fd(selector->descriptor);
 	}
 	
-#ifndef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 	IO_Event_Interrupt_open(&selector->interrupt);
 	IO_Event_Interrupt_add(&selector->interrupt, selector);
 #endif
@@ -334,7 +338,7 @@ VALUE IO_Event_Selector_KQueue_close(VALUE self) {
 	
 	close_internal(selector);
 	
-#ifndef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 	IO_Event_Interrupt_close(&selector->interrupt);
 #endif
 	
@@ -911,7 +915,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
 			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor);
 		} else {
-#ifndef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 			IO_Event_Interrupt_clear(&selector->interrupt);
 #endif
 		}
@@ -925,7 +929,9 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	if (selector->blocked) {
-#ifdef EVFILT_USER
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+		IO_Event_Interrupt_signal(&selector->interrupt);
+#else
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
@@ -946,8 +952,6 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 		if (result == -1) {
 			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
 		}
-#else
-		IO_Event_Interrupt_signal(&selector->interrupt);
 #endif
 		
 		return Qtrue;
