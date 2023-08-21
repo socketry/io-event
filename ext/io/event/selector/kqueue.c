@@ -94,7 +94,9 @@ void IO_Event_Selector_KQueue_Waiting_mark(struct IO_Event_List *_waiting)
 {
 	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
 	
-	rb_gc_mark_movable(waiting->fiber);
+	if (waiting->fiber) {
+		RUBY_MARK_MOVABLE_UNLESS_NULL(waiting->fiber);
+	}
 }
 
 static
@@ -103,7 +105,6 @@ void IO_Event_Selector_KQueue_Descriptor_mark(void *_descriptor)
 	struct IO_Event_Selector_KQueue_Descriptor *descriptor = _descriptor;
 	
 	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_KQueue_Waiting_mark);
-	rb_gc_mark_movable(descriptor->io);
 }
 
 static
@@ -119,7 +120,9 @@ void IO_Event_Selector_KQueue_Waiting_compact(struct IO_Event_List *_waiting)
 {
 	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
 	
-	rb_gc_location(waiting->fiber);
+	if (waiting->fiber) {
+		rb_gc_location(waiting->fiber);
+	}
 }
 
 static
