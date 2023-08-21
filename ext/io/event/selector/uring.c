@@ -137,13 +137,18 @@ struct IO_Event_Selector_URing_Completion * IO_Event_Selector_URing_Completion_a
 }
 
 inline static
-void IO_Event_Selector_URing_Completion_release(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+void IO_Event_Selector_URing_Completion_cancel(struct IO_Event_Selector_URing_Completion *completion)
 {
 	if (completion->waiting) {
 		completion->waiting->completion = NULL;
 		completion->waiting = NULL;
 	}
-	
+}
+
+inline static
+void IO_Event_Selector_URing_Completion_release(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+{
+	IO_Event_Selector_URing_Completion_cancel(completion);
 	IO_Event_List_prepend(&selector->free_list, &completion->list);
 }
 
@@ -167,7 +172,7 @@ void IO_Event_Selector_URing_Completion_initialize(void *element)
 void IO_Event_Selector_URing_Completion_free(void *element)
 {
 	struct IO_Event_Selector_URing_Completion *completion = element;
-	IO_Event_List_free(&completion->list);
+	IO_Event_Selector_URing_Completion_cancel(completion);
 }
 
 VALUE IO_Event_Selector_URing_allocate(VALUE self) {
