@@ -49,21 +49,30 @@ struct IO_Event_Selector_URing
 	size_t pending;
 	int blocked;
 	
-	struct IO_Event_Array waiting;
+	struct IO_Event_Array completions;
 	struct IO_Event_List free_list;
 };
 
-struct IO_Event_Selector_URing_Waiting {
-	struct IO_Event_List list;
-	size_t reference_count;
+struct IO_Event_Selector_URing_Completion;
+
+struct IO_Event_Selector_URing_Waiting
+{
+	struct IO_Event_Selector_URing_Completion *completion;
+	
+	VALUE fiber;
 	
 	// The result of the operation.
 	int32_t	result;
 	
 	// Any associated flags.
 	uint32_t flags;
+};
+
+struct IO_Event_Selector_URing_Completion
+{
+	struct IO_Event_List list;
 	
-	VALUE fiber;
+	struct IO_Event_Selector_URing_Waiting *waiting;
 };
 
 void IO_Event_Selector_URing_Type_mark(void *_selector)
@@ -87,7 +96,7 @@ void IO_Event_Selector_URing_Type_free(void *_selector)
 	
 	close_internal(selector);
 	
-	IO_Event_Array_free(&selector->waiting);
+	IO_Event_Array_free(&selector->completions);
 	
 	free(selector);
 }
@@ -109,66 +118,56 @@ static const rb_data_type_t IO_Event_Selector_URing_Type = {
 };
 
 inline static
-struct IO_Event_Selector_URing_Waiting * IO_Event_Selector_URing_Waiting_acquire(struct IO_Event_Selector_URing *selector, VALUE fiber)
+struct IO_Event_Selector_URing_Completion * IO_Event_Selector_URing_Completion_acquire(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
 {
-	struct IO_Event_Selector_URing_Waiting *waiting = NULL;
+	struct IO_Event_Selector_URing_Completion *completion = NULL;
 	
 	if (!IO_Event_List_empty(&selector->free_list)) {
-		waiting = (struct IO_Event_Selector_URing_Waiting*)selector->free_list.tail;
-		IO_Event_List_pop(&waiting->list);
+		completion = (struct IO_Event_Selector_URing_Completion*)selector->free_list.tail;
+		IO_Event_List_pop(&completion->list);
 	} else {
-		waiting = malloc(sizeof(struct IO_Event_Selector_URing_Waiting));
-		IO_Event_List_initialize(&waiting->list);
+		completion = IO_Event_Array_push(&selector->completions);
+		IO_Event_List_clear(&completion->list);
 	}
 	
-	waiting->reference_count = 1;
-	waiting->result = 0;
-	waiting->flags = 0;
-	waiting->fiber = fiber;
+	waiting->completion = completion;
+	completion->waiting = waiting;
 	
-	return waiting;
+	return completion;
 }
 
 inline static
-struct IO_Event_Selector_URing_Waiting * IO_Event_Selector_URing_Waiting_retain(struct IO_Event_Selector_URing_Waiting *waiting)
+void IO_Event_Selector_URing_Completion_release(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
 {
-	waiting->reference_count += 1;
-	
-	return waiting;
-}
-
-inline static
-size_t IO_Event_Selector_URing_Waiting_release(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
-{
-	waiting->reference_count -= 1;
-	
-	if (waiting->reference_count == 0) {
-		IO_Event_List_prepend(&selector->free_list, &waiting->list);
+	if (completion->waiting) {
+		completion->waiting->completion = NULL;
+		completion->waiting = NULL;
 	}
 	
-	return waiting->reference_count;
+	IO_Event_List_prepend(&selector->free_list, &completion->list);
 }
 
 inline static
-size_t IO_Event_Selector_URing_Waiting_cancel(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
+void IO_Event_Selector_URing_Waiting_cancel(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
 {
+	if (waiting->completion) {
+		waiting->completion->waiting = NULL;
+		waiting->completion = NULL;
+	}
+	
 	waiting->fiber = 0;
-	
-	return IO_Event_Selector_URing_Waiting_release(selector, waiting);
 }
 
-void IO_Event_Selector_URing_Waiting_initialize(void *element)
+void IO_Event_Selector_URing_Completion_initialize(void *element)
 {
-	struct IO_Event_Selector_URing_Waiting *waiting = element;
-	IO_Event_List_initialize(&waiting->list);
+	struct IO_Event_Selector_URing_Completion *completion = element;
+	IO_Event_List_initialize(&completion->list);
 }
 
-void IO_Event_Selector_URing_Waiting_free(void *element)
+void IO_Event_Selector_URing_Completion_free(void *element)
 {
-	struct IO_Event_Selector_URing_Waiting *waiting = element;
-	IO_Event_List_free(&waiting->list);
-	
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_Waiting_free: %p reference_count=%ld\n", waiting, waiting->reference_count);
+	struct IO_Event_Selector_URing_Completion *completion = element;
+	IO_Event_List_free(&completion->list);
 }
 
 VALUE IO_Event_Selector_URing_allocate(VALUE self) {
@@ -181,10 +180,11 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	selector->pending = 0;
 	selector->blocked = 0;
 	
-	selector->waiting.element_initialize = IO_Event_Selector_URing_Waiting_initialize;
-	selector->waiting.element_free = IO_Event_Selector_URing_Waiting_free;
-	IO_Event_Array_allocate(&selector->waiting, 1024, sizeof(struct IO_Event_Selector_URing_Waiting));
 	IO_Event_List_initialize(&selector->free_list);
+	
+	selector->completions.element_initialize = IO_Event_Selector_URing_Completion_initialize;
+	selector->completions.element_free = IO_Event_Selector_URing_Completion_free;
+	IO_Event_Array_allocate(&selector->completions, 1024, sizeof(struct IO_Event_Selector_URing_Completion));
 	
 	return instance;
 }
@@ -384,11 +384,15 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	}
 	rb_update_max_fd(descriptor);
 	
-	struct IO_Event_Selector_URing_Waiting *waiting = IO_Event_Selector_URing_Waiting_acquire(selector, fiber);
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
-		.waiting = waiting,
+		.waiting = &waiting,
 		.pid = pid,
 		.descriptor = descriptor,
 	};
@@ -397,9 +401,9 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
-	io_uring_sqe_set_data(sqe, IO_Event_Selector_URing_Waiting_retain(waiting));
+	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
-
+	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
@@ -480,16 +484,20 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	
-	struct IO_Event_Selector_URing_Waiting *waiting = IO_Event_Selector_URing_Waiting_acquire(selector, fiber);
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
 	
-	io_uring_sqe_set_data(sqe, IO_Event_Selector_URing_Waiting_retain(waiting));
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
+	
+	io_uring_sqe_set_data(sqe, completion);
 	
 	// If we are going to wait, we assume that we are waiting for a while:
 	io_uring_submit_pending(selector);
 	
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
-		.waiting = waiting,
+		.waiting = &waiting,
 		.flags = flags
 	};
 	
@@ -536,7 +544,7 @@ io_read_submit(VALUE _arguments)
 	if (DEBUG) fprintf(stderr, "io_read_submit:io_uring_prep_read(fiber=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, arguments->descriptor, arguments->buffer, arguments->length);
 	
 	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
-	io_uring_sqe_set_data(sqe, (void*)arguments->waiting);
+	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_now(selector);
 	
 	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
@@ -569,11 +577,15 @@ io_read_ensure(VALUE _arguments)
 static int
 io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length)
 {
-	struct IO_Event_Selector_URing_Waiting *waiting = IO_Event_Selector_URing_Waiting_acquire(selector, fiber);
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	
+	IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
 	struct io_read_arguments io_read_arguments = {
 		.selector = selector,
-		.waiting = waiting,
+		.waiting = &waiting,
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length
@@ -655,7 +667,7 @@ io_write_submit(VALUE _argument)
 	if (DEBUG) fprintf(stderr, "io_write_submit:io_uring_prep_write(fiber=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, arguments->descriptor, arguments->buffer, arguments->length);
 	
 	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
-	io_uring_sqe_set_data(sqe, IO_Event_Selector_URing_Waiting_retain(arguments->waiting));
+	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_pending(selector);
 	
 	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
@@ -687,11 +699,15 @@ io_write_ensure(VALUE _argument)
 static int
 io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length)
 {
-	struct IO_Event_Selector_URing_Waiting *waiting = IO_Event_Selector_URing_Waiting_acquire(selector, fiber);
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	
+	IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
 	struct io_write_arguments arguments = {
 		.selector = selector,
-		.waiting = waiting,
+		.waiting = &waiting,
 		.descriptor = descriptor,
 		.buffer = buffer,
 		.length = length,
@@ -874,17 +890,21 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		
 		if (DEBUG) fprintf(stderr, "cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
 		
-		struct IO_Event_Selector_URing_Waiting *waiting = (void*)cqe->user_data;
-		waiting->result = cqe->res;
-		waiting->flags = cqe->flags;
+		struct IO_Event_Selector_URing_Completion *completion = (void*)cqe->user_data;
+		struct IO_Event_Selector_URing_Waiting *waiting = completion->waiting;
+		
+		if (waiting) {
+			waiting->result = cqe->res;
+			waiting->flags = cqe->flags;
+		}
 		
 		io_uring_cq_advance(ring, 1);
 		
-		if (waiting->fiber) {
+		if (waiting && waiting->fiber) {
 			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
 		}
 		
-		IO_Event_Selector_URing_Waiting_release(selector, waiting);
+		IO_Event_Selector_URing_Completion_release(selector, completion);
 	}
 	
 	if (DEBUG && completed > 0) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);

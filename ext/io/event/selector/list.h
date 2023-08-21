@@ -16,6 +16,11 @@ inline static void IO_Event_List_initialize(struct IO_Event_List *list)
 	list->head = list->tail = list;
 }
 
+inline static void IO_Event_List_clear(struct IO_Event_List *list)
+{
+	list->head = list->tail = NULL;
+}
+
 // Append an item to the end of the list.
 inline static void IO_Event_List_append(struct IO_Event_List *list, struct IO_Event_List *node)
 {
