@@ -111,3 +111,9 @@ inline static void* IO_Event_Array_lookup(struct IO_Event_Array *array, size_t i
 	
 	return *element;
 }
+
+// Push a new element onto the end of the array.
+inline static void* IO_Event_Array_push(struct IO_Event_Array *array)
+{
+	return IO_Event_Array_lookup(array, array->limit);
+}
