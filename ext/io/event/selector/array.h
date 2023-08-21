@@ -117,3 +117,13 @@ inline static void* IO_Event_Array_push(struct IO_Event_Array *array)
 {
 	return IO_Event_Array_lookup(array, array->limit);
 }
+
+inline static void IO_Event_Array_each(struct IO_Event_Array *array, void (*callback)(void*))
+{
+	for (size_t i = 0; i < array->limit; i += 1) {
+		void *element = array->base[i];
+		if (element) {
+			callback(element);
+		}
+	}
+}

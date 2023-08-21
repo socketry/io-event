@@ -75,10 +75,38 @@ struct IO_Event_Selector_URing_Completion
 	struct IO_Event_Selector_URing_Waiting *waiting;
 };
 
+static
+void IO_Event_Selector_URing_Completion_mark(void *_completion)
+{
+	struct IO_Event_Selector_URing_Completion *completion = _completion;
+	
+	if (completion->waiting) {
+		rb_gc_mark_movable(completion->waiting->fiber);
+	}
+}
+
 void IO_Event_Selector_URing_Type_mark(void *_selector)
 {
 	struct IO_Event_Selector_URing *selector = _selector;
 	IO_Event_Selector_mark(&selector->backend);
+	IO_Event_Array_each(&selector->completions, IO_Event_Selector_URing_Completion_mark);
+}
+
+static
+void IO_Event_Selector_URing_Completion_compact(void *_completion)
+{
+	struct IO_Event_Selector_URing_Completion *completion = _completion;
+	
+	if (completion->waiting) {
+		completion->waiting->fiber = rb_gc_location(completion->waiting->fiber);
+	}
+}
+
+void IO_Event_Selector_URing_Type_compact(void *_selector)
+{
+	struct IO_Event_Selector_URing *selector = _selector;
+	IO_Event_Selector_compact(&selector->backend);
+	IO_Event_Array_each(&selector->completions, IO_Event_Selector_URing_Completion_compact);
 }
 
 static
@@ -90,6 +118,7 @@ void close_internal(struct IO_Event_Selector_URing *selector)
 	}
 }
 
+static
 void IO_Event_Selector_URing_Type_free(void *_selector)
 {
 	struct IO_Event_Selector_URing *selector = _selector;
@@ -101,6 +130,7 @@ void IO_Event_Selector_URing_Type_free(void *_selector)
 	free(selector);
 }
 
+static
 size_t IO_Event_Selector_URing_Type_size(const void *selector)
 {
 	return sizeof(struct IO_Event_Selector_URing);
@@ -110,6 +140,7 @@ static const rb_data_type_t IO_Event_Selector_URing_Type = {
 	.wrap_struct_name = "IO_Event::Backend::URing",
 	.function = {
 		.dmark = IO_Event_Selector_URing_Type_mark,
+		.dcompact = IO_Event_Selector_URing_Type_compact,
 		.dfree = IO_Event_Selector_URing_Type_free,
 		.dsize = IO_Event_Selector_URing_Type_size,
 	},
