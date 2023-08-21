@@ -27,6 +27,10 @@
 #include <sys/ioctl.h>
 #include <time.h>
 #include <errno.h>
+#include <sys/wait.h>
+#include <signal.h>
+
+#include "../interrupt.h"
 
 enum {
 	DEBUG = 0,
@@ -34,6 +38,10 @@ enum {
 	DEBUG_IO_WRITE = 0,
 	DEBUG_IO_WAIT = 0
 };
+
+#ifndef EVFILT_USER
+#define IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+#endif
 
 static VALUE IO_Event_Selector_KQueue = Qnil;
 
@@ -60,6 +68,9 @@ struct IO_Event_Selector_KQueue
 	int descriptor;
 	int blocked;
 	
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+	struct IO_Event_Interrupt interrupt;
+#endif
 	struct IO_Event_Array descriptors;
 };
 
@@ -215,12 +226,7 @@ int IO_Event_Selector_KQueue_Descriptor_update(struct IO_Event_Selector_KQueue *
 	int result = kevent(selector->descriptor, kevents, count, NULL, 0, NULL);
 	
 	if (result == -1) {
-		// No such process - the process has probably already terminated:
-		// if (errno == ESRCH) {
-		// 	return 0;
-		// }
-		
-		return -1;
+		return result;
 	}
 	
 	kqueue_descriptor->registered_events = kqueue_descriptor->waiting_events;
@@ -275,6 +281,24 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	return instance;
 }
 
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+void IO_Event_Interrupt_add(struct IO_Event_Interrupt *interrupt, struct IO_Event_Selector_KQueue *selector) {
+	int descriptor = IO_Event_Interrupt_descriptor(interrupt);
+	
+	struct kevent kev = {
+		.filter = EVFILT_READ,
+		.ident = descriptor,
+		.flags = EV_ADD | EV_CLEAR,
+	};
+	
+	int result = kevent(selector->descriptor, &kev, 1, NULL, 0, NULL);
+	
+	if (result == -1) {
+		rb_sys_fail("IO_Event_Interrupt_add:kevent");
+	}
+}
+#endif
+
 VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -293,6 +317,11 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 		rb_update_max_fd(selector->descriptor);
 	}
 	
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+	IO_Event_Interrupt_open(&selector->interrupt);
+	IO_Event_Interrupt_add(&selector->interrupt, selector);
+#endif
+	
 	return self;
 }
 
@@ -308,6 +337,10 @@ VALUE IO_Event_Selector_KQueue_close(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	close_internal(selector);
+	
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+	IO_Event_Interrupt_close(&selector->interrupt);
+#endif
 	
 	return Qnil;
 }
@@ -368,12 +401,31 @@ struct process_wait_arguments {
 };
 
 static
+void process_prewait(pid_t pid) {
+#if defined(WNOWAIT)
+	// FreeBSD seems to have an issue where kevent() can return an EVFILT_PROC/NOTE_EXIT event for a process even though a wait with WNOHANG on it immediately after will not return it (but it does after a small delay). Similarly, OpenBSD/NetBSD seem to sometimes fail the kevent() call with ESRCH (indicating the process has already terminated) even though a WNOHANG may not return it immediately after.
+	// To deal with this, do a hanging WNOWAIT wait on the process to make sure it is "terminated enough" for future WNOHANG waits to return it.
+	// Using waitid() for this because OpenBSD only supports WNOWAIT with waitid().
+	int result;
+	do {
+		siginfo_t info;
+		result = waitid(P_PID, pid, &info, WEXITED | WNOWAIT);
+		// This can sometimes get interrupted by SIGCHLD.
+	} while (result == -1 && errno == EINTR);
+	if (result == -1) {
+		rb_sys_fail("process_prewait:waitid");
+	}
+#endif
+}
+
+static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
 	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	if (arguments->waiting->ready) {
+		process_prewait(arguments->pid);
 		return IO_Event_Selector_process_status_wait(arguments->pid);
 	} else {
 		return Qfalse;
@@ -408,6 +460,11 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	
 	int result = IO_Event_Selector_KQueue_Waiting_register(selector, pid, &waiting);
 	if (result == -1) {
+		// OpenBSD/NetBSD return ESRCH when attempting to register an EVFILT_PROC event for a zombie process.
+		if (errno == ESRCH) {
+			process_prewait(process_wait_arguments.pid);
+			return IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
+		}
 		rb_sys_fail("IO_Event_Selector_KQueue_process_wait:IO_Event_Selector_KQueue_Waiting_register");
 	}
 	
@@ -857,6 +914,10 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		if (arguments.events[i].udata) {
 			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
 			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor);
+		} else {
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+			IO_Event_Interrupt_clear(&selector->interrupt);
+#endif
 		}
 	}
 	
@@ -868,6 +929,9 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	if (selector->blocked) {
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+		IO_Event_Interrupt_signal(&selector->interrupt);
+#else
 		struct kevent trigger = {0};
 		
 		trigger.filter = EVFILT_USER;
@@ -888,6 +952,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 		if (result == -1) {
 			rb_sys_fail("IO_Event_Selector_KQueue_wakeup:kevent");
 		}
+#endif
 		
 		return Qtrue;
 	}
