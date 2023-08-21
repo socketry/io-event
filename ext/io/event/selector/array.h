@@ -38,6 +38,12 @@ inline static void IO_Event_Array_allocate(struct IO_Event_Array *array, size_t 
 	array->element_size = element_size;
 }
 
+inline static size_t IO_Event_Array_memory_size(const struct IO_Event_Array *array)
+{
+	// Upper bound.
+	return array->count * (sizeof(void*) + array->element_size);
+}
+
 inline static void IO_Event_Array_free(struct IO_Event_Array *array)
 {
 	for (size_t i = 0; i < array->limit; i += 1) {

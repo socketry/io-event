@@ -131,9 +131,13 @@ void IO_Event_Selector_URing_Type_free(void *_selector)
 }
 
 static
-size_t IO_Event_Selector_URing_Type_size(const void *selector)
+size_t IO_Event_Selector_URing_Type_size(const void *_selector)
 {
-	return sizeof(struct IO_Event_Selector_URing);
+	const struct IO_Event_Selector_URing *selector = _selector;
+	
+	return sizeof(struct IO_Event_Selector_URing)
+		+ IO_Event_Array_memory_size(&selector->completions)
+	;
 }
 
 static const rb_data_type_t IO_Event_Selector_URing_Type = {
