@@ -84,7 +84,7 @@ void IO_Event_Selector_EPoll_Waiting_mark(struct IO_Event_List *_waiting)
 	struct IO_Event_Selector_EPoll_Waiting *waiting = (void*)_waiting;
 	
 	if (waiting->fiber) {
-		RUBY_MARK_MOVABLE_UNLESS_NULL(waiting->fiber);
+		rb_gc_mark_movable(waiting->fiber);
 	}
 }
 
