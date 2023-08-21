@@ -35,6 +35,10 @@ extension_name = 'IO_Event'
 
 $CFLAGS << " -Wall -Wno-unknown-pragmas -std=c99"
 
+if ENV.key?('RUBY_DEBUG')
+	$CFLAGS << " -DRUBY_DEBUG -O0"
+end
+
 $srcs = ["io/event/event.c", "io/event/selector/selector.c"]
 $VPATH << "$(srcdir)/io/event"
 $VPATH << "$(srcdir)/io/event/selector"
