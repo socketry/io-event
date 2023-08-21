@@ -74,48 +74,6 @@ struct IO_Event_Selector_KQueue
 	struct IO_Event_Array descriptors;
 };
 
-void IO_Event_Selector_KQueue_Type_mark(void *_selector)
-{
-	struct IO_Event_Selector_KQueue *selector = _selector;
-	IO_Event_Selector_mark(&selector->backend);
-}
-
-static
-void close_internal(struct IO_Event_Selector_KQueue *selector)
-{
-	if (selector->descriptor >= 0) {
-		close(selector->descriptor);
-		selector->descriptor = -1;
-	}
-}
-
-void IO_Event_Selector_KQueue_Type_free(void *_selector)
-{
-	struct IO_Event_Selector_KQueue *selector = _selector;
-	
-	close_internal(selector);
-	
-	IO_Event_Array_free(&selector->descriptors);
-	
-	free(selector);
-}
-
-size_t IO_Event_Selector_KQueue_Type_size(const void *selector)
-{
-	return sizeof(struct IO_Event_Selector_KQueue);
-}
-
-static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
-	.wrap_struct_name = "IO_Event::Backend::KQueue",
-	.function = {
-		.dmark = IO_Event_Selector_KQueue_Type_mark,
-		.dfree = IO_Event_Selector_KQueue_Type_free,
-		.dsize = IO_Event_Selector_KQueue_Type_size,
-	},
-	.data = NULL,
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
-};
-
 // This represents zero or more fibers waiting for a specific descriptor.
 struct IO_Event_Selector_KQueue_Descriptor
 {
@@ -129,6 +87,101 @@ struct IO_Event_Selector_KQueue_Descriptor
 	
 	// The events that are currently ready:
 	enum IO_Event ready_events;
+};
+
+static
+void IO_Event_Selector_KQueue_Waiting_mark(struct IO_Event_List *_waiting)
+{
+	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
+	
+	if (waiting->fiber) {
+		rb_gc_mark_movable(waiting->fiber);
+	}
+}
+
+static
+void IO_Event_Selector_KQueue_Descriptor_mark(void *_descriptor)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *descriptor = _descriptor;
+	
+	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_KQueue_Waiting_mark);
+}
+
+static
+void IO_Event_Selector_KQueue_Type_mark(void *_selector)
+{
+	struct IO_Event_Selector_KQueue *selector = _selector;
+	IO_Event_Selector_mark(&selector->backend);
+	IO_Event_Array_each(&selector->descriptors, IO_Event_Selector_KQueue_Descriptor_mark);
+}
+
+static
+void IO_Event_Selector_KQueue_Waiting_compact(struct IO_Event_List *_waiting)
+{
+	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
+	
+	if (waiting->fiber) {
+		rb_gc_location(waiting->fiber);
+	}
+}
+
+static
+void IO_Event_Selector_KQueue_Descriptor_compact(void *_descriptor)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *descriptor = _descriptor;
+	
+	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_KQueue_Waiting_compact);
+}
+
+static
+void IO_Event_Selector_KQueue_Type_compact(void *_selector)
+{
+	struct IO_Event_Selector_KQueue *selector = _selector;
+	IO_Event_Selector_compact(&selector->backend);
+	IO_Event_Array_each(&selector->descriptors, IO_Event_Selector_KQueue_Descriptor_compact);
+}
+
+static
+void close_internal(struct IO_Event_Selector_KQueue *selector)
+{
+	if (selector->descriptor >= 0) {
+		close(selector->descriptor);
+		selector->descriptor = -1;
+	}
+}
+
+static
+void IO_Event_Selector_KQueue_Type_free(void *_selector)
+{
+	struct IO_Event_Selector_KQueue *selector = _selector;
+	
+	close_internal(selector);
+	
+	IO_Event_Array_free(&selector->descriptors);
+	
+	free(selector);
+}
+
+static
+size_t IO_Event_Selector_KQueue_Type_size(const void *_selector)
+{
+	const struct IO_Event_Selector_KQueue *selector = _selector;
+	
+	return sizeof(struct IO_Event_Selector_KQueue)
+		+ IO_Event_Array_memory_size(&selector->descriptors)
+	;
+}
+
+static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
+	.wrap_struct_name = "IO_Event::Backend::KQueue",
+	.function = {
+		.dmark = IO_Event_Selector_KQueue_Type_mark,
+		.dcompact = IO_Event_Selector_KQueue_Type_compact,
+		.dfree = IO_Event_Selector_KQueue_Type_free,
+		.dsize = IO_Event_Selector_KQueue_Type_size,
+	},
+	.data = NULL,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
 inline static

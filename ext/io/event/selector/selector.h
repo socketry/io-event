@@ -109,11 +109,22 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE loop)
 
 static inline
 void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
-	rb_gc_mark(backend->loop);
+	rb_gc_mark_movable(backend->loop);
 	
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
-		rb_gc_mark(ready->fiber);
+		rb_gc_mark_movable(ready->fiber);
+		ready = ready->behind;
+	}
+}
+
+static inline
+void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
+	backend->loop = rb_gc_location(backend->loop);
+	
+	struct IO_Event_Selector_Queue *ready = backend->ready;
+	while (ready) {
+		ready->fiber = rb_gc_location(ready->fiber);
 		ready = ready->behind;
 	}
 }

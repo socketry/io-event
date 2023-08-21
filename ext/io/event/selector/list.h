@@ -69,3 +69,14 @@ inline static int IO_Event_List_empty(struct IO_Event_List *list)
 {
 	return list->head == list->tail;
 }
+
+inline static void IO_Event_List_immutable_each(struct IO_Event_List *list, void (*callback)(struct IO_Event_List *node))
+{
+	struct IO_Event_List *node = list->tail;
+	
+	while (node != list) {
+		callback(node);
+		
+		node = node->tail;
+	}
+}
