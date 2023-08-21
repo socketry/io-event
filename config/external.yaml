@@ -11,3 +11,13 @@ async:
   command: bundle exec sus
   extra:
     - $LOAD_PATH << ::File.expand_path("../../ext", __dir__)
+async-io:
+  url: https://github.com/socketry/async-io
+  command: bundle exec rspec
+  extra:
+    - $LOAD_PATH << ::File.expand_path("../../ext", __dir__)
+async-http:
+  url: https://github.com/socketry/async-http
+  command: bundle exec rspec
+  extra:
+    - $LOAD_PATH << ::File.expand_path("../../ext", __dir__)
