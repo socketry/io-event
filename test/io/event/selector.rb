@@ -561,10 +561,30 @@ Selector = Sus::Shared("a selector") do
 	end
 end
 
+describe IO::Event::Selector do
+	with '.default' do
+		it 'can get the default selector' do
+			expect(subject.default).to be_a(Module)
+		end
+		
+		it 'returns the default if an invalid name is provided' do
+			env = {'IO_EVENT_SELECTOR' => 'invalid'}
+			expect{subject.default(env)}.to raise_exception(NameError)
+		end
+	end
+end
+
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
 	describe(klass, unique: name) do
+		with '.default' do
+			it 'can get the specified selector' do
+				env = {'IO_EVENT_SELECTOR' => name}
+				expect(IO::Event::Selector.default(env)).to be == klass
+			end
+		end
+		
 		with '.new' do
 			let(:count) {8}
 			let(:loop) {Fiber.current}

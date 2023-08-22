@@ -11,11 +11,7 @@ module IO::Event
 	module Selector
 		def self.default(env = ENV)
 			if name = env['IO_EVENT_SELECTOR']&.to_sym
-				if const_defined?(name)
-					return const_get(name)
-				else
-					warn "Could not find IO_EVENT_SELECTOR=#{name}!"
-				end
+				return const_get(name)
 			end
 			
 			if self.const_defined?(:URing)
