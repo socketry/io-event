@@ -81,8 +81,8 @@ enum IO_Event_Selector_Queue_Flags {
 };
 
 struct IO_Event_Selector_Queue {
-	struct IO_Event_Selector_Queue *behind;
-	struct IO_Event_Selector_Queue *infront;
+	struct IO_Event_Selector_Queue *head;
+	struct IO_Event_Selector_Queue *tail;
 	
 	enum IO_Event_Selector_Queue_Flags flags;
 	
@@ -114,7 +114,7 @@ void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
 		rb_gc_mark_movable(ready->fiber);
-		ready = ready->behind;
+		ready = ready->head;
 	}
 }
 
@@ -125,7 +125,7 @@ void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
 		ready->fiber = rb_gc_location(ready->fiber);
-		ready = ready->behind;
+		ready = ready->head;
 	}
 }
 

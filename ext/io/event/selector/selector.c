@@ -174,23 +174,23 @@ struct wait_and_transfer_arguments {
 };
 
 static void queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *waiting) {
-	if (waiting->behind) {
-		waiting->behind->infront = waiting->infront;
+	if (waiting->head) {
+		waiting->head->tail = waiting->tail;
 	} else {
-		backend->waiting = waiting->infront;
+		backend->waiting = waiting->tail;
 	}
 	
-	if (waiting->infront) {
-		waiting->infront->behind = waiting->behind;
+	if (waiting->tail) {
+		waiting->tail->head = waiting->head;
 	} else {
-		backend->ready = waiting->behind;
+		backend->ready = waiting->head;
 	}
 }
 
 static void queue_push(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *waiting) {
 	if (backend->waiting) {
-		backend->waiting->behind = waiting;
-		waiting->infront = backend->waiting;
+		backend->waiting->head = waiting;
+		waiting->tail = backend->waiting;
 	} else {
 		backend->ready = waiting;
 	}
@@ -221,8 +221,8 @@ VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALU
 	rb_check_arity(argc, 1, UNLIMITED_ARGUMENTS);
 	
 	struct IO_Event_Selector_Queue waiting = {
-		.behind = NULL,
-		.infront = NULL,
+		.head = NULL,
+		.tail = NULL,
 		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
@@ -254,8 +254,8 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 	rb_check_arity(argc, 2, UNLIMITED_ARGUMENTS);
 	
 	struct IO_Event_Selector_Queue waiting = {
-		.behind = NULL,
-		.infront = NULL,
+		.head = NULL,
+		.tail = NULL,
 		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
@@ -276,8 +276,8 @@ void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber
 {
 	struct IO_Event_Selector_Queue *waiting = malloc(sizeof(struct IO_Event_Selector_Queue));
 	
-	waiting->behind = NULL;
-	waiting->infront = NULL;
+	waiting->head = NULL;
+	waiting->tail = NULL;
 	waiting->flags = IO_EVENT_SELECTOR_QUEUE_INTERNAL;
 	waiting->fiber = fiber;
 	
