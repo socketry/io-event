@@ -303,6 +303,13 @@ int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *sel
 	return result;
 }
 
+inline static
+void IO_Event_Selector_EPoll_Waiting_cancel(struct IO_Event_Selector_EPoll_Waiting *waiting)
+{
+	IO_Event_List_pop(&waiting->list);
+	waiting->fiber = 0;
+}
+
 void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
 {
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
@@ -461,7 +468,7 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	
 	close(arguments->descriptor);
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
@@ -512,7 +519,7 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 };

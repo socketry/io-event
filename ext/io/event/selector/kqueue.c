@@ -121,7 +121,7 @@ void IO_Event_Selector_KQueue_Waiting_compact(struct IO_Event_List *_waiting)
 	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
 	
 	if (waiting->fiber) {
-		rb_gc_location(waiting->fiber);
+		waiting->fiber = rb_gc_location(waiting->fiber);
 	}
 }
 
@@ -301,6 +301,13 @@ int IO_Event_Selector_KQueue_Waiting_register(struct IO_Event_Selector_KQueue *s
 	IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
 	
 	return result;
+}
+
+inline static
+void IO_Event_Selector_KQueue_Waiting_cancel(struct IO_Event_Selector_KQueue_Waiting *waiting)
+{
+	IO_Event_List_pop(&waiting->list);
+	waiting->fiber = 0;
 }
 
 void IO_Event_Selector_KQueue_Descriptor_initialize(void *element)
@@ -489,7 +496,7 @@ static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_KQueue_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
@@ -533,7 +540,7 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_KQueue_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
