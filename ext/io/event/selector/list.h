@@ -27,10 +27,11 @@ inline static void IO_Event_List_append(struct IO_Event_List *list, struct IO_Ev
 	assert(node->head == NULL);
 	assert(node->tail == NULL);
 	
+	struct IO_Event_List *head = list->head;
 	node->tail = list;
-	list->head->tail = node;
-	node->head = list->head;
+	node->head = head;
 	list->head = node;
+	head->tail = node;
 }
 
 inline static void IO_Event_List_prepend(struct IO_Event_List *list, struct IO_Event_List *node)
@@ -38,10 +39,11 @@ inline static void IO_Event_List_prepend(struct IO_Event_List *list, struct IO_E
 	assert(node->head == NULL);
 	assert(node->tail == NULL);
 	
+	struct IO_Event_List *tail = list->tail;
 	node->head = list;
-	list->tail->head = node;
-	node->tail = list->tail;
+	node->tail = tail;
 	list->tail = node;
+	tail->head = node;
 }
 
 // Pop an item from the list.
@@ -52,6 +54,8 @@ inline static void IO_Event_List_pop(struct IO_Event_List *node)
 	
 	struct IO_Event_List *head = node->head;
 	struct IO_Event_List *tail = node->tail;
+	
+	fprintf(stderr, "IO_Event_List_pop: node=%p, head=%p, tail=%p\n", node, head, tail);
 	
 	head->tail = tail;
 	tail->head = head;
