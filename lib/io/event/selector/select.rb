@@ -353,7 +353,7 @@ module IO::Event
 				readable, writable, priority = ::IO.select(readable, writable, priority, duration)
 				@blocked = false
 				
-				ready = Hash.new(0)
+				ready = Hash.new(0).compare_by_identity
 				
 				readable&.each do |io|
 					ready[io] |= IO::READABLE
