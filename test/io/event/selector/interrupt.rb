@@ -23,11 +23,12 @@ Interrupt = Sus::Shared("interrupt") do
 			end
 		end
 		
-		sleep(1.0)
+		# Wait for thread to enter the selector:
+		sleep(0.001) until thread.status == "sleep"
 		
 		thread.raise(::Interrupt)
 		
-		expect{thread.join}.to be_a(::Interrupt)
+		expect{thread.join(1.0)}.to raise_exception(::Interrupt)
 	end
 end
 
