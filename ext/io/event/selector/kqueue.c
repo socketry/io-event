@@ -95,7 +95,6 @@ void IO_Event_Selector_KQueue_Waiting_mark(struct IO_Event_List *_waiting)
 	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
 	
 	if (waiting->fiber) {
-		fprintf(stderr, "Marking fiber: %p\n", (void*)waiting->fiber);
 		rb_gc_mark_movable(waiting->fiber);
 	}
 }
@@ -299,7 +298,6 @@ int IO_Event_Selector_KQueue_Waiting_register(struct IO_Event_Selector_KQueue *s
 	int result = IO_Event_Selector_KQueue_Descriptor_update(selector, identifier, kqueue_descriptor);
 	if (result == -1) return -1;
 	
-	fprintf(stderr, "IO_Event_Selector_KQueue_Waiting_register: fiber=%p\n", waiting->fiber);
 	IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
 	
 	return result;
@@ -309,7 +307,6 @@ inline static
 void IO_Event_Selector_KQueue_Waiting_cancel(struct IO_Event_Selector_KQueue_Waiting *waiting)
 {
 	IO_Event_List_pop(&waiting->list);
-	fprintf(stderr, "IO_Event_Selector_KQueue_Waiting_cancel: fiber=%p\n", waiting->fiber);
 	waiting->fiber = 0;
 }
 

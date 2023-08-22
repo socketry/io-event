@@ -54,8 +54,6 @@ inline static void IO_Event_List_pop(struct IO_Event_List *node)
 	struct IO_Event_List *head = node->head;
 	struct IO_Event_List *tail = node->tail;
 	
-	fprintf(stderr, "IO_Event_List_pop: node=%p, head=%p, tail=%p\n", node, head, tail);
-	
 	head->tail = tail;
 	tail->head = head;
 	node->head = node->tail = NULL;
