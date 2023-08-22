@@ -214,45 +214,26 @@ enum IO_Event events_from_kevent_filter(int filter)
 inline static
 int IO_Event_Selector_KQueue_Descriptor_update(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
 {
-	// if (kqueue_descriptor->registered_events == kqueue_descriptor->waiting_events) {
-	// 	// All the events we are interested in are already registered.
-	// 	return 0;
-	// }
-	
 	int count = 0;
 	struct kevent kevents[3] = {0};
 	
 	if (kqueue_descriptor->waiting_events & IO_EVENT_READABLE) {
 		kevents[count].ident = identifier;
 		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_ADD | EV_ENABLE;
+		kevents[count].flags = EV_ADD | EV_ONESHOT;
 		kevents[count].udata = (void *)kqueue_descriptor;
-		
 // #ifdef EV_OOBAND
 // 		if (events & IO_EVENT_PRIORITY) {
 // 			kevents[count].flags |= EV_OOBAND;
 // 		}
 // #endif
-		
-		count++;
-	} else if (kqueue_descriptor->registered_events & IO_EVENT_READABLE) {
-		kevents[count].ident = identifier;
-		kevents[count].filter = EVFILT_READ;
-		kevents[count].flags = EV_DELETE;
-		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
 	
 	if (kqueue_descriptor->waiting_events & IO_EVENT_WRITABLE) {
 		kevents[count].ident = identifier;
 		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_ADD | EV_ENABLE;
-		kevents[count].udata = (void *)kqueue_descriptor;
-		count++;
-	} else if (kqueue_descriptor->registered_events & IO_EVENT_WRITABLE) {
-		kevents[count].ident = identifier;
-		kevents[count].filter = EVFILT_WRITE;
-		kevents[count].flags = EV_DELETE;
+		kevents[count].flags = EV_ADD | EV_ONESHOT;
 		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
@@ -260,14 +241,8 @@ int IO_Event_Selector_KQueue_Descriptor_update(struct IO_Event_Selector_KQueue *
 	if (kqueue_descriptor->waiting_events & IO_EVENT_EXIT) {
 		kevents[count].ident = identifier;
 		kevents[count].filter = EVFILT_PROC;
-		kevents[count].flags = EV_ADD | EV_ENABLE | EV_ONESHOT;
+		kevents[count].flags = EV_ADD | EV_ONESHOT;
 		kevents[count].fflags = NOTE_EXIT;
-		kevents[count].udata = (void *)kqueue_descriptor;
-		count++;
-	} else if (kqueue_descriptor->registered_events & IO_EVENT_EXIT) {
-		kevents[count].ident = identifier;
-		kevents[count].filter = EVFILT_PROC;
-		kevents[count].flags = EV_DELETE;
 		kevents[count].udata = (void *)kqueue_descriptor;
 		count++;
 	}
@@ -887,6 +862,8 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 	
 	if (ready_events) {
 		kqueue_descriptor->ready_events = 0;
+		// Since we use one-shot semantics, we need to re-arm the events that are ready if needed:
+		kqueue_descriptor->registered_events &= ~ready_events;
 	} else {
 		return 0;
 	}

@@ -314,9 +314,9 @@ void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
 {
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = element;
 	IO_Event_List_initialize(&epoll_descriptor->list);
+	epoll_descriptor->io = 0;
 	epoll_descriptor->waiting_events = 0;
 	epoll_descriptor->registered_events = 0;
-	epoll_descriptor->io = 0;
 }
 
 void IO_Event_Selector_EPoll_Descriptor_free(void *element)
