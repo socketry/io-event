@@ -94,7 +94,10 @@ void IO_Event_Selector_EPoll_Descriptor_mark(void *_descriptor)
 	struct IO_Event_Selector_EPoll_Descriptor *descriptor = _descriptor;
 	
 	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_EPoll_Waiting_mark);
-	rb_gc_mark_movable(descriptor->io);
+	
+	if (descriptor->io) {
+		rb_gc_mark_movable(descriptor->io);
+	}
 }
 
 static
@@ -122,7 +125,10 @@ void IO_Event_Selector_EPoll_Descriptor_compact(void *_descriptor)
 	struct IO_Event_Selector_EPoll_Descriptor *descriptor = _descriptor;
 	
 	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_EPoll_Waiting_compact);
-	descriptor->io = rb_gc_location(descriptor->io);
+	
+	if (descriptor->io) {
+		descriptor->io = rb_gc_location(descriptor->io);
+	}
 }
 
 static
@@ -232,6 +238,7 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 			return 0;
 		}
 	} else {
+		// The IO has changed, we need to reset the state:
 		epoll_descriptor->registered_events = 0;
 		epoll_descriptor->io = io;
 	}
@@ -242,6 +249,8 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 			epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
 			epoll_descriptor->registered_events = 0;
 		}
+		
+		epoll_descriptor->io = 0;
 		
 		return 0;
 	}
@@ -264,6 +273,8 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 	if (result == -1) {
 		if (errno == ENOENT) {
 			result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+		} else if (errno == EEXIST) {
+			result = epoll_ctl(selector->descriptor, EPOLL_CTL_MOD, descriptor, &event);
 		}
 		
 		if (result == -1) {
