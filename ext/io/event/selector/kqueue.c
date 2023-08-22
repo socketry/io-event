@@ -522,9 +522,11 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	if (result == -1) {
 		// OpenBSD/NetBSD return ESRCH when attempting to register an EVFILT_PROC event for a zombie process.
 		if (errno == ESRCH) {
-			process_prewait(process_wait_arguments.pid);
-			return IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
+			process_prewait(pid);
+			
+			return IO_Event_Selector_process_status_wait(pid);
 		}
+		
 		rb_sys_fail("IO_Event_Selector_KQueue_process_wait:IO_Event_Selector_KQueue_Waiting_register");
 	}
 	
