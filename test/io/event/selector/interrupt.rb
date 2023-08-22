@@ -13,13 +13,17 @@ Interrupt = Sus::Shared("interrupt") do
 	let(:output) {pipe.last}
 	
 	it "can interrupt sleeping selector" do
+		result = nil
+		
 		thread = Thread.new do
+			Thread.current.report_on_exception = false
+			
 			Fiber.new do
 				selector.io_wait(Fiber.current, input, IO::READABLE)
 			end
 			
 			Thread.handle_interrupt(::SignalException => :never) do
-				selector.select(nil)
+				result = selector.select(nil)
 			end
 		end
 		
@@ -29,6 +33,7 @@ Interrupt = Sus::Shared("interrupt") do
 		thread.raise(::Interrupt)
 		
 		expect{thread.join(1.0)}.to raise_exception(::Interrupt)
+		expect(result).to be == 0
 	end
 end
 

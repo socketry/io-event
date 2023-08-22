@@ -348,10 +348,24 @@ module IO::Event
 					end
 				end
 				
-				@blocked = true
 				duration = 0 unless @ready.empty?
-				readable, writable, priority = ::IO.select(readable, writable, priority, duration)
-				@blocked = false
+				error = nil
+				
+				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
+				Thread.handle_interrupt(::Exception => :on_blocking) do
+					@blocked = true
+					readable, writable, priority = ::IO.select(readable, writable, priority, duration)
+				rescue ::Exception => error
+					# Requeue below...
+				ensure
+					@blocked = false
+				end
+				
+				if error
+					# Requeue the error into the pending exception queue:
+					Thread.current.raise(error)
+					return 0
+				end
 				
 				ready = Hash.new(0).compare_by_identity
 				
