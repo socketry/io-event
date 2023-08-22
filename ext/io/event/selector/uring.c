@@ -980,10 +980,12 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		if (!selector->backend.ready && !timeout_nonblocking(arguments.timeout)) {
 			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
+			
+			// After waiting/flushing the SQ, check if there are any completions:
+			if (result > 0) {
+				result = select_process_completions(selector);
+			}
 		}
-		
-		// After waiting/flushing the SQ, check if there are any completions:
-		result = select_process_completions(selector);
 	}
 	
 	return RB_INT2NUM(result);
