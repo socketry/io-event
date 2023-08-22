@@ -476,6 +476,8 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
+struct IO_Event_List_Type IO_Event_Selector_KQueue_process_wait_list_type = {};
+
 VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -483,7 +485,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	pid_t pid = NUM2PIDT(_pid);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
-		.list = {.type = 1},
+		.list = {.type = &IO_Event_Selector_KQueue_process_wait_list_type},
 		.fiber = fiber,
 		.events = IO_EVENT_EXIT,
 	};
@@ -536,6 +538,8 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	}
 }
 
+struct IO_Event_List_Type IO_Event_Selector_KQueue_io_wait_list_type = {};
+
 VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -543,7 +547,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
-		.list = {.type = 1},
+		.list = {.type = &IO_Event_Selector_KQueue_io_wait_list_type},
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};

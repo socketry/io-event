@@ -473,6 +473,8 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
+struct IO_Event_List_Type IO_Event_Selector_EPoll_process_wait_list_type = {};
+
 VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
@@ -489,7 +491,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	rb_update_max_fd(descriptor);
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
-		.list = {.type = 1},
+		.list = {.type = &IO_Event_Selector_EPoll_process_wait_list_type},
 		.fiber = fiber,
 		.events = IO_EVENT_READABLE,
 	};
@@ -538,6 +540,8 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	}
 };
 
+struct IO_Event_List_Type IO_Event_Selector_EPoll_io_wait_list_type = {};
+
 VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
@@ -545,7 +549,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	int descriptor = IO_Event_Selector_io_descriptor(io); 
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
-		.list = {.type = 1},
+		.list = {.type = &IO_Event_Selector_EPoll_io_wait_list_type},
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};

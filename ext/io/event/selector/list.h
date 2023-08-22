@@ -4,9 +4,12 @@
 #include <stdio.h>
 #include <assert.h>
 
+struct IO_Event_List_Type {
+};
+
 struct IO_Event_List {
 	struct IO_Event_List *head, *tail;
-	void *type;
+	struct IO_Event_List_Type *type;
 };
 
 inline static void IO_Event_List_initialize(struct IO_Event_List *list)
