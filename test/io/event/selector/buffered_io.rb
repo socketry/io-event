@@ -68,7 +68,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			end
 			
 			writer.transfer
-			selector.select(1)
+			selector.select(0)
 		end
 	end
 end

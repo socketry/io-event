@@ -40,23 +40,23 @@ Selector = Sus::Shared("a selector") do
 			end.to have_duration(be < quantum)
 		end
 		
-		it "can select with 1s timeout" do
+		it "can select with a short timeout" do
 			expect do
-				selector.select(1)
-			end.to have_duration(be <= (1.0 + quantum))
+				selector.select(0.01)
+			end.to have_duration(be <= (0.01 + quantum))
 		end
 	end
 	
 	with '#wakeup' do
 		it "can wakeup selector from different thread" do
 			thread = Thread.new do
-				sleep 0.1
+				sleep 0.01
 				selector.wakeup
 			end
 			
 			expect do
-				selector.select(0.5)
-			end.to have_duration(be < 0.5)
+				selector.select(0.05)
+			end.to have_duration(be < 0.05)
 		ensure
 			thread.join
 		end
@@ -64,13 +64,13 @@ Selector = Sus::Shared("a selector") do
 		it "can wakeup selector from different thread twice in a row" do
 			2.times do
 				thread = Thread.new do
-					sleep 0.1
+					sleep 0.01
 					selector.wakeup
 				end
 				
 				expect do
-					selector.select(0.5)
-				end.to have_duration(be < 0.5)
+					selector.select(0.05)
+				end.to have_duration(be < 0.05)
 			ensure
 				thread.join
 			end
@@ -464,7 +464,7 @@ Selector = Sus::Shared("a selector") do
 			fiber = Fiber.new do
 				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
 				expect(buffer.get_string(0, offset)).to be == message
-				sleep(0.1)
+				sleep(0.001)
 			end
 			
 			fiber.transfer
@@ -505,7 +505,7 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber.transfer
 			
-			selector.select(1)
+			selector.select(0)
 			
 			events << :read
 			expect(remote.read).to be == message
@@ -543,7 +543,7 @@ Selector = Sus::Shared("a selector") do
 			events = []
 			
 			fiber = Fiber.new do
-				pid = Process.spawn("sleep 0.1")
+				pid = Process.spawn("sleep 0.001")
 				result = selector.process_wait(Fiber.current, pid, 0)
 				expect(result).to be(:success?)
 				events << :process_finished
@@ -552,7 +552,7 @@ Selector = Sus::Shared("a selector") do
 			fiber.transfer
 			
 			while fiber.alive?
-				selector.select(1)
+				selector.select(0)
 			end
 			
 			expect(events).to be == [:process_finished]
