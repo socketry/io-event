@@ -24,7 +24,7 @@ jobs:
           - "3.1"
           - "3.2"
           - "head"
-    
+        
     steps:
     - uses: actions/checkout@v3
     - uses: ruby/setup-ruby@v1
@@ -34,4 +34,10 @@ jobs:
     
     - name: Run tests
       timeout-minutes: 10
-      run: bundle exec bake test:external
+      run: bundle exec bake build test:external
+    
+    # - name: Run tests (pure Ruby)
+    #   env:
+    #     IO_EVENT_SELECTOR: Select
+    #   timeout-minutes: 10
+    #   run: bundle exec bake build test:external

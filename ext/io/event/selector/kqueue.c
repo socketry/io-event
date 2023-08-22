@@ -121,7 +121,7 @@ void IO_Event_Selector_KQueue_Waiting_compact(struct IO_Event_List *_waiting)
 	struct IO_Event_Selector_KQueue_Waiting *waiting = (void*)_waiting;
 	
 	if (waiting->fiber) {
-		rb_gc_location(waiting->fiber);
+		waiting->fiber = rb_gc_location(waiting->fiber);
 	}
 }
 
@@ -301,6 +301,13 @@ int IO_Event_Selector_KQueue_Waiting_register(struct IO_Event_Selector_KQueue *s
 	IO_Event_List_prepend(&kqueue_descriptor->list, &waiting->list);
 	
 	return result;
+}
+
+inline static
+void IO_Event_Selector_KQueue_Waiting_cancel(struct IO_Event_Selector_KQueue_Waiting *waiting)
+{
+	IO_Event_List_pop(&waiting->list);
+	waiting->fiber = 0;
 }
 
 void IO_Event_Selector_KQueue_Descriptor_initialize(void *element)
@@ -489,7 +496,7 @@ static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_KQueue_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
@@ -501,6 +508,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	pid_t pid = NUM2PIDT(_pid);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = IO_EVENT_EXIT,
 	};
@@ -515,9 +523,11 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	if (result == -1) {
 		// OpenBSD/NetBSD return ESRCH when attempting to register an EVFILT_PROC event for a zombie process.
 		if (errno == ESRCH) {
-			process_prewait(process_wait_arguments.pid);
-			return IO_Event_Selector_process_status_wait(process_wait_arguments.pid);
+			process_prewait(pid);
+			
+			return IO_Event_Selector_process_status_wait(pid);
 		}
+		
 		rb_sys_fail("IO_Event_Selector_KQueue_process_wait:IO_Event_Selector_KQueue_Waiting_register");
 	}
 	
@@ -533,7 +543,7 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_KQueue_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
@@ -558,6 +568,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};

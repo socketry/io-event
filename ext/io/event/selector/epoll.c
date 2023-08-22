@@ -94,7 +94,10 @@ void IO_Event_Selector_EPoll_Descriptor_mark(void *_descriptor)
 	struct IO_Event_Selector_EPoll_Descriptor *descriptor = _descriptor;
 	
 	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_EPoll_Waiting_mark);
-	rb_gc_mark_movable(descriptor->io);
+	
+	if (descriptor->io) {
+		rb_gc_mark_movable(descriptor->io);
+	}
 }
 
 static
@@ -122,7 +125,10 @@ void IO_Event_Selector_EPoll_Descriptor_compact(void *_descriptor)
 	struct IO_Event_Selector_EPoll_Descriptor *descriptor = _descriptor;
 	
 	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_EPoll_Waiting_compact);
-	descriptor->io = rb_gc_location(descriptor->io);
+	
+	if (descriptor->io) {
+		descriptor->io = rb_gc_location(descriptor->io);
+	}
 }
 
 static
@@ -232,6 +238,7 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 			return 0;
 		}
 	} else {
+		// The IO has changed, we need to reset the state:
 		epoll_descriptor->registered_events = 0;
 		epoll_descriptor->io = io;
 	}
@@ -242,6 +249,8 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 			epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
 			epoll_descriptor->registered_events = 0;
 		}
+		
+		epoll_descriptor->io = 0;
 		
 		return 0;
 	}
@@ -264,6 +273,8 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 	if (result == -1) {
 		if (errno == ENOENT) {
 			result = epoll_ctl(selector->descriptor, EPOLL_CTL_ADD, descriptor, &event);
+		} else if (errno == EEXIST) {
+			result = epoll_ctl(selector->descriptor, EPOLL_CTL_MOD, descriptor, &event);
 		}
 		
 		if (result == -1) {
@@ -290,6 +301,13 @@ int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *sel
 	IO_Event_List_prepend(&epoll_descriptor->list, &waiting->list);
 	
 	return result;
+}
+
+inline static
+void IO_Event_Selector_EPoll_Waiting_cancel(struct IO_Event_Selector_EPoll_Waiting *waiting)
+{
+	IO_Event_List_pop(&waiting->list);
+	waiting->fiber = 0;
 }
 
 void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
@@ -450,7 +468,7 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	
 	close(arguments->descriptor);
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 }
@@ -471,6 +489,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	rb_update_max_fd(descriptor);
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = IO_EVENT_READABLE,
 	};
@@ -501,7 +520,7 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_List_pop(&arguments->waiting->list);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
 	
 	return Qnil;
 };
@@ -526,6 +545,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	int descriptor = IO_Event_Selector_io_descriptor(io); 
 	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};
