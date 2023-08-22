@@ -511,6 +511,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	pid_t pid = NUM2PIDT(_pid);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = IO_EVENT_EXIT,
 	};
@@ -570,6 +571,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
+		.list = {.type = 1},
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};

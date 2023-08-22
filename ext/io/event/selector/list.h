@@ -6,14 +6,13 @@
 
 struct IO_Event_List {
 	struct IO_Event_List *head, *tail;
-	
-	// We could consider introducing this to deal with non-node types in the list:
-	// void *type;
+	void *type;
 };
 
 inline static void IO_Event_List_initialize(struct IO_Event_List *list)
 {
 	list->head = list->tail = list;
+	list->type = 0;
 }
 
 inline static void IO_Event_List_clear(struct IO_Event_List *list)
@@ -79,7 +78,8 @@ inline static void IO_Event_List_immutable_each(struct IO_Event_List *list, void
 	struct IO_Event_List *node = list->tail;
 	
 	while (node != list) {
-		callback(node);
+		if (node->type)
+			callback(node);
 		
 		node = node->tail;
 	}
