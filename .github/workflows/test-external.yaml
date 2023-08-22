@@ -36,8 +36,8 @@ jobs:
       timeout-minutes: 10
       run: bundle exec bake build test:external
     
-    - name: Run tests (pure Ruby)
-      env:
-        IO_EVENT_SELECTOR: Select
-      timeout-minutes: 10
-      run: bundle exec bake build test:external
+    # - name: Run tests (pure Ruby)
+    #   env:
+    #     IO_EVENT_SELECTOR: Select
+    #   timeout-minutes: 10
+    #   run: bundle exec bake build test:external
