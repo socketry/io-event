@@ -326,6 +326,32 @@ VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 
 #pragma mark - Submission Queue
 
+static
+void IO_Event_Selector_URing_dump_completion_queue(struct IO_Event_Selector_URing *selector)
+{
+	struct io_uring *ring = &selector->ring;
+	unsigned head;
+	struct io_uring_cqe *cqe;
+	
+	if (DEBUG) {
+		int first = 1;
+		io_uring_for_each_cqe(ring, head, cqe) {
+			if (!first) {
+				fprintf(stderr, ", ");
+			}
+			else {
+				fprintf(stderr, "CQ: [");
+				first = 0;
+			}
+			
+			fprintf(stderr, "%d:%p", (int)cqe->res, (void*)cqe->user_data);
+		}
+		if (!first) {
+			fprintf(stderr, "]\n");
+		}
+	}
+}
+
 // Flush the submission queue if pending operations are present.
 static
 int io_uring_submit_flush(struct IO_Event_Selector_URing *selector) {
@@ -345,19 +371,24 @@ int io_uring_submit_flush(struct IO_Event_Selector_URing *selector) {
 		return result;
 	}
 	
+	if (DEBUG) {
+		IO_Event_Selector_URing_dump_completion_queue(selector);
+	}
+	
 	return 0;
 }
 
 // Immediately flush the submission queue, yielding to the event loop if it was not successful.
 static
 int io_uring_submit_now(struct IO_Event_Selector_URing *selector) {
-	if (DEBUG && selector->pending) fprintf(stderr, "io_uring_submit_now(pending=%ld)\n", selector->pending);
-
+	if (DEBUG) fprintf(stderr, "io_uring_submit_now(pending=%ld)\n", selector->pending);
+	
 	while (true) {
 		int result = io_uring_submit(&selector->ring);
 		
 		if (result >= 0) {
 			selector->pending = 0;
+			if (DEBUG) IO_Event_Selector_URing_dump_completion_queue(selector);
 			return result;
 		}
 		
@@ -455,9 +486,8 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.descriptor = descriptor,
 	};
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
 	io_uring_sqe_set_data(sqe, completion);
 	IO_Event_Selector_URing_submit_sqe(sqe);
@@ -504,10 +534,9 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	if (DEBUG) fprintf(stderr, "io_wait_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-	
 	// If the operation is still in progress, cancel it:
 	if (arguments->waiting->completion) {
+		if (DEBUG) fprintf(stderr, "io_wait_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
 		struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
@@ -543,13 +572,10 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	
 	short flags = poll_flags_from_events(NUM2INT(events));
 	
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_io_wait:io_uring_prep_poll_add(descriptor=%d, flags=%d, fiber=%p)\n", descriptor, flags, (void*)fiber);
-	
-	io_uring_prep_poll_add(sqe, descriptor, flags);
 	
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -557,9 +583,10 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, completion);
 	IO_Event_Selector_URing_submit_sqe(sqe);
-	
 	// If we are going to wait, we assume that we are waiting for a while:
 	io_uring_submit_pending(selector);
 	
@@ -607,10 +634,10 @@ io_read_submit(VALUE _arguments)
 {
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	
 	if (DEBUG) fprintf(stderr, "io_read_submit:io_uring_prep_read(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	IO_Event_Selector_URing_submit_sqe(sqe);
@@ -627,12 +654,10 @@ io_read_ensure(VALUE _arguments)
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	
-	if (DEBUG) fprintf(stderr, "io_read_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-	
 	// If the operation is still in progress, cancel it:
 	if (arguments->waiting->completion) {
+		if (DEBUG) fprintf(stderr, "io_read_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
+		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
 		IO_Event_Selector_URing_submit_sqe(sqe);
@@ -732,10 +757,9 @@ io_write_submit(VALUE _argument)
 	struct io_write_arguments *arguments = (struct io_write_arguments*)_argument;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	
 	if (DEBUG) fprintf(stderr, "io_write_submit:io_uring_prep_write(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	IO_Event_Selector_URing_submit_sqe(sqe);
@@ -752,12 +776,10 @@ io_write_ensure(VALUE _argument)
 	struct io_write_arguments *arguments = (struct io_write_arguments*)_argument;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	
-	if (DEBUG) fprintf(stderr, "io_write_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-	
 	// If the operation is still in progress, cancel it:
 	if (arguments->waiting->completion) {
+		if (DEBUG) fprintf(stderr, "io_write_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
+		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
 		IO_Event_Selector_URing_submit_sqe(sqe);
@@ -859,7 +881,6 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 
 	if (ASYNC_CLOSE) {
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
-		
 		io_uring_prep_close(sqe, descriptor);
 		io_uring_sqe_set_data(sqe, NULL);
 		IO_Event_Selector_URing_submit_sqe(sqe);
@@ -953,7 +974,10 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 	unsigned head;
 	struct io_uring_cqe *cqe;
 	
-	if (DEBUG) fprintf(stderr, "select_process_completions...\n");
+	if (DEBUG) {
+		fprintf(stderr, "select_process_completions: selector=%p\n", (void*)selector);
+		IO_Event_Selector_URing_dump_completion_queue(selector);
+	}
 	
 	io_uring_for_each_cqe(ring, head, cqe) {
 		if (DEBUG) fprintf(stderr, "select_process_completions: cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
@@ -976,15 +1000,15 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 			waiting->flags = cqe->flags;
 		}
 		
+		io_uring_cq_advance(ring, 1);
+		// This marks the waiting operation as "complete":
+		IO_Event_Selector_URing_Completion_release(selector, completion);
+		
 		if (waiting && waiting->fiber) {
 			assert(waiting->result != -ECANCELED);
 			
 			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
 		}
-		
-		// This marks the waiting operation as "complete":
-		IO_Event_Selector_URing_Completion_release(selector, completion);
-		io_uring_cq_advance(ring, 1);
 	}
 	
 	if (DEBUG && completed > 0) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
