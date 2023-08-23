@@ -2,6 +2,7 @@
 
 # Released under the MIT License.
 # Copyright, 2022, by Samuel Williams.
+# Copyright, 2023, by Math Ieu.
 
 require 'io/event'
 require 'io/event/selector'
