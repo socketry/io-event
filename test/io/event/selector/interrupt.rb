@@ -7,52 +7,29 @@ require 'io/event'
 require 'io/event/selector'
 require 'socket'
 
-Interrupt = Sus::Shared("interrupt") do
-	let(:pipe) {IO.pipe}
-	let(:input) {pipe.first}
-	let(:output) {pipe.last}
-	
-	it "can interrupt sleeping selector" do
-		result = nil
-		
-		thread = Thread.new do
-			Thread.current.report_on_exception = false
-			
-			Fiber.new do
-				selector.io_wait(Fiber.current, input, IO::READABLE)
-			end
-			
-			Thread.handle_interrupt(::SignalException => :never) do
-				result = selector.select(nil)
-			end
-		end
-		
-		# Wait for thread to enter the selector:
-		sleep(0.001) until thread.status == "sleep"
-		
-		thread.raise(::Interrupt)
-		
-		expect{thread.join(1.0)}.to raise_exception(::Interrupt)
-		expect(result).to be == 0
-	end
-end
-
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
 	describe(klass, unique: name) do
-		def before
-			@loop = Fiber.current
-			@selector = subject.new(@loop)
+		it "can interrupt sleeping selector" do
+			result = nil
+			
+			thread = Thread.new do
+				Thread.current.report_on_exception = false
+				selector = subject.new(Fiber.current)
+				
+				Thread.handle_interrupt(::SignalException => :never) do
+					result = selector.select(nil)
+				end
+			end
+			
+			# Wait for thread to enter the selector:
+			sleep(0.001) until thread.status == "sleep"
+			
+			thread.raise(::Interrupt)
+			
+			expect{thread.join}.to raise_exception(::Interrupt)
+			expect(result).to be == 0
 		end
-		
-		def after
-			@selector&.close
-		end
-		
-		attr :loop
-		attr :selector
-		
-		it_behaves_like Interrupt
 	end
 end
