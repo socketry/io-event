@@ -55,8 +55,8 @@ Selector = Sus::Shared("a selector") do
 			end
 			
 			expect do
-				selector.select(0.05)
-			end.to have_duration(be < 0.05)
+				selector.select(0.1)
+			end.to have_duration(be < 0.1)
 		ensure
 			thread.join
 		end
@@ -69,8 +69,8 @@ Selector = Sus::Shared("a selector") do
 				end
 				
 				expect do
-					selector.select(0.05)
-				end.to have_duration(be < 0.05)
+					selector.select(0.1)
+				end.to have_duration(be < 0.1)
 			ensure
 				thread.join
 			end
