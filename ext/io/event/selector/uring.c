@@ -400,12 +400,6 @@ int io_uring_submit_now(struct IO_Event_Selector_URing *selector) {
 	}
 }
 
-static
-void IO_Event_Selector_URing_submit_sqe(struct io_uring_sqe *sqe)
-{
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_submit_sqe(%p): user_data=%p opcode=%d\n", sqe, (void*)sqe->user_data, sqe->opcode);
-}
-
 // Submit a pending operation. This does not submit the operation immediately, but instead defers it to the next call to `io_uring_submit_flush` or `io_uring_submit_now`. This is useful for operations that are not urgent, but should be used with care as it can lead to a deadlock if the submission queue is not flushed.
 static
 void io_uring_submit_pending(struct IO_Event_Selector_URing *selector) {
@@ -490,7 +484,6 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
 	io_uring_sqe_set_data(sqe, completion);
-	IO_Event_Selector_URing_submit_sqe(sqe);
 	io_uring_submit_pending(selector);
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
@@ -540,7 +533,6 @@ VALUE io_wait_ensure(VALUE _arguments) {
 		struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
-		IO_Event_Selector_URing_submit_sqe(sqe);
 		io_uring_submit_now(arguments->selector);
 	}
 	
@@ -586,7 +578,6 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, completion);
-	IO_Event_Selector_URing_submit_sqe(sqe);
 	// If we are going to wait, we assume that we are waiting for a while:
 	io_uring_submit_pending(selector);
 	
@@ -640,7 +631,6 @@ io_read_submit(VALUE _arguments)
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
-	IO_Event_Selector_URing_submit_sqe(sqe);
 	io_uring_submit_now(selector);
 	
 	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
@@ -660,7 +650,6 @@ io_read_ensure(VALUE _arguments)
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
-		IO_Event_Selector_URing_submit_sqe(sqe);
 		io_uring_submit_now(selector);
 	}
 	
@@ -762,7 +751,6 @@ io_write_submit(VALUE _argument)
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
-	IO_Event_Selector_URing_submit_sqe(sqe);
 	io_uring_submit_pending(selector);
 	
 	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
@@ -782,7 +770,6 @@ io_write_ensure(VALUE _argument)
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
 		io_uring_sqe_set_data(sqe, NULL);
-		IO_Event_Selector_URing_submit_sqe(sqe);
 		io_uring_submit_now(selector);
 	}
 	
@@ -883,7 +870,6 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_close(sqe, descriptor);
 		io_uring_sqe_set_data(sqe, NULL);
-		IO_Event_Selector_URing_submit_sqe(sqe);
 		io_uring_submit_now(selector);
 	} else {
 		close(descriptor);
