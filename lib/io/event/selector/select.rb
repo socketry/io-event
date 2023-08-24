@@ -161,7 +161,6 @@ module IO::Event
 			end
 			
 			if Support.fiber_scheduler_v3?
-				warn "Using Ruby 3.3+ IO::Buffer support."
 				# Ruby 3.3+, full IO::Buffer support.
 				
 				# @parameter length [Integer] The minimum number of bytes to read.
@@ -220,8 +219,6 @@ module IO::Event
 					return total
 				end
 			elsif Support.fiber_scheduler_v2?
-				warn "Using Ruby 3.2 IO::Buffer support [experimental]."
-				
 				# Ruby 3.2, most IO::Buffer support, but slightly clunky read/write methods.
 				def io_read(fiber, io, buffer, length, offset = 0)
 					total = 0
@@ -281,8 +278,6 @@ module IO::Event
 					return total
 				end
 			elsif Support.fiber_scheduler_v1?
-				warn "Using Ruby 3.1 IO::Buffer support [experimental]."
-				
 				# Ruby <= 3.1, limited IO::Buffer support.
 				def io_read(fiber, _io, buffer, length, offset = 0)
 					io = IO.for_fd(_io.fileno, autoclose: false)
