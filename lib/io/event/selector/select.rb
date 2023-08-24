@@ -280,7 +280,9 @@ module IO::Event
 			elsif Support.fiber_scheduler_v1?
 				# Ruby <= 3.1, limited IO::Buffer support.
 				def io_read(fiber, _io, buffer, length, offset = 0)
+					# We need to avoid any internal buffering, so we use a duplicated IO object:
 					io = IO.for_fd(_io.fileno, autoclose: false)
+					
 					total = 0
 					
 					maximum_size = buffer.size - offset
@@ -321,7 +323,9 @@ module IO::Event
 				end
 				
 				def io_write(fiber, _io, buffer, length, offset = 0)
+					# We need to avoid any internal buffering, so we use a duplicated IO object:
 					io = IO.for_fd(_io.fileno, autoclose: false)
+					
 					total = 0
 					
 					maximum_size = buffer.size - offset
