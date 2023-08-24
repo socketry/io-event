@@ -236,7 +236,7 @@ Selector = Sus::Shared("a selector") do
 			]
 		end
 		
-		it "can wait consecutively on two different io objects that share a fd" do
+		it "can wait consecutively on two different io objects that share the same file descriptor" do
 			fiber = Fiber.new do
 				events << :write1
 				remote.puts "Hello World"
@@ -252,11 +252,14 @@ Selector = Sus::Shared("a selector") do
 				events << :new_io
 				fileno = local.fileno
 				local.close
+				
 				new_local, new_remote = UNIXSocket.pair
-				# Make sure we attempt to wait on the same FD.
+				
+				# Make sure we attempt to wait on the same file descriptor:
 				if new_remote.fileno == fileno
 					new_local, new_remote = new_remote, new_local
 				end
+				
 				if new_local.fileno != fileno
 					warn "Could not create new IO object with same FD, test ineffective!"
 				end

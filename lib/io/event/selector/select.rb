@@ -160,7 +160,66 @@ module IO::Event
 				errno == EAGAIN or errno == EWOULDBLOCK
 			end
 			
-			if Support.fiber_scheduler_v2?
+			if Support.fiber_scheduler_v3?
+				# Ruby 3.3+, full IO::Buffer support.
+				
+				# @parameter length [Integer] The minimum number of bytes to read.
+				# @parameter offset [Integer] The offset into the buffer to read to.
+				def io_read(fiber, io, buffer, length, offset = 0)
+					total = 0
+					
+					Selector.nonblock(io) do
+						while true
+							result = Fiber.blocking{buffer.read(io, 0, offset)}
+							
+							if result < 0
+								if again?(result)
+									self.io_wait(fiber, io, IO::READABLE)
+								else
+									return result
+								end
+							elsif result == 0
+								break
+							else
+								total += result
+								break if total >= length
+								offset += result
+							end
+						end
+					end
+					
+					return total
+				end
+				
+				# @parameter length [Integer] The minimum number of bytes to write.
+				# @parameter offset [Integer] The offset into the buffer to write from.
+				def io_write(fiber, io, buffer, length, offset = 0)
+					total = 0
+					
+					Selector.nonblock(io) do
+						while true
+							result = Fiber.blocking{buffer.write(io, 0, offset)}
+							
+							if result < 0
+								if again?(result)
+									self.io_wait(fiber, io, IO::READABLE)
+								else
+									return result
+								end
+							elsif result == 0
+								break result
+							else
+								total += result
+								break if total >= length
+								offset += result
+							end
+						end
+					end
+					
+					return total
+				end
+			elsif Support.fiber_scheduler_v2?
+				# Ruby 3.2, most IO::Buffer support, but slightly clunky read/write methods.
 				def io_read(fiber, io, buffer, length, offset = 0)
 					total = 0
 					
@@ -219,6 +278,7 @@ module IO::Event
 					return total
 				end
 			elsif Support.fiber_scheduler_v1?
+				# Ruby <= 3.1, limited IO::Buffer support.
 				def io_read(fiber, _io, buffer, length, offset = 0)
 					io = IO.for_fd(_io.fileno, autoclose: false)
 					total = 0
