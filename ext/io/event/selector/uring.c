@@ -428,6 +428,7 @@ struct process_wait_arguments {
 	struct IO_Event_Selector_URing_Waiting *waiting;
 	
 	pid_t pid;
+	int flags;
 	int descriptor;
 };
 
@@ -438,7 +439,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	if (arguments->waiting->result) {
-		return IO_Event_Selector_process_status_wait(arguments->pid);
+		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -460,6 +461,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
 	pid_t pid = NUM2PIDT(_pid);
+	int flags = NUM2INT(_flags);
 	
 	int descriptor = pidfd_open(pid, 0);
 	if (descriptor < 0) {
@@ -477,6 +479,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.selector = selector,
 		.waiting = &waiting,
 		.pid = pid,
+		.flags = flags,
 		.descriptor = descriptor,
 	};
 	

@@ -446,6 +446,7 @@ struct process_wait_arguments {
 	struct IO_Event_Selector_EPoll *selector;
 	struct IO_Event_Selector_EPoll_Waiting *waiting;
 	int pid;
+	int flags;
 	int descriptor;
 };
 
@@ -456,7 +457,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
 	
 	if (arguments->waiting->ready) {
-		return IO_Event_Selector_process_status_wait(arguments->pid);
+		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -480,7 +481,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	pid_t pid = NUM2PIDT(_pid);
-	// int flags = NUM2INT(_flags);
+	int flags = NUM2INT(_flags);
 	
 	int descriptor = pidfd_open(pid, 0);
 	
@@ -506,6 +507,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
 		.pid = pid,
+		.flags = flags,
 		.descriptor = descriptor,
 		.waiting = &waiting,
 	};

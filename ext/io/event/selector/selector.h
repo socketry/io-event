@@ -66,10 +66,11 @@ VALUE IO_Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv);
 int IO_Event_Selector_io_descriptor(VALUE io);
 #endif
 
+// Reap a process without hanging.
 #ifdef HAVE_RB_PROCESS_STATUS_WAIT
-#define IO_Event_Selector_process_status_wait(pid) rb_process_status_wait(pid)
+#define IO_Event_Selector_process_status_wait(pid, flags) rb_process_status_wait(pid, flags | WNOHANG)
 #else
-VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid);
+VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags);
 #endif
 
 int IO_Event_Selector_nonblock_set(int file_descriptor);
