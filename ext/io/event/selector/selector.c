@@ -25,10 +25,6 @@ static const int DEBUG = 0;
 
 static ID id_transfer, id_alive_p;
 
-#ifndef HAVE_RB_PROCESS_STATUS_WAIT
-static VALUE process_wnohang;
-#endif
-
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	// TODO Consider introducing something like `rb_fiber_scheduler_transfer(...)`.
 #ifdef HAVE__RB_FIBER_TRANSFER
@@ -76,9 +72,9 @@ int IO_Event_Selector_io_descriptor(VALUE io) {
 static ID id_wait;
 static VALUE rb_Process_Status = Qnil;
 
-VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid)
+VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags)
 {
-	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), process_wnohang);
+	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(flags | WNOHANG));
 }
 #endif
 
@@ -157,7 +153,6 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	
 #ifndef HAVE_RB_PROCESS_STATUS_WAIT
 	id_wait = rb_intern("wait");
-	process_wnohang = rb_const_get(rb_mProcess, rb_intern("WNOHANG"));
 	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
 	rb_gc_register_mark_object(rb_Process_Status);
 #endif

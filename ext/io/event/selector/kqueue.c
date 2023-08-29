@@ -433,6 +433,7 @@ struct process_wait_arguments {
 	struct IO_Event_Selector_KQueue *selector;
 	struct IO_Event_Selector_KQueue_Waiting *waiting;
 	pid_t pid;
+	int flags;
 };
 
 static
@@ -461,7 +462,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	if (arguments->waiting->ready) {
 		process_prewait(arguments->pid);
-		return IO_Event_Selector_process_status_wait(arguments->pid);
+		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -483,6 +484,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	pid_t pid = NUM2PIDT(_pid);
+	int flags = NUM2INT(_flags);
 	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
 		.list = {.type = &IO_Event_Selector_KQueue_process_wait_list_type},
@@ -494,6 +496,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 		.selector = selector,
 		.waiting = &waiting,
 		.pid = pid,
+		.flags = flags,
 	};
 	
 	int result = IO_Event_Selector_KQueue_Waiting_register(selector, pid, &waiting);
@@ -502,7 +505,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 		if (errno == ESRCH) {
 			process_prewait(pid);
 			
-			return IO_Event_Selector_process_status_wait(pid);
+			return IO_Event_Selector_process_status_wait(pid, flags);
 		}
 		
 		rb_sys_fail("IO_Event_Selector_KQueue_process_wait:IO_Event_Selector_KQueue_Waiting_register");
