@@ -914,17 +914,17 @@ VALUE select_handle_events(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	struct IO_Event_Selector_KQueue *selector = arguments->selector;
 	
-	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
-			kqueue_descriptor->ready_events |= events_from_kevent_filter(arguments.events[i].filter);
+	for (int i = 0; i < arguments->count; i += 1) {
+		if (arguments->events[i].udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
+			kqueue_descriptor->ready_events |= events_from_kevent_filter(arguments->events[i].filter);
 		}
 	}
 	
-	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
-			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor, &arguments.saved);
+	for (int i = 0; i < arguments->count; i += 1) {
+		if (arguments->events[i].udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
+			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor, &arguments->saved);
 		} else {
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 			IO_Event_Interrupt_clear(&selector->interrupt);
@@ -932,7 +932,7 @@ VALUE select_handle_events(VALUE _arguments)
 		}
 	}
 	
-	return RB_INT2NUM(arguments.count);
+	return RB_INT2NUM(arguments->count);
 }
 
 static
@@ -940,7 +940,7 @@ VALUE select_handle_events_ensure(VALUE _arguments)
 {
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	
-	IO_Event_List_free(arguments->saved);
+	IO_Event_List_free(&arguments->saved);
 	
 	return Qnil;
 }
