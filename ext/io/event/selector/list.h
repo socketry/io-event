@@ -21,6 +21,7 @@ inline static void IO_Event_List_initialize(struct IO_Event_List *list)
 inline static void IO_Event_List_clear(struct IO_Event_List *list)
 {
 	list->head = list->tail = NULL;
+	list->type = 0;
 }
 
 // Append an item to the end of the list.
@@ -64,7 +65,7 @@ inline static void IO_Event_List_pop(struct IO_Event_List *node)
 
 inline static void IO_Event_List_free(struct IO_Event_List *node)
 {
-	if (node->head != node->tail) {
+	if (node->head && node->tail) {
 		IO_Event_List_pop(node);
 	}
 }

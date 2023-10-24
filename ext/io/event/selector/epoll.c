@@ -804,9 +804,11 @@ struct select_arguments {
 	
 	int count;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
-
+	
 	struct timespec * timeout;
 	struct timespec storage;
+	
+	struct IO_Event_List saved;
 };
 
 static int make_timeout_ms(struct timespec * timeout) {
@@ -883,7 +885,7 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 static
-int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event)
+int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, const struct epoll_event *event, struct IO_Event_List *saved)
 {
 	int descriptor = event->data.fd;
 	
@@ -893,29 +895,32 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
 	struct IO_Event_List *list = &epoll_descriptor->list;
 	struct IO_Event_List *node = list->tail;
-	struct IO_Event_List saved = {NULL, NULL};
 	
 	// Reset the events back to 0 so that we can re-arm if necessary:
 	epoll_descriptor->waiting_events = 0;
 	
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, ready_events=%d epoll_descriptor=%p\n", descriptor, ready_events, epoll_descriptor);
+	
 	// It's possible (but unlikely) that the address of list will changing during iteration.
 	while (node != list) {
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: node=%p list=%p type=%p\n", node, list, node->type);
+		
 		struct IO_Event_Selector_EPoll_Waiting *waiting = (struct IO_Event_Selector_EPoll_Waiting *)node;
 		
 		// Compute the intersection of the events we are waiting for and the events that occured:
 		enum IO_Event matching_events = waiting->events & ready_events;
 		
-		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, ready_events=%d, matching_events=%d\n", descriptor, ready_events, matching_events);
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, ready_events=%d, waiting_events=%d, matching_events=%d\n", descriptor, ready_events, waiting->events, matching_events);
 		
 		if (matching_events) {
-			IO_Event_List_append(node, &saved);
+			IO_Event_List_append(node, saved);
 			
 			// Resume the fiber:
 			waiting->ready = matching_events;
 			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
 			
-			node = saved.tail;
-			IO_Event_List_pop(&saved);
+			node = saved->tail;
+			IO_Event_List_pop(saved);
 		} else {
 			// We are still waiting for the events:
 			epoll_descriptor->waiting_events |= waiting->events;
@@ -924,6 +929,36 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 	}
 	
 	return IO_Event_Selector_EPoll_Descriptor_update(selector, epoll_descriptor->io, descriptor, epoll_descriptor);
+}
+
+static
+VALUE select_handle_events(VALUE _arguments)
+{
+	struct select_arguments *arguments = (struct select_arguments *)_arguments;
+	struct IO_Event_Selector_EPoll *selector = arguments->selector;
+	
+	for (int i = 0; i < arguments->count; i += 1) {
+		const struct epoll_event *event = &arguments->events[i];
+		if (DEBUG) fprintf(stderr, "-> fd=%d events=%d\n", event->data.fd, event->events);
+		
+		if (event->data.fd >= 0) {
+			IO_Event_Selector_EPoll_handle(selector, event, &arguments->saved);
+		} else {
+			IO_Event_Interrupt_clear(&selector->interrupt);
+		}
+	}
+	
+	return INT2NUM(arguments->count);
+}
+
+static
+VALUE select_handle_events_ensure(VALUE _arguments)
+{
+	struct select_arguments *arguments = (struct select_arguments *)_arguments;
+	
+	IO_Event_List_free(&arguments->saved);
+	
+	return Qnil;
 }
 
 // TODO This function is not re-entrant and we should document and assert as such.
@@ -939,6 +974,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 			.tv_sec = 0,
 			.tv_nsec = 0
 		},
+		.saved = {},
 	};
 
 	arguments.timeout = &arguments.storage;
@@ -960,18 +996,11 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		}
 	}
 	
-	for (int i = 0; i < arguments.count; i += 1) {
-		const struct epoll_event *event = &arguments.events[i];
-		if (DEBUG) fprintf(stderr, "-> ptr=%p events=%d\n", event->data.ptr, event->events);
-		
-		if (event->data.fd >= 0) {
-			IO_Event_Selector_EPoll_handle(selector, event);
-		} else {
-			IO_Event_Interrupt_clear(&selector->interrupt);
-		}
+	if (arguments.count) {
+		return rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
+	} else {
+		return RB_INT2NUM(0);
 	}
-	
-	return INT2NUM(arguments.count);
 }
 
 VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
