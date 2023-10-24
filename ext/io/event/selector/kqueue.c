@@ -821,6 +821,8 @@ struct select_arguments {
 	
 	struct timespec storage;
 	struct timespec *timeout;
+	
+	struct IO_Event_List saved;
 };
 
 static
@@ -862,7 +864,7 @@ void select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 static
-int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
+int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor, struct IO_Event_List *saved)
 {
 	// This is the mask of all events that occured for the given descriptor:
 	enum IO_Event ready_events = kqueue_descriptor->ready_events;
@@ -877,7 +879,6 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 	
 	struct IO_Event_List *list = &kqueue_descriptor->list;
 	struct IO_Event_List *node = list->tail;
-	struct IO_Event_List saved = {NULL, NULL};
 	
 	// Reset the events back to 0 so that we can re-arm if necessary:
 	kqueue_descriptor->waiting_events = 0;
@@ -891,13 +892,13 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: identifier=%lu, ready_events=%d, matching_events=%d\n", identifier, ready_events, matching_events);
 		
 		if (matching_events) {
-			IO_Event_List_append(node, &saved);
+			IO_Event_List_append(node, saved);
 			
 			waiting->ready = matching_events;
 			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
 			
-			node = saved.tail;
-			IO_Event_List_pop(&saved);
+			node = saved->tail;
+			IO_Event_List_pop(saved);
 		} else {
 			kqueue_descriptor->waiting_events |= waiting->events;
 			node = node->tail;
@@ -905,6 +906,43 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 	}
 	
 	return IO_Event_Selector_KQueue_Descriptor_update(selector, identifier, kqueue_descriptor);
+}
+
+static
+VALUE select_handle_events(VALUE _arguments)
+{
+	struct select_arguments *arguments = (struct select_arguments *)_arguments;
+	struct IO_Event_Selector_KQueue *selector = arguments->selector;
+	
+	for (int i = 0; i < arguments->count; i += 1) {
+		if (arguments->events[i].udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
+			kqueue_descriptor->ready_events |= events_from_kevent_filter(arguments->events[i].filter);
+		}
+	}
+	
+	for (int i = 0; i < arguments->count; i += 1) {
+		if (arguments->events[i].udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
+			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor, &arguments->saved);
+		} else {
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+			IO_Event_Interrupt_clear(&selector->interrupt);
+#endif
+		}
+	}
+	
+	return RB_INT2NUM(arguments->count);
+}
+
+static
+VALUE select_handle_events_ensure(VALUE _arguments)
+{
+	struct select_arguments *arguments = (struct select_arguments *)_arguments;
+	
+	IO_Event_List_free(&arguments->saved);
+	
+	return Qnil;
 }
 
 VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
@@ -919,7 +957,8 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
-		}
+		},
+		.saved = {},
 	};
 	
 	arguments.timeout = &arguments.storage;
@@ -951,25 +990,11 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		}
 	}
 	
-	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
-			kqueue_descriptor->ready_events |= events_from_kevent_filter(arguments.events[i].filter);
-		}
+	if (arguments.count) {
+		return rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
+	} else {
+		return RB_INT2NUM(0);
 	}
-	
-	for (int i = 0; i < arguments.count; i += 1) {
-		if (arguments.events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments.events[i].udata;
-			IO_Event_Selector_KQueue_handle(selector, arguments.events[i].ident, kqueue_descriptor);
-		} else {
-#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
-			IO_Event_Interrupt_clear(&selector->interrupt);
-#endif
-		}
-	}
-	
-	return RB_INT2NUM(arguments.count);
 }
 
 VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
