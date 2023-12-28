@@ -20,6 +20,9 @@ class IO
 			
 			def self.fiber_scheduler_v3?
 				if fiber_scheduler_v2?
+					return true if RUBY_VERSION >= "3.3"
+					
+					# Feature detection if required:
 					begin
 						IO::Buffer.new.slice(0, 0).write(STDOUT)
 						return true
