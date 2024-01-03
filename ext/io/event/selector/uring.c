@@ -602,7 +602,7 @@ static inline off_t io_seekable(int descriptor) {
 	return -1;
 }
 #else
-#warning Upgrade your kernel to 5.16! io_uring bugs prevent efficient io_read/io_write hooks.
+#warning Upgrade your kernel to 5.16+! io_uring bugs prevent efficient io_read/io_write hooks.
 static inline off_t io_seekable(int descriptor)
 {
 	if (lseek(descriptor, 0, SEEK_CUR) == -1) {
