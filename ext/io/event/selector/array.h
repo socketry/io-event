@@ -3,6 +3,7 @@
 
 // Provides a simple implementation of unique pointers to elements of the given size.
 
+#include <ruby.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <assert.h>

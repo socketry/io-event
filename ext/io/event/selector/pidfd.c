@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+#include <ruby.h>
+
 #include <sys/types.h>
 #include <sys/syscall.h>
 #include <unistd.h>

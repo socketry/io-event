@@ -20,7 +20,7 @@
 
 #pragma once
 
-#include "extconf.h"
+#include <ruby.h>
 
 #ifdef HAVE_SYS_EVENTFD_H
 struct IO_Event_Interrupt {
