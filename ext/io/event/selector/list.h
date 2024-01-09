@@ -1,6 +1,7 @@
 // Released under the MIT License.
 // Copyright, 2023, by Samuel Williams.
 
+#include <ruby.h>
 #include <stdio.h>
 #include <assert.h>
 

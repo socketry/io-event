@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "kqueue.h"
+#include "epoll.h"
 #include "selector.h"
 #include "list.h"
 #include "array.h"

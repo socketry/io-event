@@ -22,8 +22,6 @@
 
 #include <ruby.h>
 
-#include "extconf.h"
-
 void Init_IO_Event(void);
 
 #ifdef HAVE_LIBURING_H

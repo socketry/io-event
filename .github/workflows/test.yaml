@@ -34,6 +34,9 @@ jobs:
             ruby: truffleruby
             experimental: true
           - os: ubuntu
+            ruby: truffleruby-head
+            experimental: true
+          - os: ubuntu
             ruby: jruby
             experimental: true
           - os: ubuntu
