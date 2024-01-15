@@ -29,7 +29,7 @@ module IO::Event
 			selector = default(env).new(loop)
 			
 			if debug = env['IO_EVENT_DEBUG_SELECTOR']
-				selector = Debug::Selector.new(selector)
+				selector = Debug::Selector.wrap(selector, env)
 			end
 			
 			return selector
