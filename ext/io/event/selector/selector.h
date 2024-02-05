@@ -34,6 +34,7 @@
 #endif
 
 #include <time.h>
+#include <sys/wait.h>
 
 enum IO_Event {
 	IO_EVENT_READABLE = 1,
