@@ -34,7 +34,9 @@
 #endif
 
 #include <time.h>
-#include <sys/wait.h>
+#ifdef HAVE_RB_PROCESS_STATUS_WAIT
+  #include <sys/wait.h>
+#endif
 
 enum IO_Event {
 	IO_EVENT_READABLE = 1,
