@@ -17,6 +17,10 @@ BufferedIO = Sus::Shared("buffered io") do
 		let(:output) {pipe.last}
 		
 		it "can read using a buffer" do
+			# Non-blocking pipes are probably not implemented in Ruby's compatibility layer.
+			# https://learn.microsoft.com/en-gb/windows/win32/api/namedpipeapi/nf-namedpipeapi-setnamedpipehandlestate?redirectedfrom=MSDN
+			skip "Not supported on Windows" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				expect(selector.io_write(Fiber.current, output, buffer, 128)).to be == 128
@@ -39,6 +43,8 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 		
 		it "can read and write at the specified offset" do
+			skip "Not supported on Windows" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				expect(selector.io_write(Fiber.current, output, buffer, 128, 64)).to be == 64
