@@ -33,6 +33,10 @@ module IO::Event
 				@log = log
 			end
 			
+			def idle_duration
+				@selector.idle_duration
+			end
+			
 			def now
 				Process.clock_gettime(Process::CLOCK_MONOTONIC)
 			end

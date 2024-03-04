@@ -68,6 +68,8 @@ struct IO_Event_Selector_KQueue
 	int descriptor;
 	int blocked;
 	
+	struct timespec idle_duration;
+	
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 	struct IO_Event_Interrupt interrupt;
 #endif
@@ -365,6 +367,15 @@ VALUE IO_Event_Selector_KQueue_loop(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	return selector->backend.loop;
+}
+
+VALUE IO_Event_Selector_KQueue_idle_duration(VALUE self) {
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_KQueue_Type, selector);
+	
+	double duration = selector->idle_duration.tv_sec + (selector->idle_duration.tv_nsec / 1000000000.0);
+	
+	return DBL2NUM(duration);
 }
 
 VALUE IO_Event_Selector_KQueue_close(VALUE self) {
@@ -949,6 +960,9 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
+	selector->idle_duration.tv_sec = 0;
+	selector->idle_duration.tv_nsec = 0;
+	
 	int ready = IO_Event_Selector_queue_flush(&selector->backend);
 	
 	struct select_arguments arguments = {
@@ -985,8 +999,15 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		if (!timeout_nonblocking(arguments.timeout)) {
 			arguments.count = KQUEUE_MAX_EVENTS;
 			
+			struct timespec start_time;
+			IO_Event_Selector_current_time(&start_time);
+			
 			if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_select timeout=" PRINTF_TIMESPEC "\n", PRINTF_TIMESPEC_ARGS(arguments.storage));
 			select_internal_without_gvl(&arguments);
+			
+			struct timespec end_time;
+			IO_Event_Selector_current_time(&end_time);
+			IO_Event_Selector_elapsed_time(&start_time, &end_time, &selector->idle_duration);
 		}
 	}
 	
@@ -1041,6 +1062,7 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "initialize", IO_Event_Selector_KQueue_initialize, 1);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "loop", IO_Event_Selector_KQueue_loop, 0);
+	rb_define_method(IO_Event_Selector_KQueue, "idle_duration", IO_Event_Selector_KQueue_idle_duration, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "transfer", IO_Event_Selector_KQueue_transfer, 0);
 	rb_define_method(IO_Event_Selector_KQueue, "resume", IO_Event_Selector_KQueue_resume, -1);

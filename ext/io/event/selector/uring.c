@@ -50,6 +50,8 @@ struct IO_Event_Selector_URing
 	size_t pending;
 	int blocked;
 	
+	struct timespec idle_duration;
+	
 	struct IO_Event_Array completions;
 	struct IO_Event_List free_list;
 };
@@ -264,6 +266,15 @@ VALUE IO_Event_Selector_URing_loop(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
 	return selector->backend.loop;
+}
+
+VALUE IO_Event_Selector_URing_idle_duration(VALUE self) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	double duration = selector->idle_duration.tv_sec + (selector->idle_duration.tv_nsec / 1000000000.0);
+	
+	return DBL2NUM(duration);
 }
 
 VALUE IO_Event_Selector_URing_close(VALUE self) {
@@ -1009,6 +1020,9 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
+	selector->idle_duration.tv_sec = 0;
+	selector->idle_duration.tv_nsec = 0;
+	
 	// Flush any pending events:
 	io_uring_submit_flush(selector);
 	
@@ -1031,8 +1045,15 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!selector->backend.ready && !timeout_nonblocking(arguments.timeout)) {
+			struct timespec start_time;
+			IO_Event_Selector_current_time(&start_time);
+			
 			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
+			
+			struct timespec end_time;
+			IO_Event_Selector_current_time(&end_time);
+			IO_Event_Selector_elapsed_time(&start_time, &end_time, &selector->idle_duration);
 			
 			// After waiting/flushing the SQ, check if there are any completions:
 			if (result > 0) {
@@ -1083,6 +1104,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "initialize", IO_Event_Selector_URing_initialize, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "loop", IO_Event_Selector_URing_loop, 0);
+	rb_define_method(IO_Event_Selector_URing, "idle_duration", IO_Event_Selector_URing_idle_duration, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "transfer", IO_Event_Selector_URing_transfer, 0);
 	rb_define_method(IO_Event_Selector_URing, "resume", IO_Event_Selector_URing_resume, -1);
