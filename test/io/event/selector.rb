@@ -31,7 +31,7 @@ class FakeFiber
 end
 
 Selector = Sus::Shared("a selector") do
-	with '.select' do
+	with '#select' do
 		let(:quantum) {0.2}
 		
 		it "can select with 0s timeout" do
@@ -44,6 +44,13 @@ Selector = Sus::Shared("a selector") do
 			expect do
 				selector.select(0.01)
 			end.to have_duration(be <= (0.01 + quantum))
+		end
+	end
+	
+	with '#idle_duration' do
+		it 'can report idle duration' do
+			selector.select(0.01)
+			expect(selector.idle_duration).to be > 0.0
 		end
 	end
 	

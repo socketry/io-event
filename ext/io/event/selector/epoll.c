@@ -59,6 +59,8 @@ struct IO_Event_Selector_EPoll
 	int descriptor;
 	int blocked;
 	
+	struct timespec idle_duration;
+	
 	struct IO_Event_Interrupt interrupt;
 	struct IO_Event_Array descriptors;
 };
@@ -382,6 +384,15 @@ VALUE IO_Event_Selector_EPoll_loop(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
 	return selector->backend.loop;
+}
+
+VALUE IO_Event_Selector_EPoll_idle_duration(VALUE self) {
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
+	
+	double duration = selector->idle_duration.tv_sec + (selector->idle_duration.tv_nsec / 1000000000.0);
+	
+	return DBL2NUM(duration);
 }
 
 VALUE IO_Event_Selector_EPoll_close(VALUE self) {
@@ -966,6 +977,9 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
+	selector->idle_duration.tv_sec = 0;
+	selector->idle_duration.tv_nsec = 0;
+	
 	int ready = IO_Event_Selector_queue_flush(&selector->backend);
 	
 	struct select_arguments arguments = {
@@ -991,8 +1005,15 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
-			// Wait for events to occur
+			struct timespec start_time;
+			IO_Event_Selector_current_time(&start_time);
+			
+			// Wait for events to occur:
 			select_internal_without_gvl(&arguments);
+			
+			struct timespec end_time;
+			IO_Event_Selector_current_time(&end_time);
+			IO_Event_Selector_elapsed_time(&start_time, &end_time, &selector->idle_duration);
 		}
 	}
 	
@@ -1025,6 +1046,7 @@ void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_EPoll, "initialize", IO_Event_Selector_EPoll_initialize, 1);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "loop", IO_Event_Selector_EPoll_loop, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "idle_duration", IO_Event_Selector_EPoll_idle_duration, 0);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "transfer", IO_Event_Selector_EPoll_transfer, 0);
 	rb_define_method(IO_Event_Selector_EPoll, "resume", IO_Event_Selector_EPoll_resume, -1);

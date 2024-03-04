@@ -19,9 +19,14 @@ module IO::Event
 				
 				@ready = Queue.new
 				@interrupt = Interrupt.attach(self)
+				
+				@idle_duration = 0.0
 			end
 			
 			attr :loop
+			
+			# This is the amount of time the event loop was idle during the last select call.
+			attr :idle_duration
 			
 			# If the event loop is currently sleeping, wake it up.
 			def wakeup
@@ -415,6 +420,10 @@ module IO::Event
 				duration = 0 unless @ready.empty?
 				error = nil
 				
+				if duration && duration > 0.0
+					start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+				end
+				
 				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
 				Thread.handle_interrupt(::Exception => :on_blocking) do
 					@blocked = true
@@ -423,6 +432,10 @@ module IO::Event
 					# Requeue below...
 				ensure
 					@blocked = false
+					if start_time
+						end_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+						@idle_duration = end_time - start_time
+					end
 				end
 				
 				if error
