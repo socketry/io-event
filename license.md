@@ -1,5 +1,6 @@
 # MIT License
 
+Copyright, 2021, by Wander Hillen.  
 Copyright, 2021-2024, by Samuel Williams.  
 Copyright, 2021, by Delton Ding.  
 Copyright, 2021-2024, by Benoit Daloze.  
