@@ -422,6 +422,8 @@ module IO::Event
 				
 				if duration && duration > 0.0
 					start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+				else
+					@idle_duration = 0.0
 				end
 				
 				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
