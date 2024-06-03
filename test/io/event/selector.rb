@@ -57,13 +57,13 @@ Selector = Sus::Shared("a selector") do
 	with '#wakeup' do
 		it "can wakeup selector from different thread" do
 			thread = Thread.new do
-				sleep 0.01
+				sleep 0.001
 				selector.wakeup
 			end
 			
 			expect do
-				selector.select(0.1)
-			end.to have_duration(be < 0.1)
+				selector.select(1)
+			end.to have_duration(be < 1)
 		ensure
 			thread.join
 		end
@@ -71,13 +71,13 @@ Selector = Sus::Shared("a selector") do
 		it "can wakeup selector from different thread twice in a row" do
 			2.times do
 				thread = Thread.new do
-					sleep 0.01
+					sleep 0.001
 					selector.wakeup
 				end
 				
 				expect do
-					selector.select(0.1)
-				end.to have_duration(be < 0.1)
+					selector.select(1)
+				end.to have_duration(be < 1)
 			ensure
 				thread.join
 			end
