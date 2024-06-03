@@ -152,6 +152,7 @@ void close_internal(struct IO_Event_Selector_EPoll *selector)
 		IO_Event_Interrupt_close(&selector->interrupt);
 	}
 }
+
 static
 void IO_Event_Selector_EPoll_Type_free(void *_selector)
 {
