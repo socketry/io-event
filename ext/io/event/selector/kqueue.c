@@ -371,7 +371,7 @@ VALUE IO_Event_Selector_KQueue_loop(VALUE self) {
 
 VALUE IO_Event_Selector_KQueue_idle_duration(VALUE self) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
-	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_KQueue_Type, selector);
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
 	double duration = selector->idle_duration.tv_sec + (selector->idle_duration.tv_nsec / 1000000000.0);
 	
