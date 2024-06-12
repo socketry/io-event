@@ -901,24 +901,21 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 		return NULL;
 	}
 	
-	if (RB_FLOAT_TYPE_P(duration)) {
-		double value = RFLOAT_VALUE(duration);
-		time_t seconds = value;
-		
-		storage->tv_sec = seconds;
-		storage->tv_nsec = (value - seconds) * 1000000000L;
-		
-		return storage;
-	}
-	
-	else if (RB_INTEGER_TYPE_P(duration)) {
+	if (RB_INTEGER_TYPE_P(duration)) {
 		storage->tv_sec = NUM2TIMET(duration);
 		storage->tv_nsec = 0;
 		
 		return storage;
 	}
 	
-	rb_raise(rb_eArgError, "unable to convert timeout: %"PRIsVALUE, rb_inspect(duration));
+	duration = rb_to_float(duration);
+	double value = RFLOAT_VALUE(duration);
+	time_t seconds = value;
+	
+	storage->tv_sec = seconds;
+	storage->tv_nsec = (value - seconds) * 1000000000L;
+	
+	return storage;
 }
 
 static
