@@ -45,6 +45,12 @@ Selector = Sus::Shared("a selector") do
 				selector.select(0.01)
 			end.to have_duration(be <= (0.01 + quantum))
 		end
+		
+		it "raises an error when given an invalid duration" do
+			expect do
+				selector.select("invalid")
+			end.to raise_exception(ArgumentError)
+		end
 	end
 	
 	with '#idle_duration' do
