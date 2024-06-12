@@ -786,19 +786,19 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 		return NULL;
 	}
 	
-	if (FIXNUM_P(duration)) {
-		storage->tv_sec = NUM2TIMET(duration);
-		storage->tv_nsec = 0;
-		
-		return storage;
-	}
-	
-	else if (RB_FLOAT_TYPE_P(duration)) {
+	if (RB_FLOAT_TYPE_P(duration)) {
 		double value = RFLOAT_VALUE(duration);
 		time_t seconds = value;
 		
 		storage->tv_sec = seconds;
 		storage->tv_nsec = (value - seconds) * 1000000000L;
+		
+		return storage;
+	}
+	
+	else if (RB_INTEGER_TYPE_P(duration)) {
+		storage->tv_sec = NUM2TIMET(duration);
+		storage->tv_nsec = 0;
 		
 		return storage;
 	}
