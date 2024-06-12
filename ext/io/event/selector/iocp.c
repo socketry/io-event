@@ -780,8 +780,8 @@ int timeout_nonblocking(struct timespec * timespec) {
 struct select_arguments {
 	struct IO_Event_Selector_IOCP *selector;
 	
-	int count;
-	struct iocp_event events[IOCP_MAX_EVENTS];
+	ULONG count;
+	struct OVERLAPPED_ENTRY events[IOCP_MAX_EVENTS];
 	
 	struct timespec * timeout;
 	struct timespec storage;
@@ -814,7 +814,7 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->count = iocp_pwait2(arguments->selector->handle, arguments->events, IOCP_MAX_EVENTS, arguments->timeout, NULL);
+	GetQueuedCompletionStatusEx(arguments->selector->handle, arguments->events, IOCP_MAX_EVENTS, &arguments->count, make_timeout_ms(arguments->timeout), FALSE);
 	
 	// Comment out the above line and enable the below lines to test ENOSYS code path.
 	// arguments->count = -1;
@@ -826,7 +826,6 @@ void * select_internal(void *_arguments) {
 	else {
 		// Fall through and execute iocp_wait fallback.
 	}
-#endif
 	
 	arguments->count = iocp_wait(arguments->selector->handle, arguments->events, IOCP_MAX_EVENTS, make_timeout_ms(arguments->timeout));
 	
