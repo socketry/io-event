@@ -39,6 +39,8 @@ if have_header('sys/event.h')
 	$srcs << "io/event/selector/kqueue.c"
 end
 
+have_header('sys/wait.h')
+
 have_header('sys/eventfd.h')
 $srcs << "io/event/interrupt.c"
 

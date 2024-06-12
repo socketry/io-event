@@ -34,8 +34,9 @@
 #endif
 
 #include <time.h>
-#ifdef HAVE_RB_PROCESS_STATUS_WAIT
-  #include <sys/wait.h>
+
+#ifdef HAVE_SYS_WAIT_H
+#include <sys/wait.h>
 #endif
 
 enum IO_Event {
