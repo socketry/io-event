@@ -15,11 +15,11 @@ describe IO::Event::Timers do
 			fired = true
 		end
 		
-		timers.schedule(0.1, callback)
+		timers.after(0.1, &callback)
 		
 		expect(timers.size).to be == 1
 		
-		timers.fire(0.15)
+		timers.fire(timers.now + 0.15)
 		
 		expect(timers.size).to be == 0
 		
@@ -29,46 +29,61 @@ describe IO::Event::Timers do
 	it "should register timers in order" do
 		fired = []
 		
-		times = [0.95, 0.1, 0.3, 0.5, 0.4, 0.2, 0.01, 0.9]
+		offsets = [0.95, 0.1, 0.3, 0.5, 0.4, 0.2, 0.01, 0.9]
 		
-		times.each do |requested_time|
-			callback = proc do |_time|
-				fired << requested_time
+		offsets.each do |offset|
+			timers.after(offset) do
+				fired << offset
 			end
-			
-			timers.schedule(requested_time, callback)
 		end
 		
-		timers.fire(0.5)
-		expect(fired).to be == times.sort.first(6)
+		timers.fire(timers.now + 0.5)
+		expect(fired).to be == offsets.sort.first(6)
 		
-		timers.fire(1.0)
-		expect(fired).to be == times.sort
+		timers.fire(timers.now + 1.0)
+		expect(fired).to be == offsets.sort
 	end
 	
 	it "should fire timers with the time they were fired at" do
 		fired_at = :not_fired
 		
-		callback = proc do |time|
+		timers.after(0.5) do |time|
 			# The time we actually were fired at:
 			fired_at = time
 		end
 		
-		timers.schedule(0.5, callback)
+		now = timers.now + 1.0
+		timers.fire(now)
 		
-		timers.fire(1.0)
-		
-		expect(fired_at).to be == 1.0
+		expect(fired_at).to be == now
 	end
 	
 	it "should flush cancelled timers" do
-		callback = proc{}
-		
 		10.times do
-			handle = timers.schedule(0.1, callback)
+			handle = timers.after(0.1) {}
 			handle.cancel!
 		end
 		
 		expect(timers.size).to be == 0
+	end
+	
+	with '#wait_interval' do
+		it "should return nil if no timers are scheduled" do
+			expect(timers.wait_interval).to be_nil
+		end
+		
+		it "should return nil if all timers are cancelled" do
+			handle = timers.after(0.1) {}
+			handle.cancel!
+			
+			expect(timers.wait_interval).to be_nil
+		end
+		
+		it "should return the time until the next timer" do
+			timers.after(0.1) {}
+			timers.after(0.2) {}
+			
+			expect(timers.wait_interval).to be_within(0.01).of(0.1)
+		end
 	end
 end
