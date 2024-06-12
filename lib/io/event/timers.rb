@@ -9,20 +9,20 @@ class IO
 	module Event
 		class Timers
 			class Handle
-				def initialize(offset, block)
-					@offset = offset
+				def initialize(time, block)
+					@time = time
 					@block = block
 				end
 				
 				def < other
-					@offset < other.offset
+					@time < other.time
 				end
 				
 				def > other
-					@offset > other.offset
+					@time > other.time
 				end
 				
-				attr :offset
+				attr :time
 				attr :block
 				
 				def call(...)
@@ -49,15 +49,19 @@ class IO
 				return @heap.size
 			end
 			
-			def schedule(offset, block)
-				handle = Handle.new(offset, block)
+			# Schedule a block to be called at a specific time in the future.
+			# @parameter time [Time] The time at which the block should be called, relative to {#now}.
+			def schedule(time, block)
+				handle = Handle.new(time, block)
 				@scheduled << handle
 				
 				return handle
 			end
 			
-			def after(timeout, &block)
-				schedule(now + timeout, block)
+			# Schedule a block to be called after a specific time offset, relative to the current time as returned by {#now}.
+			# @parameter offset [Time] The time offset from the current time at which the block should be called.
+			def after(offset, &block)
+				schedule(self.now + offset, block)
 			end
 			
 			def wait_interval(now = self.now)
@@ -67,7 +71,7 @@ class IO
 					if handle.cancelled?
 						@heap.pop
 					else
-						return handle.offset - now
+						return handle.time - now
 					end
 				end
 			end
@@ -84,7 +88,7 @@ class IO
 				while handle = @heap.peek
 					if handle.cancelled?
 						@heap.pop
-					elsif handle.offset <= now
+					elsif handle.time <= now
 						# Remove the earliest timer from the heap:
 						@heap.pop
 						
