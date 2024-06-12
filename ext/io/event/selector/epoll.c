@@ -803,7 +803,7 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 		return storage;
 	}
 	
-	rb_raise(rb_eRuntimeError, "unable to convert timeout");
+	rb_raise(rb_eArgError, "unable to convert timeout: %"PRIsVALUE, rb_inspect(duration));
 }
 
 static

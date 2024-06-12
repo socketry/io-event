@@ -918,7 +918,7 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 		return storage;
 	}
 	
-	rb_raise(rb_eRuntimeError, "unable to convert timeout");
+	rb_raise(rb_eArgError, "unable to convert timeout: %"PRIsVALUE, rb_inspect(duration));
 }
 
 static
