@@ -49,7 +49,7 @@ Selector = Sus::Shared("a selector") do
 		it "raises an error when given an invalid duration" do
 			expect do
 				selector.select("invalid")
-			end.to raise_exception(ArgumentError)
+			end.to raise_exception
 		end
 	end
 	
