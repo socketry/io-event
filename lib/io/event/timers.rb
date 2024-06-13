@@ -50,18 +50,19 @@ class IO
 			end
 			
 			# Schedule a block to be called at a specific time in the future.
-			# @parameter time [Time] The time at which the block should be called, relative to {#now}.
+			# @parameter time [Float] The time at which the block should be called, relative to {#now}.
 			def schedule(time, block)
 				handle = Handle.new(time, block)
+				
 				@scheduled << handle
 				
 				return handle
 			end
 			
 			# Schedule a block to be called after a specific time offset, relative to the current time as returned by {#now}.
-			# @parameter offset [Time] The time offset from the current time at which the block should be called.
+			# @parameter offset [#to_f] The time offset from the current time at which the block should be called.
 			def after(offset, &block)
-				schedule(self.now + offset, block)
+				schedule(self.now + offset.to_f, block)
 			end
 			
 			def wait_interval(now = self.now)

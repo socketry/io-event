@@ -421,7 +421,6 @@ module IO::Event
 				error = nil
 				
 				if duration
-					duration = duration/1.0
 					if duration > 0
 						start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 					end
