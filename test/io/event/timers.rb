@@ -5,6 +5,16 @@
 
 require 'io/event/timers'
 
+class FloatWrapper
+	def initialize(value)
+		@value = value
+	end
+	
+	def to_f
+		@value
+	end
+end
+
 describe IO::Event::Timers do
 	let(:timers) {subject.new}
 	
@@ -65,6 +75,26 @@ describe IO::Event::Timers do
 		end
 		
 		expect(timers.size).to be == 0
+	end
+	
+	with '#schedule' do
+		it "raises an error if given an invalid time" do
+			expect do
+				timers.after(Object.new) {}
+			end.to raise_exception(NoMethodError, message: be =~ /to_f/)
+		end
+		
+		it "converts the offset to a float" do
+			fired = false
+			
+			timers.after(FloatWrapper.new(0.1)) do
+				fired = true
+			end
+			
+			timers.fire(timers.now + 0.15)
+			
+			expect(fired).to be == true
+		end
 	end
 	
 	with '#wait_interval' do
