@@ -42,6 +42,8 @@ Cancellable = Sus::Shared("cancellable") do
 		end
 		
 		it "can cancel waits" do
+			skip "Not supported on Windows" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				

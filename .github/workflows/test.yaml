@@ -43,6 +43,9 @@ jobs:
             ruby: head
             experimental: true
           - os: windows
+            ruby: "3.3"
+            experimental: false
+          - os: windows
             ruby: head
             experimental: true
     
