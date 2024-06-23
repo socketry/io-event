@@ -420,10 +420,8 @@ module IO::Event
 				duration = 0 unless @ready.empty?
 				error = nil
 				
-				if duration
-					if duration > 0
-						start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-					end
+				if duration&.>(0)
+					start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 				else
 					@idle_duration = 0.0
 				end

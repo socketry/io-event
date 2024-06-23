@@ -55,8 +55,13 @@ Selector = Sus::Shared("a selector") do
 	
 	with '#idle_duration' do
 		it 'can report idle duration' do
-			selector.select(0.01)
-			expect(selector.idle_duration).to be > 0.0
+			10.times do
+				selector.select(0.001)
+				expect(selector.idle_duration).to be > 0.0
+				
+				selector.select(0)
+				expect(selector.idle_duration).to be == 0.0
+			end
 		end
 	end
 	
