@@ -180,9 +180,15 @@ static void queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selecto
 	} else {
 		backend->ready = waiting->head;
 	}
+	
+	waiting->head = NULL;
+	waiting->tail = NULL;
 }
 
 static void queue_push(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *waiting) {
+	assert(waiting->head == NULL);
+	assert(waiting->tail == NULL);
+	
 	if (backend->waiting) {
 		backend->waiting->head = waiting;
 		waiting->tail = backend->waiting;
@@ -283,6 +289,7 @@ static inline
 void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *ready)
 {
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_queue_pop -> %p\n", (void*)ready->fiber);
+	
 	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
 		IO_Event_Selector_fiber_transfer(ready->fiber, 0, NULL);
 	} else {

@@ -18,6 +18,10 @@ $CFLAGS << " -Wall -Wno-unknown-pragmas -std=c99"
 
 if ENV.key?('RUBY_DEBUG')
 	$CFLAGS << " -DRUBY_DEBUG -O0"
+	
+	# Add address and undefined behaviour sanitizers:
+	$CFLAGS << " -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer"
+	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"
 end
 
 $srcs = ["io/event/event.c", "io/event/selector/selector.c"]
