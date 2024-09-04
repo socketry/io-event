@@ -80,12 +80,12 @@ IO::Event::Selector.constants.each do |name|
 	next unless klass.instance_methods.include?(:io_read)
 	
 	describe(klass, unique: name) do
-		def before
+		before do
 			@loop = Fiber.current
 			@selector = subject.new(@loop)
 		end
 		
-		def after
+		after do
 			@selector&.close
 		end
 		

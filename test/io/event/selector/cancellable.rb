@@ -15,8 +15,7 @@ Cancellable = Sus::Shared("cancellable") do
 		let(:input) {pipe.first}
 		let(:output) {pipe.last}
 		
-		def after
-			super
+		after do
 			input.close
 			output.close
 		end
@@ -70,12 +69,12 @@ IO::Event::Selector.constants.each do |name|
 	next unless klass.instance_methods.include?(:io_read)
 	
 	describe(klass, unique: name) do
-		def before
+		before do
 			@loop = Fiber.current
 			@selector = subject.new(@loop)
 		end
 		
-		def after
+		after do
 			@selector&.close
 		end
 		

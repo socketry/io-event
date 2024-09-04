@@ -622,14 +622,12 @@ IO::Event::Selector.constants.each do |name|
 		end
 
 		with 'an instance' do
-			def before
+			before do
 				@loop = Fiber.current
 				@selector = subject.new(@loop)
-				super
 			end
 			
-			def after
-				super
+			after do
 				@selector&.close
 			end
 			
@@ -642,14 +640,12 @@ IO::Event::Selector.constants.each do |name|
 end
 
 describe IO::Event::Debug::Selector do
-	def before
+	before do
 		@loop = Fiber.current
 		@selector = subject.new(IO::Event::Selector.new(loop))
-		super
 	end
 	
-	def after
-		super
+	after do
 		@selector&.close
 	end
 	
