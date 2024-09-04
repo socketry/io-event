@@ -7,18 +7,20 @@ source 'https://rubygems.org'
 
 gemspec
 
-group :test do
-	gem "bake-test"
-	gem "bake-test-external"
-	gem "async"
-	
-	gem "covered"
-	gem "sus"
-end
-
 group :maintenance, optional: true do
 	gem "bake-gem"
 	gem "bake-modernize"
 	
 	gem "utopia-project"
+end
+
+group :test do
+	gem "sus"
+	gem "covered"
+	gem "decode"
+	gem "rubocop"
+	
+	gem "bake-test"
+	gem "bake-test-external"
+	gem "async"
 end
