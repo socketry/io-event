@@ -582,6 +582,22 @@ Selector = Sus::Shared("a selector") do
 			expect(result).to be(:success?)
 		end
 	end
+	
+	with "#resume" do
+		it "can resume a fiber" do
+			other_fiber_count = 0
+			
+			5.times do
+				fiber = Fiber.new do
+					other_fiber_count += 1
+				end
+				
+				selector.resume(fiber)
+			end
+			
+			expect(other_fiber_count).to be == 5
+		end
+	end
 end
 
 describe IO::Event::Selector do
