@@ -25,6 +25,13 @@
 
 #include "selector/selector.h"
 
+#ifdef HAVE_RUBY_WIN32_H
+#include <ruby/win32.h>
+#if !defined(HAVE_PIPE) && !defined(pipe)
+#define pipe(p)	rb_w32_pipe(p)
+#endif
+#endif
+
 #ifdef HAVE_SYS_EVENTFD_H
 #include <sys/eventfd.h>
 
