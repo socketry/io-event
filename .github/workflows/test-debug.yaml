@@ -1,4 +1,4 @@
-name: Test
+name: Test Debug
 
 on: [push, pull_request]
 
@@ -7,41 +7,23 @@ permissions:
 
 env:
   CONSOLE_OUTPUT: XTerm
+  RUBY_DEBUG: true
+  RUBY_SANITIZE: true
+  ASAN_OPTIONS: halt_on_error=0:use_sigaltstack=0:detect_leaks=0
 
 jobs:
   test:
     name: ${{matrix.ruby}} on ${{matrix.os}}
     runs-on: ${{matrix.os}}-latest
-    continue-on-error: ${{matrix.experimental}}
     
     strategy:
       matrix:
         os:
           - ubuntu
-          - macos
-          - windows
         
         ruby:
-          - "3.1"
-          - "3.2"
           - "3.3"
           - "head"
-        
-        experimental: [false]
-        
-        include:
-          - os: ubuntu
-            ruby: truffleruby
-            experimental: true
-          - os: ubuntu
-            ruby: truffleruby-head
-            experimental: true
-          - os: ubuntu
-            ruby: jruby
-            experimental: true
-          - os: ubuntu
-            ruby: head
-            experimental: true
     
     steps:
     - uses: actions/checkout@v4
@@ -56,4 +38,4 @@ jobs:
     
     - name: Run tests
       timeout-minutes: 10
-      run: bundle exec bake build test
+      run: LD_PRELOAD=/usr/lib/libasan.so bundle exec bake build test
