@@ -295,7 +295,7 @@ void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Ev
 	
 	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
 		IO_Event_Selector_fiber_transfer(ready->fiber, 0, NULL);
-	} else {
+	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_INTERNAL) {
 		VALUE fiber = ready->fiber;
 		queue_pop(backend, ready);
 		free(ready);
@@ -303,6 +303,8 @@ void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Ev
 		if (RTEST(rb_funcall(fiber, id_alive_p, 0))) {
 			rb_funcall(fiber, id_transfer, 0);
 		}
+	} else {
+		rb_raise(rb_eRuntimeError, "Unknown queue type!");
 	}
 }
 
