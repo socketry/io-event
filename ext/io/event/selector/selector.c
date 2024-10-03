@@ -276,6 +276,7 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber)
 {
 	struct IO_Event_Selector_Queue *waiting = malloc(sizeof(struct IO_Event_Selector_Queue));
+	assert(waiting);
 	
 	waiting->head = NULL;
 	waiting->tail = NULL;

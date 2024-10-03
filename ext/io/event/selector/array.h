@@ -29,6 +29,8 @@ inline static void IO_Event_Array_allocate(struct IO_Event_Array *array, size_t 
 {
 	if (count) {
 		array->base = (void**)calloc(count, sizeof(void*));
+		assert(array->base);
+		
 		array->count = count;
 	} else {
 		array->base = NULL;
@@ -51,6 +53,7 @@ inline static void IO_Event_Array_free(struct IO_Event_Array *array)
 		void *element = array->base[i];
 		if (element) {
 			array->element_free(element);
+			
 			free(element);
 		}
 	}
@@ -107,6 +110,7 @@ inline static void* IO_Event_Array_lookup(struct IO_Event_Array *array, size_t i
 	// Allocate the element if it doesn't exist:
 	if (*element == NULL) {
 		*element = malloc(array->element_size);
+		assert(*element);
 		
 		if (array->element_initialize) {
 			array->element_initialize(*element);
