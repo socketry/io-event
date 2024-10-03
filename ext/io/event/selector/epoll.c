@@ -184,7 +184,7 @@ static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
 		.dsize = IO_Event_Selector_EPoll_Type_size,
 	},
 	.data = NULL,
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 inline static
@@ -333,7 +333,7 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, Qnil);
+	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->descriptor = -1;
 	selector->blocked = 0;
 	
@@ -363,7 +363,7 @@ VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, loop);
+	IO_Event_Selector_initialize(&selector->backend, self, loop);
 	int result = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (result == -1) {

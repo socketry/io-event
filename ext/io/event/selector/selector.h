@@ -95,6 +95,7 @@ struct IO_Event_Selector_Queue {
 };
 
 struct IO_Event_Selector {
+	VALUE self;
 	VALUE loop;
 	
 	struct IO_Event_Selector_Queue *free;
@@ -106,7 +107,8 @@ struct IO_Event_Selector {
 };
 
 static inline
-void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE loop) {
+void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop) {
+	backend->self = self;
 	backend->loop = loop;
 	backend->waiting = NULL;
 	backend->ready = NULL;
@@ -114,7 +116,14 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE loop)
 
 static inline
 void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
+	rb_gc_mark_movable(backend->self);
 	rb_gc_mark_movable(backend->loop);
+	
+	struct IO_Event_Selector_Queue *waiting = backend->waiting;
+	while (waiting) {
+		rb_gc_mark_movable(waiting->fiber);
+		waiting = waiting->head;
+	}
 	
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
@@ -125,7 +134,14 @@ void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
 
 static inline
 void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
+	backend->self = rb_gc_location(backend->self);
 	backend->loop = rb_gc_location(backend->loop);
+	
+	struct IO_Event_Selector_Queue *waiting = backend->waiting;
+	while (waiting) {
+		waiting->fiber = rb_gc_location(waiting->fiber);
+		waiting = waiting->head;
+	}
 	
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {

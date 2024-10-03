@@ -152,7 +152,7 @@ static const rb_data_type_t IO_Event_Selector_URing_Type = {
 		.dsize = IO_Event_Selector_URing_Type_size,
 	},
 	.data = NULL,
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 inline static
@@ -228,7 +228,7 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, Qnil);
+	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->ring.ring_fd = -1;
 	
 	selector->pending = 0;
@@ -249,7 +249,7 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, loop);
+	IO_Event_Selector_initialize(&selector->backend, self, loop);
 	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, 0);
 	
 	if (result < 0) {

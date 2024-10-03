@@ -280,7 +280,9 @@ void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber
 	waiting->head = NULL;
 	waiting->tail = NULL;
 	waiting->flags = IO_EVENT_SELECTOR_QUEUE_INTERNAL;
+	
 	waiting->fiber = fiber;
+	RB_OBJ_WRITTEN(backend->self, Qundef, fiber);
 	
 	queue_push(backend, waiting);
 }

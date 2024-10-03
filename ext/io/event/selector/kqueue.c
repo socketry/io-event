@@ -183,7 +183,7 @@ static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
 		.dsize = IO_Event_Selector_KQueue_Type_size,
 	},
 	.data = NULL,
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 inline static
@@ -307,7 +307,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	VALUE instance = TypedData_Make_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, Qnil);
+	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->descriptor = -1;
 	selector->blocked = 0;
 	
@@ -340,7 +340,7 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	IO_Event_Selector_initialize(&selector->backend, loop);
+	IO_Event_Selector_initialize(&selector->backend, self, loop);
 	int result = kqueue();
 	
 	if (result == -1) {
