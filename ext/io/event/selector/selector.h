@@ -108,8 +108,8 @@ struct IO_Event_Selector {
 
 static inline
 void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop) {
-	backend->self = self;
-	backend->loop = loop;
+	RB_OBJ_WRITE(self, &backend->self, self);
+	RB_OBJ_WRITE(self, &backend->loop, loop);
 	backend->waiting = NULL;
 	backend->ready = NULL;
 }
