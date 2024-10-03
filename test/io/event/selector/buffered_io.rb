@@ -41,11 +41,13 @@ BufferedIO = Sus::Shared("buffered io") do
 		it "can read and write at the specified offset" do
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
+				# We can't write 128 bytes because there are only +64 bytes from offset 64.
 				expect(selector.io_write(Fiber.current, output, buffer, 128, 64)).to be == 64
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(128)
+				# Only 64 bytes are available to read.
 				expect(selector.io_read(Fiber.current, input, buffer, 1, 64)).to be == 64
 			end
 			

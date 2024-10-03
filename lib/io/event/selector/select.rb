@@ -168,6 +168,8 @@ module IO::Event
 			if Support.fiber_scheduler_v3?
 				# Ruby 3.3+, full IO::Buffer support.
 				
+				# Read from the given IO to the buffer.
+				#
 				# @parameter length [Integer] The minimum number of bytes to read.
 				# @parameter offset [Integer] The offset into the buffer to read to.
 				def io_read(fiber, io, buffer, length, offset = 0)
@@ -196,6 +198,8 @@ module IO::Event
 					return total
 				end
 				
+				# Write to the given IO from the buffer.
+				#
 				# @parameter length [Integer] The minimum number of bytes to write.
 				# @parameter offset [Integer] The offset into the buffer to write from.
 				def io_write(fiber, io, buffer, length, offset = 0)
