@@ -1038,7 +1038,6 @@ VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
 
 void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	IO_Event_Selector_EPoll = rb_define_class_under(IO_Event_Selector, "EPoll", rb_cObject);
-	rb_gc_register_mark_object(IO_Event_Selector_EPoll);
 	
 	rb_define_alloc_func(IO_Event_Selector_EPoll, IO_Event_Selector_EPoll_allocate);
 	rb_define_method(IO_Event_Selector_EPoll, "initialize", IO_Event_Selector_EPoll_initialize, 1);

@@ -1095,7 +1095,6 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	IO_Event_Selector_URing = rb_define_class_under(IO_Event_Selector, "URing", rb_cObject);
-	rb_gc_register_mark_object(IO_Event_Selector_URing);
 	
 	rb_define_alloc_func(IO_Event_Selector_URing, IO_Event_Selector_URing_allocate);
 	rb_define_method(IO_Event_Selector_URing, "initialize", IO_Event_Selector_URing_initialize, 1);

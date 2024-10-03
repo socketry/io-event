@@ -31,10 +31,7 @@ void Init_IO_Event(void)
 #endif
 	
 	IO_Event = rb_define_module_under(rb_cIO, "Event");
-	rb_gc_register_mark_object(IO_Event);
-	
 	IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
-	rb_gc_register_mark_object(IO_Event_Selector);
 	
 	Init_IO_Event_Selector(IO_Event_Selector);
 	

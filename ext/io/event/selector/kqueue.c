@@ -1053,7 +1053,6 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 
 void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	IO_Event_Selector_KQueue = rb_define_class_under(IO_Event_Selector, "KQueue", rb_cObject);
-	rb_gc_register_mark_object(IO_Event_Selector_KQueue);
 	
 	rb_define_alloc_func(IO_Event_Selector_KQueue, IO_Event_Selector_KQueue_allocate);
 	rb_define_method(IO_Event_Selector_KQueue, "initialize", IO_Event_Selector_KQueue_initialize, 1);
