@@ -100,9 +100,9 @@ struct IO_Event_Selector {
 	
 	struct IO_Event_Selector_Queue *free;
 	
-	// Append to waiting.
+	// Append to waiting (front/head of queue).
 	struct IO_Event_Selector_Queue *waiting;
-	// Process from ready.
+	// Process from ready (back/tail of queue).
 	struct IO_Event_Selector_Queue *ready;
 };
 
@@ -119,12 +119,7 @@ void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
 	rb_gc_mark_movable(backend->self);
 	rb_gc_mark_movable(backend->loop);
 	
-	struct IO_Event_Selector_Queue *waiting = backend->waiting;
-	while (waiting) {
-		rb_gc_mark_movable(waiting->fiber);
-		waiting = waiting->head;
-	}
-	
+	// Walk backwards through the ready queue:
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
 		rb_gc_mark_movable(ready->fiber);
@@ -136,12 +131,6 @@ static inline
 void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 	backend->self = rb_gc_location(backend->self);
 	backend->loop = rb_gc_location(backend->loop);
-	
-	struct IO_Event_Selector_Queue *waiting = backend->waiting;
-	while (waiting) {
-		waiting->fiber = rb_gc_location(waiting->fiber);
-		waiting = waiting->head;
-	}
 	
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {

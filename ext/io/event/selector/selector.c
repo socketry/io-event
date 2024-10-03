@@ -172,12 +172,14 @@ static void queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selecto
 	if (waiting->head) {
 		waiting->head->tail = waiting->tail;
 	} else {
+		// We must have been at the head of the queue:
 		backend->waiting = waiting->tail;
 	}
 	
 	if (waiting->tail) {
 		waiting->tail->head = waiting->head;
 	} else {
+		// We must have been at the tail of the queue:
 		backend->ready = waiting->head;
 	}
 	
@@ -190,12 +192,15 @@ static void queue_push(struct IO_Event_Selector *backend, struct IO_Event_Select
 	assert(waiting->tail == NULL);
 	
 	if (backend->waiting) {
+		// If there was an item in the queue already, we shift it along:
 		backend->waiting->head = waiting;
 		waiting->tail = backend->waiting;
 	} else {
+		// If the queue was empty, we update the tail too:
 		backend->ready = waiting;
 	}
 	
+	// We always push to the front/head:
 	backend->waiting = waiting;
 }
 
@@ -311,6 +316,8 @@ void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Ev
 int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend)
 {
 	int count = 0;
+	
+	// During iteration of the queue, the same item may be re-queued. If we don't handle this correctly, we may end up in an infinite loop. So, to avoid this situation, we keep note of the current head of the queue and break the loop if we reach the same item again.
 	
 	// Get the current tail and head of the queue:
 	struct IO_Event_Selector_Queue *waiting = backend->waiting;
