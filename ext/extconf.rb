@@ -7,16 +7,16 @@
 
 return if RUBY_DESCRIPTION =~ /jruby/
 
-require 'mkmf'
+require "mkmf"
 
 gem_name = File.basename(__dir__)
-extension_name = 'IO_Event'
+extension_name = "IO_Event"
 
 # dir_config(extension_name)
 
 $CFLAGS << " -Wall -Wno-unknown-pragmas -std=c99"
 
-if ENV.key?('RUBY_DEBUG')
+if ENV.key?("RUBY_DEBUG")
 	$CFLAGS << " -DRUBY_DEBUG -O0"
 	
 	# Add address and undefined behaviour sanitizers:
@@ -28,24 +28,24 @@ $srcs = ["io/event/event.c", "io/event/selector/selector.c"]
 $VPATH << "$(srcdir)/io/event"
 $VPATH << "$(srcdir)/io/event/selector"
 
-have_func('rb_ext_ractor_safe')
-have_func('&rb_fiber_transfer')
+have_func("rb_ext_ractor_safe")
+have_func("&rb_fiber_transfer")
 
-if have_library('uring') and have_header('liburing.h')
+if have_library("uring") and have_header("liburing.h")
 	$srcs << "io/event/selector/uring.c"
 end
 
-if have_header('sys/epoll.h')
+if have_header("sys/epoll.h")
 	$srcs << "io/event/selector/epoll.c"
 end
 
-if have_header('sys/event.h')
+if have_header("sys/event.h")
 	$srcs << "io/event/selector/kqueue.c"
 end
 
-have_header('sys/wait.h')
+have_header("sys/wait.h")
 
-have_header('sys/eventfd.h')
+have_header("sys/eventfd.h")
 $srcs << "io/event/interrupt.c"
 
 have_func("rb_io_descriptor")
@@ -54,7 +54,7 @@ have_func("rb_fiber_current")
 have_func("&rb_fiber_raise")
 have_func("epoll_pwait2")
 
-have_header('ruby/io/buffer.h')
+have_header("ruby/io/buffer.h")
 
 create_header
 

@@ -3,14 +3,14 @@
 # Released under the MIT License.
 # Copyright, 2023-2024, by Samuel Williams.
 
-require 'io/event'
-require 'io/event/selector'
-require 'socket'
+require "io/event"
+require "io/event/selector"
+require "socket"
 
-require 'unix_socket'
+require "unix_socket"
 
 Cancellable = Sus::Shared("cancellable") do
-	with 'a pipe' do
+	with "a pipe" do
 		let(:pipe) {IO.pipe}
 		let(:input) {pipe.first}
 		let(:output) {pipe.last}

@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require_relative 'scheduler'
+require_relative "scheduler"
 
 RSpec.shared_examples_for IO::Event::Scheduler do
 	subject(:scheduler) {IO::Event::Scheduler.new(selector)}
@@ -17,7 +17,7 @@ RSpec.shared_examples_for IO::Event::Scheduler do
 		thread.join
 	end
 	
-	it 'can run several fibers' do
+	it "can run several fibers" do
 		sum = 0
 		
 		fibers = 3.times.map do |i|
@@ -29,7 +29,7 @@ RSpec.shared_examples_for IO::Event::Scheduler do
 		expect(sum).to be == 3
 	end
 	
-	it 'can join threads' do
+	it "can join threads" do
 		Fiber.schedule do
 			1000.times do
 				thread = ::Thread.new do

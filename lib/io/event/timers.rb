@@ -3,7 +3,7 @@
 # Released under the MIT License.
 # Copyright, 2024, by Samuel Williams.
 
-require_relative 'priority_heap'
+require_relative "priority_heap"
 
 class IO
 	module Event

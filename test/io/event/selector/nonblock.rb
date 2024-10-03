@@ -1,14 +1,14 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2022-2023, by Samuel Williams.
+# Copyright, 2022-2024, by Samuel Williams.
 
-require 'io/event'
-require 'io/nonblock'
-require 'io/event/selector'
+require "io/event"
+require "io/nonblock"
+require "io/event/selector"
 
 describe IO::Event::Selector do
-	with '.nonblock' do
+	with ".nonblock" do
 		it "makes non-blocking IO" do
 			executed = false
 			

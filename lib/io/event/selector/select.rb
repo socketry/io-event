@@ -4,8 +4,8 @@
 # Copyright, 2021-2024, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
-require_relative '../interrupt'
-require_relative '../support'
+require_relative "../interrupt"
+require_relative "../support"
 
 module IO::Event
 	module Selector

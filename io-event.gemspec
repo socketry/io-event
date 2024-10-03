@@ -10,8 +10,8 @@ Gem::Specification.new do |spec|
 	spec.authors = ["Samuel Williams", "Math Ieu", "Wander Hillen", "Benoit Daloze", "Bruno Sutic", "Alex Matchneer", "Anthony Ross", "Delton Ding", "Pavel Rosický"]
 	spec.license = "MIT"
 	
-	spec.cert_chain  = ['release.cert']
-	spec.signing_key = File.expand_path('~/.gem/release.pem')
+	spec.cert_chain  = ["release.cert"]
+	spec.signing_key = File.expand_path("~/.gem/release.pem")
 	
 	spec.homepage = "https://github.com/socketry/io-event"
 	
@@ -20,8 +20,8 @@ Gem::Specification.new do |spec|
 		"source_code_uri" => "https://github.com/socketry/io-event.git",
 	}
 	
-	spec.files = Dir['ext/extconf.rb', 'ext/io/**/*.{c,h}', '{lib}/**/*', '*.md', base: __dir__]
-	spec.require_paths = ['lib']
+	spec.files = Dir["ext/extconf.rb", "ext/io/**/*.{c,h}", "{lib}/**/*", "*.md", base: __dir__]
+	spec.require_paths = ["lib"]
 	
 	spec.extensions = ["ext/extconf.rb"]
 	

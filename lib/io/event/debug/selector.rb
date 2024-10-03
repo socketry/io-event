@@ -3,7 +3,7 @@
 # Released under the MIT License.
 # Copyright, 2021-2024, by Samuel Williams.
 
-require_relative '../support'
+require_relative "../support"
 
 module IO::Event
 	module Debug
@@ -12,8 +12,8 @@ module IO::Event
 			def self.wrap(selector, env = ENV)
 				log = nil
 				
-				if log_path = env['IO_EVENT_DEBUG_SELECTOR_LOG']
-					log = File.open(log_path, 'w')
+				if log_path = env["IO_EVENT_DEBUG_SELECTOR_LOG"]
+					log = File.open(log_path, "w")
 				end
 				
 				return self.new(selector, log: log)

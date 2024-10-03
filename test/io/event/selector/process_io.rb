@@ -4,12 +4,12 @@
 # Copyright, 2022-2024, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
-require 'io/event'
-require 'io/event/selector'
-require 'io/event/debug/selector'
+require "io/event"
+require "io/event/selector"
+require "io/event/debug/selector"
 
-require 'socket'
-require 'fiber'
+require "socket"
+require "fiber"
 
 ProcessIO = Sus::Shared("process io") do
 	it "can wait for a process which has terminated already" do

@@ -1,11 +1,11 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require 'io/event'
-require 'timers'
-require 'resolv'
+require "io/event"
+require "timers"
+require "resolv"
 
 class IO
 	module Event
@@ -209,7 +209,7 @@ class IO
 			
 			# Run the reactor until all tasks are finished. Proxies arguments to {#async} immediately before entering the loop, if a block is provided.
 			def run
-				Kernel.raise(RuntimeError, 'Reactor has been closed') if @selector.nil?
+				Kernel.raise(RuntimeError, "Reactor has been closed") if @selector.nil?
 				
 				Thread.handle_interrupt(Errno::EINTR => :never, Interrupt => :never) do
 					while self.run_once

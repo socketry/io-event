@@ -2,13 +2,13 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require 'benchmark/ips'
-require 'fiber'
-require 'console'
+require "benchmark/ips"
+require "fiber"
+require "console"
 
-require_relative '../lib/event'
+require_relative "../lib/event"
 
 Event::Selector.constants.each do |name|
 	selector = Event::Selector.const_get(name).new(Fiber.current)

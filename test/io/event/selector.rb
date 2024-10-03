@@ -4,14 +4,14 @@
 # Copyright, 2021-2024, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
-require 'io/event'
-require 'io/event/selector'
-require 'io/event/debug/selector'
+require "io/event"
+require "io/event/selector"
+require "io/event/debug/selector"
 
-require 'socket'
-require 'fiber'
+require "socket"
+require "fiber"
 
-require 'unix_socket'
+require "unix_socket"
 
 class FakeFiber
 	def initialize(alive = true)
@@ -31,7 +31,7 @@ class FakeFiber
 end
 
 Selector = Sus::Shared("a selector") do
-	with '#select' do
+	with "#select" do
 		let(:quantum) {0.2}
 		
 		it "can select with 0s timeout" do
@@ -53,8 +53,8 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#idle_duration' do
-		it 'can report idle duration' do
+	with "#idle_duration" do
+		it "can report idle duration" do
 			10.times do
 				selector.select(0.001)
 				expect(selector.idle_duration).to be > 0.0
@@ -65,7 +65,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#wakeup' do
+	with "#wakeup" do
 		it "can wakeup selector from different thread" do
 			thread = Thread.new do
 				sleep 0.001
@@ -117,7 +117,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#io_wait' do
+	with "#io_wait" do
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
 		let(:local) {sockets.first}
@@ -426,7 +426,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#io_read' do
+	with "#io_read" do
 		let(:message) {"Hello World"}
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
@@ -506,7 +506,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#io_write' do
+	with "#io_write" do
 		let(:message) {"Hello World"}
 		let(:events) {Array.new}
 		let(:sockets) {UNIXSocket.pair}
@@ -537,7 +537,7 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
-	with '#process_wait' do
+	with "#process_wait" do
 		it "can wait for a process which has terminated already" do
 			result = nil
 			events = []
@@ -583,13 +583,13 @@ Selector = Sus::Shared("a selector") do
 end
 
 describe IO::Event::Selector do
-	with '.default' do
-		it 'can get the default selector' do
+	with ".default" do
+		it "can get the default selector" do
 			expect(subject.default).to be_a(Module)
 		end
 		
-		it 'returns the default if an invalid name is provided' do
-			env = {'IO_EVENT_SELECTOR' => 'invalid'}
+		it "returns the default if an invalid name is provided" do
+			env = {"IO_EVENT_SELECTOR" => "invalid"}
 			expect{subject.default(env)}.to raise_exception(NameError)
 		end
 	end
@@ -599,14 +599,14 @@ IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
 	describe(klass, unique: name) do
-		with '.default' do
-			it 'can get the specified selector' do
-				env = {'IO_EVENT_SELECTOR' => name}
+		with ".default" do
+			it "can get the specified selector" do
+				env = {"IO_EVENT_SELECTOR" => name}
 				expect(IO::Event::Selector.default(env)).to be == klass
 			end
 		end
 		
-		with '.new' do
+		with ".new" do
 			let(:count) {8}
 			let(:loop) {Fiber.current}
 			
@@ -621,7 +621,7 @@ IO::Event::Selector.constants.each do |name|
 			end
 		end
 
-		with 'an instance' do
+		with "an instance" do
 			before do
 				@loop = Fiber.current
 				@selector = subject.new(@loop)

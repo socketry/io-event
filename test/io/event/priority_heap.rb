@@ -3,7 +3,7 @@
 # Released under the MIT License.
 # Copyright, 2024, by Samuel Williams.
 
-require 'io/event/priority_heap'
+require "io/event/priority_heap"
 
 describe IO::Event::PriorityHeap do
 	let(:priority_heap) {subject.new}

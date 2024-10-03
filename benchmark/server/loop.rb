@@ -2,13 +2,13 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require 'socket'
+require "socket"
 
 port = Integer(ARGV.pop || 9090)
 
-server = TCPServer.new('localhost', port)
+server = TCPServer.new("localhost", port)
 
 loop do
 	peer, address = server.accept

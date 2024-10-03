@@ -3,7 +3,7 @@
 # Released under the MIT License.
 # Copyright, 2024, by Samuel Williams.
 
-require 'io/event/timers'
+require "io/event/timers"
 
 class FloatWrapper
 	def initialize(value)
@@ -77,7 +77,7 @@ describe IO::Event::Timers do
 		expect(timers.size).to be == 0
 	end
 	
-	with '#schedule' do
+	with "#schedule" do
 		it "raises an error if given an invalid time" do
 			expect do
 				timers.after(Object.new) {}
@@ -97,7 +97,7 @@ describe IO::Event::Timers do
 		end
 	end
 	
-	with '#wait_interval' do
+	with "#wait_interval" do
 		it "should return nil if no timers are scheduled" do
 			expect(timers.wait_interval).to be_nil
 		end

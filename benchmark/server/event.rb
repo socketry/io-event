@@ -2,10 +2,10 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require_relative 'scheduler'
-require 'io/nonblock'
+require_relative "scheduler"
+require "io/nonblock"
 
 #scheduler = DirectScheduler.new
 scheduler = Scheduler.new
@@ -16,7 +16,7 @@ port = Integer(ARGV.pop || 9090)
 RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 
 Fiber.schedule do
-	server = TCPServer.new('localhost', port)
+	server = TCPServer.new("localhost", port)
 	server.listen(Socket::SOMAXCONN)
 	
 	loop do

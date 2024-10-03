@@ -3,12 +3,12 @@
 # Released under the MIT License.
 # Copyright, 2021-2024, by Samuel Williams.
 
-require 'io/event'
-require 'io/event/selector'
-require 'tempfile'
+require "io/event"
+require "io/event/selector"
+require "tempfile"
 
 FileIO = Sus::Shared("file io") do
-	with 'a file' do
+	with "a file" do
 		let(:file) {Tempfile.new}
 		
 		it "can read using a buffer" do

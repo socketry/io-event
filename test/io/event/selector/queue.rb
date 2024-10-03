@@ -3,12 +3,12 @@
 # Released under the MIT License.
 # Copyright, 2021-2024, by Samuel Williams.
 
-require 'io/event'
-require 'io/event/selector'
-require 'socket'
+require "io/event"
+require "io/event/selector"
+require "socket"
 
 Queue = Sus::Shared("queue") do
-	with '#transfer' do
+	with "#transfer" do
 		it "can transfer back to event loop" do
 			sequence = []
 			
@@ -29,7 +29,7 @@ Queue = Sus::Shared("queue") do
 		end
 	end
 	
-	with '#push' do
+	with "#push" do
 		it "can push fiber into queue" do
 			sequence = []
 			
@@ -97,7 +97,7 @@ Queue = Sus::Shared("queue") do
 		end
 	end
 	
-	with '#raise' do
+	with "#raise" do
 		it "can raise exception on fiber" do
 			sequence = []
 			
@@ -119,7 +119,7 @@ Queue = Sus::Shared("queue") do
 		end
 	end
 	
-	with '#resume' do
+	with "#resume" do
 		it "can resume a fiber for execution from the main fiber" do
 			sequence = []
 			
@@ -155,7 +155,7 @@ Queue = Sus::Shared("queue") do
 		end
 	end
 	
-	with '#yield' do
+	with "#yield" do
 		it "can yield to the scheduler and later resume execution" do
 			sequence = []
 			

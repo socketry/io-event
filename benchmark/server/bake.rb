@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
 SERVERS = [
 	"compiled",
@@ -19,7 +19,7 @@ def default
 end
 
 def build
-	compiler = ENV.fetch('CC', 'clang')
+	compiler = ENV.fetch("CC", "clang")
 	system(compiler, "compiled.c", "-o", "compiled", chdir: __dir__)
 end
 
@@ -28,7 +28,7 @@ end
 # @parameter duration [Integer] The duration of the test.
 def benchmark(connections: 8, threads: 1, duration: 1)
 	port = 9095
-	wrk = ENV.fetch('WRK', 'wrk')
+	wrk = ENV.fetch("WRK", "wrk")
 	
 	SERVERS.each do |server|
 		$stdout.puts [nil, "Benchmark #{server}..."]

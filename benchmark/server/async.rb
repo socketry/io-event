@@ -2,15 +2,15 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require 'async'
-require 'async/io/tcp_socket'
+require "async"
+require "async/io/tcp_socket"
 
 port = Integer(ARGV.pop || 9090)
 
 Async do |task|
-	server = Async::IO::TCPServer.new('localhost', port)
+	server = Async::IO::TCPServer.new("localhost", port)
 	
 	loop do
 		peer, address = server.accept

@@ -2,9 +2,9 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2022, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
-require_relative 'scheduler'
+require_relative "scheduler"
 
 scheduler = DirectScheduler.new
 Fiber.set_scheduler(scheduler)
@@ -19,7 +19,7 @@ RESPONSE = IO::Buffer.new(128)
 RESPONSE_SIZE = RESPONSE.set_string(RESPONSE_STRING)
 
 Fiber.schedule do
-	server = TCPServer.new('localhost', port)
+	server = TCPServer.new("localhost", port)
 
 	loop do
 		peer, address = server.accept

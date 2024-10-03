@@ -4,14 +4,14 @@
 # Copyright, 2021-2024, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
-require 'io/event'
-require 'io/event/selector'
-require 'socket'
+require "io/event"
+require "io/event/selector"
+require "socket"
 
-require 'unix_socket'
+require "unix_socket"
 
 BufferedIO = Sus::Shared("buffered io") do
-	with 'a pipe' do
+	with "a pipe" do
 		let(:pipe) {IO.pipe}
 		let(:input) {pipe.first}
 		let(:output) {pipe.last}

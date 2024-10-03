@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2023, by Samuel Williams.
+# Copyright, 2021-2024, by Samuel Williams.
 
 module IO::Event
 	# A thread safe synchronisation primative.
@@ -27,7 +27,7 @@ module IO::Event
 		
 		# Send a sigle byte interrupt.
 		def signal
-			@output.write('.')
+			@output.write(".")
 			@output.flush
 		rescue IOError
 			# Ignore.
