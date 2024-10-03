@@ -17,11 +17,9 @@ extension_name = "IO_Event"
 $CFLAGS << " -Wall -Wno-unknown-pragmas -std=c99"
 
 if ENV.key?("RUBY_DEBUG")
-	$CFLAGS << " -DRUBY_DEBUG -O0"
+	$stderr.puts "Enabling debug mode..."
 	
-	# Add address and undefined behaviour sanitizers:
-	$CFLAGS << " -fsanitize=undefined -fno-omit-frame-pointer"
-	$LDFLAGS << " -fsanitize=undefined"
+	$CFLAGS << " -DRUBY_DEBUG -O0"
 end
 
 $srcs = ["io/event/event.c", "io/event/selector/selector.c"]
@@ -55,6 +53,14 @@ have_func("&rb_fiber_raise")
 have_func("epoll_pwait2")
 
 have_header("ruby/io/buffer.h")
+
+if ENV.key?("RUBY_SANITIZE")
+	$stderr.puts "Enabling sanitizers..."
+	
+	# Add address and undefined behaviour sanitizers:
+	$CFLAGS << " -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer"
+	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"
+end
 
 create_header
 
