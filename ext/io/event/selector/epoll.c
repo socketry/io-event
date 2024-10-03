@@ -34,8 +34,6 @@ enum {
 	DEBUG = 0,
 };
 
-static VALUE IO_Event_Selector_EPoll = Qnil;
-
 enum {EPOLL_MAX_EVENTS = 64};
 
 // This represents an actual fiber waiting for a specific event.
@@ -1037,7 +1035,7 @@ VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
 }
 
 void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
-	IO_Event_Selector_EPoll = rb_define_class_under(IO_Event_Selector, "EPoll", rb_cObject);
+	VALUE IO_Event_Selector_EPoll = rb_define_class_under(IO_Event_Selector, "EPoll", rb_cObject);
 	
 	rb_define_alloc_func(IO_Event_Selector_EPoll, IO_Event_Selector_EPoll_allocate);
 	rb_define_method(IO_Event_Selector_EPoll, "initialize", IO_Event_Selector_EPoll_initialize, 1);
