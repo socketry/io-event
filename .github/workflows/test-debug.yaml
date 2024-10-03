@@ -22,8 +22,7 @@ jobs:
           - ubuntu
         
         ruby:
-          - "3.3"
-          - "head"
+          - asan
     
     steps:
     - uses: actions/checkout@v4
@@ -38,4 +37,4 @@ jobs:
     
     - name: Run tests
       timeout-minutes: 10
-      run: LD_PRELOAD=/usr/lib/libasan.so bundle exec bake build test
+      run: bundle exec bake build test
