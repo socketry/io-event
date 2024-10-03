@@ -21,7 +21,8 @@ class IO
 				# https://github.com/ruby/ruby/pull/10778
 				# Specifically "Improvements to IO::Buffer read/write/pread/pwrite."
 				# Missing correct size calculation.
-				return false if RUBY_VERSION >= "3.2.5"
+				# Fixed in https://github.com/ruby/ruby/pull/11779
+				return false if RUBY_VERSION == "3.2.5"
 				
 				IO.const_defined?(:Buffer) and Fiber.respond_to?(:blocking) and IO::Buffer.instance_method(:read).arity == -1
 			end
