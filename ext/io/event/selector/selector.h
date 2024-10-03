@@ -98,8 +98,6 @@ struct IO_Event_Selector {
 	VALUE self;
 	VALUE loop;
 	
-	struct IO_Event_Selector_Queue *free;
-	
 	// Append to waiting (front/head of queue).
 	struct IO_Event_Selector_Queue *waiting;
 	// Process from ready (back/tail of queue).
