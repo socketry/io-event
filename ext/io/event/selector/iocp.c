@@ -59,7 +59,7 @@ struct IO_Event_Selector_IOCP
 	struct timespec idle_duration;
 	
 	struct IO_Event_Interrupt interrupt;
-	struct IO_Event_Array handles;
+	struct IO_Event_Array descriptors;
 };
 
 // This represents zero or more fibers waiting for a specific handle.
@@ -69,6 +69,9 @@ struct IO_Event_Selector_IOCP_Descriptor
 	
 	// The last IO object that was used to register events.
 	VALUE io;
+	
+	// The IO completion port:
+	HANDLE completion_port;
 	
 	// The union of all events we are waiting for:
 	enum IO_Event waiting_events;
@@ -88,14 +91,14 @@ void IO_Event_Selector_IOCP_Waiting_mark(struct IO_Event_List *_waiting)
 }
 
 static
-void IO_Event_Selector_IOCP_Descriptor_mark(void *_handle)
+void IO_Event_Selector_IOCP_Descriptor_mark(void *_descriptor)
 {
-	struct IO_Event_Selector_IOCP_Descriptor *handle = _handle;
+	struct IO_Event_Selector_IOCP_Descriptor *descriptor = _descriptor;
 	
-	IO_Event_List_immutable_each(&handle->list, IO_Event_Selector_IOCP_Waiting_mark);
+	IO_Event_List_immutable_each(&descriptor->list, IO_Event_Selector_IOCP_Waiting_mark);
 	
-	if (handle->io) {
-		rb_gc_mark_movable(handle->io);
+	if (descriptor->io) {
+		rb_gc_mark_movable(descriptor->io);
 	}
 }
 
@@ -105,7 +108,7 @@ void IO_Event_Selector_IOCP_Type_mark(void *_selector)
 	struct IO_Event_Selector_IOCP *selector = _selector;
 	
 	IO_Event_Selector_mark(&selector->backend);
-	IO_Event_Array_each(&selector->handles, IO_Event_Selector_IOCP_Descriptor_mark);
+	IO_Event_Array_each(&selector->descriptors, IO_Event_Selector_IOCP_Descriptor_mark);
 }
 
 static
@@ -136,7 +139,7 @@ void IO_Event_Selector_IOCP_Type_compact(void *_selector)
 	struct IO_Event_Selector_IOCP *selector = _selector;
 	
 	IO_Event_Selector_compact(&selector->backend);
-	IO_Event_Array_each(&selector->handles, IO_Event_Selector_IOCP_Descriptor_compact);
+	IO_Event_Array_each(&selector->descriptors, IO_Event_Selector_IOCP_Descriptor_compact);
 }
 
 static
@@ -157,7 +160,7 @@ void IO_Event_Selector_IOCP_Type_free(void *_selector)
 	
 	close_internal(selector);
 	
-	IO_Event_Array_free(&selector->handles);
+	IO_Event_Array_free(&selector->descriptors);
 	
 	free(selector);
 }
@@ -168,7 +171,7 @@ size_t IO_Event_Selector_IOCP_Type_size(const void *_selector)
 	const struct IO_Event_Selector_IOCP *selector = _selector;
 	
 	return sizeof(struct IO_Event_Selector_IOCP)
-		+ IO_Event_Array_memory_size(&selector->handles)
+		+ IO_Event_Array_memory_size(&selector->descriptors)
 	;
 }
 
@@ -181,43 +184,44 @@ static const rb_data_type_t IO_Event_Selector_IOCP_Type = {
 		.dsize = IO_Event_Selector_IOCP_Type_size,
 	},
 	.data = NULL,
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 inline static
-struct IO_Event_Selector_IOCP_Descriptor * IO_Event_Selector_IOCP_Descriptor_lookup(struct IO_Event_Selector_IOCP *selector, int handle)
+struct IO_Event_Selector_IOCP_Descriptor * IO_Event_Selector_IOCP_Descriptor_lookup(struct IO_Event_Selector_IOCP *selector, HANDLE handle)
 {
-	struct IO_Event_Selector_IOCP_Descriptor *iocp_handle = IO_Event_Array_lookup(&selector->handles, handle);
+	struct IO_Event_Selector_IOCP_Descriptor *descriptor = IO_Event_Array_lookup(&selector->descriptors, handle);
 	
-	if (!iocp_handle) {
+	if (!descriptor) {
 		rb_sys_fail("IO_Event_Selector_IOCP_Descriptor_lookup:IO_Event_Array_lookup");
 	}
 	
-	return iocp_handle;
+	return descriptor;
 }
 
 inline static
-int IO_Event_Selector_IOCP_Descriptor_update(struct IO_Event_Selector_IOCP *selector, VALUE io, int handle, struct IO_Event_Selector_IOCP_Descriptor *iocp_handle)
+int IO_Event_Selector_IOCP_Descriptor_update(struct IO_Event_Selector_IOCP *selector, VALUE io, HANDLE handle, struct IO_Event_Selector_IOCP_Descriptor *descriptor)
 {
-	if (iocp_handle->io == io) {
-		if (iocp_handle->registered_events == iocp_handle->waiting_events) {
+	if (descriptor->io == io) {
+		if (descriptor->registered_events == descriptor->waiting_events) {
 			// All the events we are interested in are already registered.
 			return 0;
 		}
 	} else {
 		// The IO has changed, we need to reset the state:
-		iocp_handle->registered_events = 0;
-		iocp_handle->io = io;
+		descriptor->registered_events = 0;
+		descriptor->io = io;
+		descriptor->handle = handle;
 	}
 	
-	if (iocp_handle->waiting_events == 0) {
-		if (iocp_handle->registered_events) {
+	if (descriptor->waiting_events == 0) {
+		if (descriptor->registered_events) {
 			// We are no longer interested in any events.
 			iocp_ctl(selector->handle, IOCP_CTL_DEL, handle, NULL);
-			iocp_handle->registered_events = 0;
+			descriptor->registered_events = 0;
 		}
 		
-		iocp_handle->io = 0;
+		descriptor->io = 0;
 		
 		return 0;
 	}
@@ -255,17 +259,17 @@ int IO_Event_Selector_IOCP_Descriptor_update(struct IO_Event_Selector_IOCP *sele
 }
 
 inline static
-int IO_Event_Selector_IOCP_Waiting_register(struct IO_Event_Selector_IOCP *selector, VALUE io, int handle, struct IO_Event_Selector_IOCP_Waiting *waiting)
+int IO_Event_Selector_IOCP_Waiting_register(struct IO_Event_Selector_IOCP *selector, VALUE io, HANDLE handle, struct IO_Event_Selector_IOCP_Waiting *waiting)
 {
-	struct IO_Event_Selector_IOCP_Descriptor *iocp_handle = IO_Event_Selector_IOCP_Descriptor_lookup(selector, handle);
+	struct IO_Event_Selector_IOCP_Descriptor *descriptor = IO_Event_Selector_IOCP_Descriptor_lookup(selector, handle);
 	
 	// We are waiting for these events:
-	iocp_handle->waiting_events |= waiting->events;
+	descriptor->waiting_events |= waiting->events;
 	
 	int result = IO_Event_Selector_IOCP_Descriptor_update(selector, io, handle, iocp_handle);
 	if (result == -1) return -1;
 	
-	IO_Event_List_prepend(&iocp_handle->list, &waiting->list);
+	IO_Event_List_prepend(&descriptor->list, &waiting->list);
 	
 	return result;
 }
@@ -559,9 +563,7 @@ struct io_read_arguments {
 	VALUE fiber;
 	VALUE io;
 	
-	int flags;
-	
-	int handle;
+	HANDLE handle;
 	
 	VALUE buffer;
 	size_t length;
@@ -623,7 +625,6 @@ VALUE IO_Event_Selector_IOCP_io_read(VALUE self, VALUE fiber, VALUE io, VALUE bu
 		.fiber = fiber,
 		.io = io,
 		
-		.flags = IO_Event_Selector_nonblock_set(handle),
 		.handle = handle,
 		.buffer = buffer,
 		.length = length,
@@ -650,9 +651,7 @@ struct io_write_arguments {
 	VALUE self;
 	VALUE fiber;
 	VALUE io;
-	
-	int flags;
-	
+		
 	int handle;
 	
 	VALUE buffer;
