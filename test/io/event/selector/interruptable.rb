@@ -28,6 +28,34 @@ Interruptable = Sus::Shared("interruptable") do
 		expect{thread.join}.to raise_exception(::Interrupt)
 		expect(result).to be == 0
 	end
+	
+	with "pipe" do
+		let(:pipe) {IO.pipe}
+		let(:input) {pipe.first}
+		let(:output) {pipe.last}
+		
+		it "can interrupt waiting selector" do
+			thread = Thread.new do
+				Thread.current.report_on_exception = false
+				selector = subject.new(Fiber.current)
+				
+				Fiber.new do
+					selector.io_wait(Fiber.current, input, IO::READABLE)
+				end
+				
+				Thread.handle_interrupt(::SignalException => :never) do
+					selector.select(nil)
+				end
+			end
+			
+			# Wait for thread to enter the selector:
+			sleep(0.001) until thread.status == "sleep"
+			
+			thread.raise(::Interrupt)
+			
+			expect{thread.join}.to raise_exception(::Interrupt)
+		end
+	end
 end
 
 IO::Event::Selector.constants.each do |name|
