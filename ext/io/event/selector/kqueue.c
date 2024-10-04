@@ -43,8 +43,6 @@ enum {
 #define IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 #endif
 
-static VALUE IO_Event_Selector_KQueue = Qnil;
-
 enum {KQUEUE_MAX_EVENTS = 64};
 
 // This represents an actual fiber waiting for a specific event.
@@ -1052,7 +1050,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 }
 
 void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
-	IO_Event_Selector_KQueue = rb_define_class_under(IO_Event_Selector, "KQueue", rb_cObject);
+	VALUE IO_Event_Selector_KQueue = rb_define_class_under(IO_Event_Selector, "KQueue", rb_cObject);
 	
 	rb_define_alloc_func(IO_Event_Selector_KQueue, IO_Event_Selector_KQueue_allocate);
 	rb_define_method(IO_Event_Selector_KQueue, "initialize", IO_Event_Selector_KQueue_initialize, 1);

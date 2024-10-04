@@ -21,17 +21,14 @@
 #include "event.h"
 #include "selector/selector.h"
 
-VALUE IO_Event = Qnil;
-VALUE IO_Event_Selector = Qnil;
-
 void Init_IO_Event(void)
 {
 #ifdef HAVE_RB_EXT_RACTOR_SAFE
 	rb_ext_ractor_safe(true);
 #endif
 	
-	IO_Event = rb_define_module_under(rb_cIO, "Event");
-	IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
+	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
+	VALUE IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
 	
 	Init_IO_Event_Selector(IO_Event_Selector);
 	
