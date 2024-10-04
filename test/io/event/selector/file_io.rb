@@ -12,6 +12,8 @@ FileIO = Sus::Shared("file io") do
 		let(:file) {Tempfile.new}
 		
 		it "can read using a buffer" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				file.seek(0)
