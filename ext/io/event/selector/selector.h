@@ -152,5 +152,5 @@ int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend);
 void IO_Event_Selector_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration);
 void IO_Event_Selector_current_time(struct timespec *time);
 
-#define PRINTF_TIMESPEC "%lld.%.9ld"
-#define PRINTF_TIMESPEC_ARGS(ts) (long long)((ts).tv_sec), (ts).tv_nsec
+#define IO_EVENT_PRINTF_TIMESPEC "%lld.%.9ld"
+#define IO_EVENT_PRINTF_TIMESPEC_ARGUMENTS(ts) (long long)((ts).tv_sec), (ts).tv_nsec
