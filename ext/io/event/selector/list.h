@@ -71,6 +71,19 @@ inline static void IO_Event_List_free(struct IO_Event_List *node)
 	}
 }
 
+inline static size_t IO_Event_List_memory_size(struct IO_Event_List *list)
+{
+	size_t memsize = 0;
+
+	struct IO_Event_List *node = list->tail;
+	while (node != list) {
+		memsize += sizeof(struct IO_Event_List);
+		node = node->tail;
+	}
+
+	return memsize;
+}
+
 inline static int IO_Event_List_empty(struct IO_Event_List *list)
 {
 	return list->head == list->tail;
