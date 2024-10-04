@@ -21,8 +21,6 @@ Cancellable = Sus::Shared("cancellable") do
 		end
 		
 		it "can cancel reads" do
-			skip "Ignore"
-			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				
