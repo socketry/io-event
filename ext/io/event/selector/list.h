@@ -38,6 +38,7 @@ inline static void IO_Event_List_append(struct IO_Event_List *list, struct IO_Ev
 	head->tail = node;
 }
 
+// Prepend an item to the beginning of the list.
 inline static void IO_Event_List_prepend(struct IO_Event_List *list, struct IO_Event_List *node)
 {
 	assert(node->head == NULL);
@@ -64,6 +65,7 @@ inline static void IO_Event_List_pop(struct IO_Event_List *node)
 	node->head = node->tail = NULL;
 }
 
+// Remove an item from the list, if it is in a list.
 inline static void IO_Event_List_free(struct IO_Event_List *node)
 {
 	if (node->head && node->tail) {
@@ -71,11 +73,12 @@ inline static void IO_Event_List_free(struct IO_Event_List *node)
 	}
 }
 
-inline static size_t IO_Event_List_memory_size(struct IO_Event_List *list)
+// Calculate the memory size of the list nodes.
+inline static size_t IO_Event_List_memory_size(const struct IO_Event_List *list)
 {
 	size_t memsize = 0;
 
-	struct IO_Event_List *node = list->tail;
+	const struct IO_Event_List *node = list->tail;
 	while (node != list) {
 		memsize += sizeof(struct IO_Event_List);
 		node = node->tail;
@@ -84,11 +87,13 @@ inline static size_t IO_Event_List_memory_size(struct IO_Event_List *list)
 	return memsize;
 }
 
-inline static int IO_Event_List_empty(struct IO_Event_List *list)
+// Return true if the list is empty.
+inline static int IO_Event_List_empty(const struct IO_Event_List *list)
 {
 	return list->head == list->tail;
 }
 
+// Enumerate all items in the list, assuming the list will not be modified during iteration.
 inline static void IO_Event_List_immutable_each(struct IO_Event_List *list, void (*callback)(struct IO_Event_List *node))
 {
 	struct IO_Event_List *node = list->tail;
