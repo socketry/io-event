@@ -8,3 +8,12 @@ Warning[:experimental] = false
 
 require "covered/sus"
 include Covered::Sus
+
+# Intensive GC checking:
+#
+# Thread.new do
+# 	while true
+# 		sleep 0.0001
+# 		$stderr.puts GC.verify_compaction_references
+# 	end
+# end
