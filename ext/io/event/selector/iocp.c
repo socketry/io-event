@@ -33,8 +33,6 @@ enum {
 	DEBUG = 0,
 };
 
-static VALUE IO_Event_Selector_IOCP = Qnil;
-
 enum {IOCP_MAX_THREADS = 8};
 
 // This represents an actual fiber waiting for a specific event.
@@ -1004,8 +1002,7 @@ VALUE IO_Event_Selector_IOCP_wakeup(VALUE self) {
 }
 
 void Init_IO_Event_Selector_IOCP(VALUE IO_Event_Selector) {
-	IO_Event_Selector_IOCP = rb_define_class_under(IO_Event_Selector, "IOCP", rb_cObject);
-	rb_gc_register_mark_object(IO_Event_Selector_IOCP);
+	VALUE IO_Event_Selector_IOCP = rb_define_class_under(IO_Event_Selector, "IOCP", rb_cObject);
 	
 	rb_define_alloc_func(IO_Event_Selector_IOCP, IO_Event_Selector_IOCP_allocate);
 	rb_define_method(IO_Event_Selector_IOCP, "initialize", IO_Event_Selector_IOCP_initialize, 1);
