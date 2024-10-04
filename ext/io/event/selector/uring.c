@@ -138,6 +138,7 @@ size_t IO_Event_Selector_URing_Type_size(const void *_selector)
 	
 	return sizeof(struct IO_Event_Selector_URing)
 		+ IO_Event_Array_memory_size(&selector->completions)
+		+ IO_Event_List_memory_size(&selector->free_list)
 	;
 }
 
