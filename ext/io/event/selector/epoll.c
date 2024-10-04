@@ -241,7 +241,7 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 	} else {
 		// The IO has changed, we need to reset the state:
 		epoll_descriptor->registered_events = 0;
-		epoll_descriptor->io = io;
+		RB_OBJ_WRITE(selector->backend.self, &epoll_descriptor->io, io);
 	}
 	
 	if (epoll_descriptor->waiting_events == 0) {
@@ -251,7 +251,7 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 			epoll_descriptor->registered_events = 0;
 		}
 		
-		epoll_descriptor->io = 0;
+		RB_OBJ_WRITE(selector->backend.self, &epoll_descriptor->io, 0);
 		
 		return 0;
 	}
