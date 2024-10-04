@@ -514,8 +514,10 @@ Selector = Sus::Shared("a selector") do
 		let(:remote) {sockets.last}
 		
 		it "can write a single message" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			return unless selector.respond_to?(:io_write)
-
+			
 			fiber = Fiber.new do
 				events << :io_write
 				buffer = IO::Buffer.for(message.dup)
