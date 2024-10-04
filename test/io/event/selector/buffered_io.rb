@@ -17,6 +17,8 @@ BufferedIO = Sus::Shared("buffered io") do
 		let(:output) {pipe.last}
 		
 		it "can read using a buffer" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				expect(selector.io_write(Fiber.current, output, buffer, 128)).to be == 128
@@ -34,11 +36,15 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 		
 		it "can write zero length buffers" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			buffer = IO::Buffer.new(1).slice(0, 0)
 			expect(selector.io_write(Fiber.current, output, buffer, 0)).to be == 0
 		end
 		
 		it "can read and write at the specified offset" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				# We can't write 128 bytes because there are only +64 bytes from offset 64.
@@ -58,10 +64,9 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 		
 		it "can't write to the read end of a pipe" do
-			skip "Windows is bonkers" if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
-			bsd = RUBY_PLATFORM =~ /bsd/
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
-			output.close if bsd # BSD traditionally has bidirectional pipes
+			output.close
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(64)
