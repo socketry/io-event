@@ -7,7 +7,6 @@ permissions:
 
 env:
   CONSOLE_OUTPUT: XTerm
-  RUBY_DEBUG: true
 
 jobs:
   test:
