@@ -26,10 +26,42 @@ FileIO = Sus::Shared("file io") do
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				file.seek(0)
+				
+				# The read will return 0 if the data is not written yet:
 				read_result = selector.io_read(Fiber.current, file, buffer, 0)
 			end
 			
-			# The seek and the read/write are potentially racing since we use the same file descriptor. So we wait for the write to complete, and then wait for the read to complete.
+			writer.transfer
+			
+			while write_result.nil?
+				selector.select(0)
+			end
+			
+			reader.transfer
+			
+			while read_result.nil?
+				selector.select(0)
+			end
+			
+			expect(write_result).to be == 128
+			expect(read_result).to be == 64
+		end
+		
+		it "can pread using a buffer" do
+			skip "io_pread is not implemented" unless selector.respond_to?(:io_pread)
+			
+			write_result = nil
+			read_result = nil
+			
+			writer = Fiber.new do
+				buffer = IO::Buffer.new(128)
+				write_result = selector.io_pwrite(Fiber.current, file, buffer, 0, 128, 0)
+			end
+			
+			reader = Fiber.new do
+				buffer = IO::Buffer.new(64)
+				read_result = selector.io_pread(Fiber.current, file, buffer, 0, 64, 0)
+			end
 			
 			writer.transfer
 			

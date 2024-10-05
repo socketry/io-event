@@ -35,6 +35,7 @@
 enum {
 	DEBUG = 0,
 	DEBUG_COMPLETION = 0,
+	DEBUG_IO_READ = 1,
 };
 
 enum {URING_ENTRIES = 64};
@@ -629,6 +630,7 @@ struct io_read_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
 	int descriptor;
+	off_t offset;
 	char *buffer;
 	size_t length;
 };
@@ -642,7 +644,7 @@ io_read_submit(VALUE _arguments)
 	if (DEBUG) fprintf(stderr, "io_read_submit:io_uring_prep_read(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
+	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, arguments->offset);
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_now(selector);
 	
@@ -672,7 +674,7 @@ io_read_ensure(VALUE _arguments)
 }
 
 static int
-io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length)
+io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
 {
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -684,6 +686,7 @@ io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, c
 		.selector = selector,
 		.waiting = &waiting,
 		.descriptor = descriptor,
+		.offset = offset,
 		.buffer = buffer,
 		.length = length
 	};
@@ -706,10 +709,11 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
+	off_t from = io_seekable(descriptor);
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size);
+		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
@@ -743,12 +747,52 @@ static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, V
 	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
+VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
+	
+	void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
+	
+	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
+	size_t total = 0;
+	off_t from = NUM2OFFT(_from);
+	
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
+		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		
+		if (result > 0) {
+			total += result;
+			offset += result;
+			from += result;
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(-result)) {
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
+		} else {
+			return rb_fiber_scheduler_io_result(-1, -result);
+		}
+		
+		maximum_size = size - offset;
+	}
+	
+	return rb_fiber_scheduler_io_result(total, 0);
+}
+
 #pragma mark - IO#write
 
 struct io_write_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
 	int descriptor;
+	off_t offset;
 	char *buffer;
 	size_t length;
 };
@@ -762,7 +806,7 @@ io_write_submit(VALUE _argument)
 	if (DEBUG) fprintf(stderr, "io_write_submit:io_uring_prep_write(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, io_seekable(arguments->descriptor));
+	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, arguments->offset);
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_pending(selector);
 	
@@ -792,7 +836,7 @@ io_write_ensure(VALUE _argument)
 }
 
 static int
-io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length)
+io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
 {
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -804,6 +848,7 @@ io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, 
 		.selector = selector,
 		.waiting = &waiting,
 		.descriptor = descriptor,
+		.offset = offset,
 		.buffer = buffer,
 		.length = length,
 	};
@@ -826,6 +871,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
+	off_t from = io_seekable(descriptor);
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -833,7 +879,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size);
+		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
@@ -865,6 +911,49 @@ static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, 
 	}
 	
 	return IO_Event_Selector_URing_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
+}
+
+VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
+	
+	const void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
+	
+	size_t length = NUM2SIZET(_length);
+	size_t offset = NUM2SIZET(_offset);
+	size_t total = 0;
+	off_t from = NUM2OFFT(_from);
+	
+	if (length > size) {
+		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
+
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
+		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		
+		if (result > 0) {
+			total += result;
+			offset += result;
+			from += result;
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(-result)) {
+			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
+		} else {
+			return rb_fiber_scheduler_io_result(-1, -result);
+		}
+		
+		maximum_size = size - offset;
+	}
+	
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 #endif
@@ -1118,6 +1207,8 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 #ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
 	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
+	rb_define_method(IO_Event_Selector_URing, "io_pread", IO_Event_Selector_URing_io_pread, 6);
+	rb_define_method(IO_Event_Selector_URing, "io_pwrite", IO_Event_Selector_URing_io_pwrite, 6);
 #endif
 	
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
