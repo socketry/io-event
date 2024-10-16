@@ -12,7 +12,11 @@ IO::Event::Selector.constants.each do |name|
 		@selector = klass.new(Fiber.current)
 		
 		# Force the selector to be old generation:
-		Process.warmup
+		if Process.respond_to?(:warmup)
+			Process.warmup
+		else
+			3.times{GC.start}
+		end
 	end
 	
 	after do
