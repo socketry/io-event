@@ -8,8 +8,10 @@
 #include <errno.h>
 #include <assert.h>
 
-const size_t IO_EVENT_ARRAY_MAXIMUM_COUNT = SIZE_MAX / sizeof(void*);
-const size_t IO_EVENT_ARRAY_DEFAULT_COUNT = 128;
+enum {
+	IO_EVENT_ARRAY_MAXIMUM_COUNT = SIZE_MAX / sizeof(void*),
+	IO_EVENT_ARRAY_DEFAULT_COUNT = 128
+};
 
 struct IO_Event_Array {
 	// The array of pointers to elements:
