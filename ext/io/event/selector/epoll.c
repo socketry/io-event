@@ -510,7 +510,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.events = IO_EVENT_READABLE,
 	};
 	
-	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	int result = IO_Event_Selector_EPoll_Waiting_register(selector, 0, descriptor, &waiting);
 	
@@ -571,7 +571,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		.events = RB_NUM2INT(events),
 	};
 	
-	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	int result = IO_Event_Selector_EPoll_Waiting_register(selector, io, descriptor, &waiting);
 	
@@ -671,6 +671,8 @@ VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 		.offset = offset,
 	};
 	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
 
@@ -766,6 +768,8 @@ VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.length = length,
 		.offset = offset,
 	};
+	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }

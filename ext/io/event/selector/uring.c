@@ -487,6 +487,8 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.fiber = fiber,
 	};
 	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
 	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
 	struct process_wait_arguments process_wait_arguments = {
@@ -590,6 +592,8 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		.fiber = fiber,
 	};
 	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
 	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
@@ -682,6 +686,8 @@ io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, c
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
 	};
+	
+	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
 	
 	IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
@@ -844,6 +850,8 @@ io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, 
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
 	};
+	
+	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
 	
 	IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
