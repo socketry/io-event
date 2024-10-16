@@ -238,7 +238,10 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	
 	selector->completions.element_initialize = IO_Event_Selector_URing_Completion_initialize;
 	selector->completions.element_free = IO_Event_Selector_URing_Completion_free;
-	IO_Event_Array_allocate(&selector->completions, 1024, sizeof(struct IO_Event_Selector_URing_Completion));
+	int result = IO_Event_Array_allocate(&selector->completions, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_URing_Completion));
+	if (result < 0) {
+		rb_sys_fail("IO_Event_Selector_URing_allocate:IO_Event_Array_allocate");
+	}
 	
 	return instance;
 }

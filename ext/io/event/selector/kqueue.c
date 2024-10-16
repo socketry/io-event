@@ -311,7 +311,11 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	
 	selector->descriptors.element_initialize = IO_Event_Selector_KQueue_Descriptor_initialize;
 	selector->descriptors.element_free = IO_Event_Selector_KQueue_Descriptor_free;
-	IO_Event_Array_allocate(&selector->descriptors, 1024, sizeof(struct IO_Event_Selector_KQueue_Descriptor));
+	
+	int result = IO_Event_Array_allocate(&selector->descriptors, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_KQueue_Descriptor));
+	if (result < 0) {
+		rb_sys_fail("IO_Event_Selector_KQueue_allocate:IO_Event_Array_allocate");
+	}
 	
 	return instance;
 }

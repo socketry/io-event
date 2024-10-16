@@ -8,6 +8,9 @@
 #include <errno.h>
 #include <assert.h>
 
+const size_t IO_EVENT_ARRAY_MAXIMUM_COUNT = SIZE_MAX / sizeof(void*);
+const size_t IO_EVENT_ARRAY_DEFAULT_COUNT = 128;
+
 struct IO_Event_Array {
 	// The array of pointers to elements:
 	void **base;
@@ -25,20 +28,27 @@ struct IO_Event_Array {
 	void (*element_free)(void*);
 };
 
-inline static void IO_Event_Array_allocate(struct IO_Event_Array *array, size_t count, size_t element_size)
+inline static int IO_Event_Array_allocate(struct IO_Event_Array *array, size_t count, size_t element_size)
 {
+	array->limit = 0;
+	array->element_size = element_size;
+	
 	if (count) {
 		array->base = (void**)calloc(count, sizeof(void*));
-		assert(array->base);
+		
+		if (array->base == NULL) {
+			return -1;
+		}
 		
 		array->count = count;
+		
+		return 1;
 	} else {
 		array->base = NULL;
 		array->count = 0;
+		
+		return 0;
 	}
-	
-	array->limit = 0;
-	array->element_size = element_size;
 }
 
 inline static size_t IO_Event_Array_memory_size(const struct IO_Event_Array *array)
@@ -69,12 +79,27 @@ inline static void IO_Event_Array_free(struct IO_Event_Array *array)
 inline static int IO_Event_Array_resize(struct IO_Event_Array *array, size_t count)
 {
 	if (count <= array->count) {
+		// Already big enough:
 		return 0;
 	}
 	
-	// Compute the next multiple (ideally a power of 2):
+	if (count > IO_EVENT_ARRAY_MAXIMUM_COUNT) {
+		errno = ENOMEM;
+		return -1;
+	}
+	
 	size_t new_count = array->count;
-	while (new_count < count) {
+	
+	// If the array is empty, we need to set the initial size:
+	if (new_count == 0) new_count = IO_EVENT_ARRAY_DEFAULT_COUNT;
+	else while (new_count < count) {
+		// Ensure we don't overflow:
+		if (new_count > (IO_EVENT_ARRAY_MAXIMUM_COUNT / 2)) {
+			new_count = IO_EVENT_ARRAY_MAXIMUM_COUNT;
+			break;
+		}
+		
+		// Compute the next multiple (ideally a power of 2):
 		new_count *= 2;
 	}
 	
@@ -90,6 +115,7 @@ inline static int IO_Event_Array_resize(struct IO_Event_Array *array, size_t cou
 	array->base = (void**)new_base;
 	array->count = new_count;
 	
+	// Resizing sucessful:
 	return 1;
 }
 
