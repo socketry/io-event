@@ -510,6 +510,8 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.events = IO_EVENT_READABLE,
 	};
 	
+	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
+	
 	int result = IO_Event_Selector_EPoll_Waiting_register(selector, 0, descriptor, &waiting);
 	
 	if (result == -1) {
@@ -568,6 +570,8 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};
+	
+	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
 	
 	int result = IO_Event_Selector_EPoll_Waiting_register(selector, io, descriptor, &waiting);
 	
