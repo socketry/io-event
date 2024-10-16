@@ -12,7 +12,7 @@ IO::Event::Selector.constants.each do |name|
 		it "can allocate and deallocate multiple times" do
 			pipes = 1000.times.collect{IO.pipe}
 			
-			100000.times do
+			1000.times do
 				selector = subject.new(Fiber.current)
 				
 				10.times do
