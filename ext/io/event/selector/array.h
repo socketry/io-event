@@ -59,21 +59,25 @@ inline static size_t IO_Event_Array_memory_size(const struct IO_Event_Array *arr
 
 inline static void IO_Event_Array_free(struct IO_Event_Array *array)
 {
-	for (size_t i = 0; i < array->limit; i += 1) {
-		void *element = array->base[i];
-		if (element) {
-			array->element_free(element);
-			
-			free(element);
+	if (array->base) {
+		void **base = array->base;
+		size_t limit = array->limit;
+		
+		array->base = NULL;
+		array->count = 0;
+		array->limit = 0;
+		
+		for (size_t i = 0; i < limit; i += 1) {
+			void *element = base[i];
+			if (element) {
+				array->element_free(element);
+				
+				free(element);
+			}
 		}
+		
+		free(base);
 	}
-	
-	if (array->base)
-		free(array->base);
-	
-	array->base = NULL;
-	array->count = 0;
-	array->limit = 0;
 }
 
 inline static int IO_Event_Array_resize(struct IO_Event_Array *array, size_t count)
