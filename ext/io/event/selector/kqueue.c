@@ -505,6 +505,8 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 		.events = IO_EVENT_EXIT,
 	};
 	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
@@ -567,6 +569,8 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.fiber = fiber,
 		.events = RB_NUM2INT(events),
 	};
+	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	int result = IO_Event_Selector_KQueue_Waiting_register(selector, descriptor, &waiting);
 	if (result == -1) {
@@ -670,6 +674,8 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 		.length = length,
 		.offset = offset,
 	};
+	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
@@ -776,6 +782,8 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 		.length = length,
 		.offset = offset,
 	};
+	
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }

@@ -8,25 +8,28 @@ require "io/event"
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
+	before do
+		@selector = klass.new(Fiber.current)
+		
+		# Force the selector to be old generation:
+		Process.warmup
+	end
+	
+	after do
+		@selector&.close
+	end
+	
 	describe(klass, unique: name) do
 		it "can allocate and deallocate multiple times" do
-			pipes = 1000.times.collect{IO.pipe}
+			pipes = 10.times.collect{IO.pipe}
 			
-			1000.times do
-				selector = subject.new(Fiber.current)
-				
-				10.times do
-					Fiber.new do
-						selector.io_wait(Fiber.current, pipes.sample[1], IO::WRITABLE)
-					end.transfer
-				end
-				
-				selector.select(0)
-			ensure
-				selector&.close
+			# This test can hang if write barriers are incorrectly implemented.
+			
+			100000.times do |i|
+				Fiber.new do
+					@selector.io_wait(Fiber.current, pipes.sample[0], IO::READABLE)
+				end.transfer
 			end
-			
-			GC.start
 		end
 	end
 end
