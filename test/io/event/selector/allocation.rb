@@ -25,6 +25,8 @@ IO::Event::Selector.constants.each do |name|
 	
 	describe(klass, unique: name) do
 		it "can allocate and deallocate multiple times" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			pipes = 10.times.collect{IO.pipe}
 			
 			# This test can hang if write barriers are incorrectly implemented.
