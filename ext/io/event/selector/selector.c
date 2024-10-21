@@ -233,6 +233,8 @@ VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALU
 		.fiber = rb_fiber_current()
 	};
 	
+	RB_OBJ_WRITTEN(backend->self, Qundef, waiting.fiber);
+	
 	queue_push(backend, &waiting);
 	
 	struct wait_and_transfer_arguments arguments = {
@@ -265,6 +267,8 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
 		.fiber = rb_fiber_current()
 	};
+	
+	RB_OBJ_WRITTEN(backend->self, Qundef, waiting.fiber);
 	
 	queue_push(backend, &waiting);
 	
