@@ -504,6 +504,13 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	rb_update_max_fd(descriptor);
 	
+	// `pidfd_open` (above) may be edge triggered, so we need to check if the process is already exited, and if so, return immediately, otherwise we will block indefinitely.
+	VALUE status = IO_Event_Selector_process_status_wait(pid, flags);
+	if (status != Qnil) {
+		close(descriptor);
+		return status;
+	}
+	
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
 		.list = {.type = &IO_Event_Selector_EPoll_process_wait_list_type},
 		.fiber = fiber,
