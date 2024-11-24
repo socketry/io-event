@@ -461,6 +461,7 @@ void process_prewait(pid_t pid) {
 		result = waitid(P_PID, pid, &info, WEXITED | WNOWAIT);
 		// This can sometimes get interrupted by SIGCHLD.
 	} while (result == -1 && errno == EINTR);
+	
 	if (result == -1) {
 		rb_sys_fail("process_prewait:waitid");
 	}
