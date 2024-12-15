@@ -12,6 +12,8 @@ The initial proof-of-concept [Async](https://github.com/socketry/async) was buil
 
 Please see the [project documentation](https://socketry.github.io/io-event/).
 
+## Releases
+
 ## Contributing
 
 We welcome contributions to this project.
