@@ -10,6 +10,7 @@ class IO
 		# of its contents to determine priority.
 		# See <https://en.wikipedia.org/wiki/Binary_heap> for explanations of the main methods.
 		class PriorityHeap
+			# Initializes the heap.
 			def initialize
 				# The heap is represented with an array containing a binary tree. See
 				# https://en.wikipedia.org/wiki/Binary_heap#Heap_implementation for how this array
@@ -17,18 +18,19 @@ class IO
 				@contents = []
 			end
 			
-			# Returns the earliest timer or nil if the heap is empty.
+			# @returns [Object | Nil] the smallest element in the heap without removing it, or nil if the heap is empty.
 			def peek
 				@contents[0]
 			end
 			
-			# Returns the number of elements in the heap
+			# @returns [Integer] the number of elements in the heap.
 			def size
 				@contents.size
 			end
 			
-			# Returns the earliest timer if the heap is non-empty and removes it from the heap.
-			# Returns nil if the heap is empty. (and doesn't change the heap in that case)
+			# Removes and returns the smallest element in the heap, or nil if the heap is empty.
+			#
+			# @returns [Object | Nil] The smallest element in the heap, or nil if the heap is empty.
 			def pop
 				# If the heap is empty:
 				if @contents.empty?
@@ -57,7 +59,9 @@ class IO
 				return value
 			end
 			
-			# Inserts a new timer into the heap, then rearranges elements until the heap invariant is true again.
+			# Add a new element to the heap, then rearrange elements until the heap invariant is true again.
+			#
+			# @parameter element [Object] The element to add to the heap.
 			def push(element)
 				# Insert the item at the end of the heap:
 				@contents.push(element)
@@ -75,10 +79,9 @@ class IO
 				@contents = []
 			end
 			
-			# Validate the heap invariant. Every element except the root must not be smaller than
-			# its parent element. Note that it MAY be equal.
+			# Validate the heap invariant. Every element except the root must not be smaller than its parent element. Note that it MAY be equal.
 			def valid?
-				# notice we skip index 0 on purpose, because it has no parent
+				# Notice we skip index 0 on purpose, because it has no parent
 				(1..(@contents.size - 1)).all? { |e| @contents[e] >= @contents[(e - 1) / 2] }
 			end
 			
@@ -93,10 +96,7 @@ class IO
 				parent_index = (index - 1) / 2 # watch out, integer division!
 				
 				while index > 0 && @contents[index] < @contents[parent_index]
-					# if the node has a smaller value than its parent, swap these nodes
-					# to uphold the minheap invariant and update the index of the 'current'
-					# node. If the node is already at index 0, we can also stop because that
-					# is the root of the heap.
+					# If the node has a smaller value than its parent, swap these nodes to uphold the minheap invariant and update the index of the 'current' node. If the node is already at index 0, we can also stop because that is the root of the heap.
 					# swap(index, parent_index)
 					@contents[index], @contents[parent_index] = @contents[parent_index], @contents[index]
 					
@@ -114,8 +114,7 @@ class IO
 					left_value = @contents[left_index]
 					
 					if left_value.nil?
-						# This node has no children so it can't bubble down any further.
-						# We're done here!
+						# This node has no children so it can't bubble down any further. We're done here!
 						return
 					end
 					

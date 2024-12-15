@@ -9,7 +9,9 @@ require_relative "../support"
 
 module IO::Event
 	module Selector
+		# A pure-Ruby implementation of the event selector.
 		class Select
+			# Initialize the selector with the given event loop fiber.
 			def initialize(loop)
 				@loop = loop
 				
@@ -23,12 +25,13 @@ module IO::Event
 				@idle_duration = 0.0
 			end
 			
+			# @attribute [Fiber] The event loop fiber.
 			attr :loop
 			
-			# This is the amount of time the event loop was idle during the last select call.
+			# @attribute [Float] This is the amount of time the event loop was idle during the last select call.
 			attr :idle_duration
 			
-			# If the event loop is currently sleeping, wake it up.
+			# Wake up the event loop if it is currently sleeping.
 			def wakeup
 				if @blocked
 					@interrupt.signal
@@ -39,6 +42,7 @@ module IO::Event
 				return false
 			end
 			
+			# Close the selector and release any resources.
 			def close
 				@interrupt.close
 				
@@ -100,6 +104,7 @@ module IO::Event
 				optional.nullify
 			end
 			
+			# @returns [Boolean] Whether the ready list is not empty, i.e. there are fibers ready to be resumed.
 			def ready?
 				!@ready.empty?
 			end
@@ -144,6 +149,11 @@ module IO::Event
 				end
 			end
 			
+			# Wait for the given IO to become readable or writable.
+			#
+			# @parameter fiber [Fiber] The fiber that is waiting.
+			# @parameter io [IO] The IO object to wait on.
+			# @parameter events [Integer] The events to wait for.
 			def io_wait(fiber, io, events)
 				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
 				
@@ -152,6 +162,11 @@ module IO::Event
 				waiter&.invalidate
 			end
 			
+			# Wait for multiple IO objects to become readable or writable.
+			#
+			# @parameter readable [Array(IO)] The list of IO objects to wait for readability.
+			# @parameter writable [Array(IO)] The list of IO objects to wait for writability.
+			# @parameter priority [Array(IO)] The list of IO objects to wait for priority events.
 			def io_select(readable, writable, priority, timeout)
 				Thread.new do
 					IO.select(readable, writable, priority, timeout)
@@ -161,7 +176,8 @@ module IO::Event
 			EAGAIN = -Errno::EAGAIN::Errno
 			EWOULDBLOCK = -Errno::EWOULDBLOCK::Errno
 			
-			def again?(errno)
+			# Whether the given error code indicates that the operation should be retried.
+			protected def again?(errno)
 				errno == EAGAIN or errno == EWOULDBLOCK
 			end
 			
