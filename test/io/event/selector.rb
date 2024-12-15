@@ -587,8 +587,8 @@ Selector = Sus::Shared("a selector") do
 			events = []
 			
 			fiber = Fiber.new do
-				pid1 = Process.spawn("sleep 0.001")
-				pid2 = Process.spawn("sleep 0.001")
+				pid1 = Process.spawn("sleep 0")
+				pid2 = Process.spawn("sleep 0")
 				
 				result1 = selector.process_wait(Fiber.current, pid1, 0)
 				events << :process_finished1
