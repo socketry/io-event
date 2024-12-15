@@ -18,33 +18,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include "event.h"
-#include "selector/selector.h"
+#pragma once
 
-void Init_IO_Event(void)
-{
-#ifdef HAVE_RB_EXT_RACTOR_SAFE
-	rb_ext_ractor_safe(true);
-#endif
-	
-	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
-	VALUE IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
-	
-	Init_IO_Event_Selector(IO_Event_Selector);
-	
-	#ifdef IO_EVENT_SELECTOR_URING
-	Init_IO_Event_Selector_URing(IO_Event_Selector);
-	#endif
-	
-	#ifdef IO_EVENT_SELECTOR_EPOLL
-	Init_IO_Event_Selector_EPoll(IO_Event_Selector);
-	#endif
-	
-	#ifdef IO_EVENT_SELECTOR_KQUEUE
-	Init_IO_Event_Selector_KQueue(IO_Event_Selector);
-	#endif
-	
-	#ifdef IO_EVENT_SELECTOR_IOCP
-	Init_IO_Event_Selector_IOCP(IO_Event_Selector);
-	#endif
-}
+#include <ruby.h>
+
+#define IO_EVENT_SELECTOR_IOCP
+
+void Init_IO_Event_Selector_IOCP(VALUE IO_Event_Selector);

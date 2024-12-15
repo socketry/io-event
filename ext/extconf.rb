@@ -44,6 +44,10 @@ if have_header("sys/event.h")
 	$srcs << "io/event/selector/kqueue.c"
 end
 
+if have_header("windows.h")
+	$srcs << "io/event/selector/iocp.c"
+end
+
 have_header("sys/wait.h")
 
 have_header("sys/eventfd.h")
