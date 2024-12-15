@@ -519,7 +519,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
-	int result = IO_Event_Selector_EPoll_Waiting_register(selector, 0, descriptor, &waiting);
+	int result = IO_Event_Selector_EPoll_Waiting_register(selector, _pid, descriptor, &waiting);
 	
 	if (result == -1) {
 		close(descriptor);
