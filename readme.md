@@ -10,9 +10,17 @@ The initial proof-of-concept [Async](https://github.com/socketry/async) was buil
 
 ## Usage
 
-Please see the [project documentation](https://socketry.github.io/io-event/).
+Please see the [project documentation](https://socketry.github.io/io-event/) for more details.
+
+  - [Getting Started](https://socketry.github.io/io-event/guides/getting-started/index) - This guide explains how to use `io-event` for non-blocking IO.
 
 ## Releases
+
+Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
+
+### v1.7.5
+
+  - Fix `process_wait` race condition on EPoll that could cause a hang.
 
 ## Contributing
 
