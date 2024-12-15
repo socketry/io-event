@@ -581,6 +581,32 @@ Selector = Sus::Shared("a selector") do
 			expect(events).to be == [:process_finished]
 			expect(result).to be(:success?)
 		end
+		
+		it "can wait for two processes sequentially" do
+			result1 = result2 = nil
+			events = []
+			
+			fiber = Fiber.new do
+				pid1 = Process.spawn("sleep 0.001")
+				pid2 = Process.spawn("sleep 0.001")
+				
+				result1 = selector.process_wait(Fiber.current, pid1, 0)
+				events << :process_finished1
+				
+				result2 = selector.process_wait(Fiber.current, pid2, 0)
+				events << :process_finished2
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(events).to be == [:process_finished1, :process_finished2]
+			expect(result1).to be(:success?)
+			expect(result2).to be(:success?)
+		end
 	end
 	
 	with "#resume" do
