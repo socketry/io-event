@@ -92,24 +92,40 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 
 void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
+	// This function can be used to wake up the selector when a mutex is unlocked. Because that can happen in some contexts where `errno` is not preserved, we save and restore it. We should probably fix the root cause of this issue, by ensuring that `errno` is saved immediately after the system call that can set it.
+	int saved_errno = errno;
+	
 	ssize_t result = write(interrupt->descriptor[1], ".", 1);
 	
 	if (result == -1) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-		
-		rb_sys_fail("IO_Event_Interrupt_signal:write");
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			// If we can't write to the pipe, it means the other end is full. In that case, we can be sure that the other end has already been woken up or is about to be woken up.
+			break;
+		} else {
+			errno = saved_errno;
+			rb_sys_fail("IO_Event_Interrupt_signal:write");
+		}
 	}
+	
+	errno = saved_errno;
 }
 
 void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 {
+	int saved_errno = errno;
+	
 	char buffer[128];
 	ssize_t result = read(interrupt->descriptor[0], buffer, sizeof(buffer));
 	
 	if (result == -1) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-		
-		rb_sys_fail("IO_Event_Interrupt_clear:read");
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			// Ignore.
+		} else {
+			errno = saved_errno;
+			rb_sys_fail("IO_Event_Interrupt_clear:read");
+		}
 	}
+	
+	errno = saved_errno;
 }
 #endif
