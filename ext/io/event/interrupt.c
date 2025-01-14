@@ -92,7 +92,7 @@ void IO_Event_Interrupt_close(struct IO_Event_Interrupt *interrupt)
 
 void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 {
-	// This function can be used to wake up the selector when a mutex is unlocked. Because that can happen in some contexts where `errno` is not preserved, we save and restore it. We should probably fix the root cause of this issue, by ensuring that `errno` is saved immediately after the system call that can set it.
+	// This function can be used to wake up the selector when a mutex is unlocked. Because that can happen in some contexts where `errno` should be preserved, we save and restore it. We should probably fix the root cause of this issue, by ensuring that `errno` is saved immediately after the system call that can set it.
 	int saved_errno = errno;
 	
 	ssize_t result = write(interrupt->descriptor[1], ".", 1);
