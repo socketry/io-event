@@ -95,9 +95,11 @@ void IO_Event_Interrupt_signal(struct IO_Event_Interrupt *interrupt)
 	ssize_t result = write(interrupt->descriptor[1], ".", 1);
 	
 	if (result == -1) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-		
-		rb_sys_fail("IO_Event_Interrupt_signal:write");
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			// If we can't write to the pipe, it means the other end is full. In that case, we can be sure that the other end has already been woken up or is about to be woken up.
+		} else {
+			rb_sys_fail("IO_Event_Interrupt_signal:write");
+		}
 	}
 }
 
@@ -107,9 +109,11 @@ void IO_Event_Interrupt_clear(struct IO_Event_Interrupt *interrupt)
 	ssize_t result = read(interrupt->descriptor[0], buffer, sizeof(buffer));
 	
 	if (result == -1) {
-		if (errno == EAGAIN || errno == EWOULDBLOCK) return;
-		
-		rb_sys_fail("IO_Event_Interrupt_clear:read");
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			// If we can't read from the pipe, it means the other end is empty. In that case, we can be sure that the other end is already clear.
+		} else {
+			rb_sys_fail("IO_Event_Interrupt_clear:read");
+		}
 	}
 }
 #endif
