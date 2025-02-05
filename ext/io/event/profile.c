@@ -8,6 +8,8 @@
 
 #include <stdio.h>
 
+VALUE IO_Event_Profile = Qnil;
+
 void IO_Event_Profile_Call_initialize(struct IO_Event_Profile_Call *call) {
 	call->enter_time.tv_sec = 0;
 	call->enter_time.tv_nsec = 0;
@@ -29,6 +31,50 @@ void IO_Event_Profile_Call_free(struct IO_Event_Profile_Call *call) {
 	}
 }
 
+static void IO_Event_Profile_mark(void *ptr) {
+	struct IO_Event_Profile *profile = (struct IO_Event_Profile*)ptr;
+	
+	// If `klass` is stored as a VALUE in calls, we need to mark them here:
+	for (size_t i = 0; i < profile->calls.limit; i += 1) {
+		struct IO_Event_Profile_Call *call = profile->calls.base[i];
+		rb_gc_mark(call->klass);
+	}
+}
+
+static void IO_Event_Profile_free(void *ptr) {
+	struct IO_Event_Profile *profile = (struct IO_Event_Profile*)ptr;
+	
+	IO_Event_Array_free(&profile->calls);
+	
+	free(profile);
+}
+
+const rb_data_type_t IO_Event_Profile_Type = {
+	.wrap_struct_name = "IO_Event_Profile",
+	.function = {
+		.dmark = IO_Event_Profile_mark,
+		.dfree = IO_Event_Profile_free,
+	},
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+};
+
+VALUE IO_Event_Profile_allocate(VALUE klass) {
+	struct IO_Event_Profile *profile = ALLOC(struct IO_Event_Profile);
+	
+	profile->calls.element_initialize = (void (*)(void*))IO_Event_Profile_Call_initialize;
+	profile->calls.element_free = (void (*)(void*))IO_Event_Profile_Call_free;
+	
+	IO_Event_Array_initialize(&profile->calls, 0, sizeof(struct IO_Event_Profile_Call));
+	
+	return TypedData_Wrap_Struct(klass, &IO_Event_Profile_Type, profile);
+}
+
+struct IO_Event_Profile *IO_Event_Profile_get(VALUE self) {
+	struct IO_Event_Profile *profile;
+	TypedData_Get_Struct(self, struct IO_Event_Profile, &IO_Event_Profile_Type, profile);
+	return profile;
+}
+
 int event_flag_call_p(rb_event_flag_t event_flags) {
 	return event_flags & (RUBY_EVENT_CALL | RUBY_EVENT_C_CALL);
 }
@@ -38,7 +84,7 @@ int event_flag_return_p(rb_event_flag_t event_flags) {
 }
 
 static void profile_event_callback(rb_event_flag_t event_flag, VALUE data, VALUE self, ID id, VALUE klass) {
-	struct IO_Event_Profile *profile = (struct IO_Event_Profile*)data;
+	struct IO_Event_Profile *profile = IO_Event_Profile_get(data);
 	
 	if (event_flag_call_p(event_flag)) {
 		struct IO_Event_Profile_Call *call = IO_Event_Array_push(&profile->calls);
@@ -77,39 +123,38 @@ static void profile_event_callback(rb_event_flag_t event_flag, VALUE data, VALUE
 	}
 }
 
-void IO_Event_Profile_initialize(struct IO_Event_Profile *profile, VALUE fiber) {
-	profile->fiber = fiber;
+void IO_Event_Profile_start(VALUE self, int track_calls) {
+	struct IO_Event_Profile *profile = IO_Event_Profile_get(self);
 	
-	profile->calls.element_initialize = (void (*)(void*))IO_Event_Profile_Call_initialize;
-	profile->calls.element_free = (void (*)(void*))IO_Event_Profile_Call_free;
-	
-	IO_Event_Array_initialize(&profile->calls, 0, sizeof(struct IO_Event_Profile_Call));
-}
-
-void IO_Event_Profile_start(struct IO_Event_Profile *profile) {
 	IO_Event_Time_current(&profile->start_time);
 	profile->nesting = 0;
 	profile->current = NULL;
 	
+	profile->track_calls = track_calls;
+	
 	// Since fibers are currently limited to a single thread, we use this in the hope that it's a little more efficient:
-	VALUE thread = rb_thread_current();
-	rb_thread_add_event_hook(thread, profile_event_callback, RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN, (VALUE)profile);
+	if (profile->track_calls) {
+		VALUE thread = rb_thread_current();
+		rb_thread_add_event_hook(thread, profile_event_callback, RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN, self);
+	}
 }
 
-void IO_Event_Profile_stop(struct IO_Event_Profile *profile) {
+void IO_Event_Profile_stop(VALUE self) {
+	struct IO_Event_Profile *profile = IO_Event_Profile_get(self);
+	
 	IO_Event_Time_current(&profile->stop_time);
 	
-	VALUE thread = rb_thread_current();
-	rb_thread_remove_event_hook_with_data(thread, profile_event_callback, (VALUE)profile);
-}
-
-void IO_Event_Profile_free(struct IO_Event_Profile *profile) {
-	IO_Event_Array_free(&profile->calls);
+	if (profile->track_calls) {
+		VALUE thread = rb_thread_current();
+		rb_thread_remove_event_hook_with_data(thread, profile_event_callback, self);
+	}
 }
 
 static const float IO_EVENT_PROFILE_PRINT_MINIMUM_PROPORTION = 0.01;
 
-void IO_Event_Profile_print(FILE *restrict stream, struct IO_Event_Profile *profile) {
+void IO_Event_Profile_print(VALUE self, FILE *restrict stream) {
+	struct IO_Event_Profile *profile = IO_Event_Profile_get(self);
+	
 	struct timespec total_duration = {};
 	IO_Event_Time_elapsed(&profile->start_time, &profile->stop_time, &total_duration);
 	
@@ -132,11 +177,18 @@ void IO_Event_Profile_print(FILE *restrict stream, struct IO_Event_Profile *prof
 			fputc('\t', stream);
 		}
 		
+		VALUE class_inspect = rb_inspect(call->klass);
 		const char *name = rb_id2name(call->id);
-		fprintf(stream, "\t%s:%d in '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", call->path, call->line, RSTRING_PTR(rb_inspect(call->klass)), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
+		
+		fprintf(stream, "\t%s:%d in '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", call->path, call->line, RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
 	}
 	
 	if (skipped > 0) {
 		fprintf(stream, "Skipped %zu calls that were too short to be meaningful.\n", skipped);
 	}
+}
+
+void Init_IO_Event_Profile(VALUE IO_Event) {
+	IO_Event_Profile = rb_define_class_under(IO_Event, "Profile", rb_cObject);
+	rb_define_alloc_func(IO_Event_Profile, IO_Event_Profile_allocate);
 }

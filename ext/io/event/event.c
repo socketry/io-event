@@ -2,6 +2,7 @@
 // Copyright, 2021-2025, by Samuel Williams.
 
 #include "event.h"
+#include "profile.h"
 #include "selector/selector.h"
 
 void Init_IO_Event(void)
@@ -11,8 +12,10 @@ void Init_IO_Event(void)
 #endif
 	
 	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
-	VALUE IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
 	
+	Init_IO_Event_Profile(IO_Event);
+	
+	VALUE IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
 	Init_IO_Event_Selector(IO_Event_Selector);
 	
 	#ifdef IO_EVENT_SELECTOR_URING

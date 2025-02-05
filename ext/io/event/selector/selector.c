@@ -12,6 +12,7 @@ static const int DEBUG = 0;
 static ID id_transfer, id_alive_p;
 
 static float IO_Event_Selector_stall_log_threshold = 0;
+static int IO_Event_Selector_stall_log_profile = 0;
 
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	// TODO Consider introducing something like `rb_fiber_scheduler_transfer(...)`.
@@ -37,20 +38,21 @@ VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv) 
 		return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
 	}
 	
-	struct IO_Event_Profile profile;
-	IO_Event_Profile_initialize(&profile, fiber);
-	IO_Event_Profile_start(&profile);
+	VALUE profile = IO_Event_Profile_allocate(IO_Event_Profile);
+	
+	IO_Event_Profile_start(profile, IO_Event_Selector_stall_log_profile);
 	
 	// Transfer control to the fiber:
 	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
 	
-	IO_Event_Profile_stop(&profile);
+	IO_Event_Profile_stop(profile);
 	
-	float duration = IO_Event_Profile_duration(&profile);
+	float duration = IO_Event_Profile_duration(profile);
 	
 	if (duration > IO_Event_Selector_stall_log_threshold) {
 		fprintf(stderr, "Fiber stalled for %.3f seconds\n", duration);
-		IO_Event_Profile_print(stderr, &profile);
+		
+		IO_Event_Profile_print(profile, stderr);
 	}
 	
 	return result;
@@ -179,7 +181,7 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	
 	if (stall_log_threshold) {
 		if (strcmp(stall_log_threshold, "true") == 0) {
-			IO_Event_Selector_stall_log_threshold = 0.001;
+			IO_Event_Selector_stall_log_threshold = 0.01;
 		} else if (strcmp(stall_log_threshold, "false") == 0) {
 			IO_Event_Selector_stall_log_threshold = 0;
 		} else {
@@ -187,6 +189,14 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 		}
 		
 		if (DEBUG) fprintf(stderr, "IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD = %.3f\n", IO_Event_Selector_stall_log_threshold);
+	}
+	
+	char *stall_log_profile = getenv("IO_EVENT_SELECTOR_STALL_LOG_PROFILE");
+	
+	if (stall_log_profile) {
+		if (strcmp(stall_log_profile, "true") == 0) {
+			IO_Event_Selector_stall_log_profile = 1;
+		}
 	}
 }
 
