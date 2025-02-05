@@ -19,7 +19,7 @@ module IO::Event
 				
 				@blocked = false
 				
-				@ready = Queue.new
+				@ready = ::Thread::Queue.new
 				@interrupt = Interrupt.attach(self)
 				
 				@idle_duration = 0.0
@@ -92,6 +92,8 @@ module IO::Event
 			# Append the given fiber into the ready list.
 			def push(fiber)
 				@ready.push(fiber)
+				
+				return fiber
 			end
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
@@ -154,12 +156,24 @@ module IO::Event
 			# @parameter fiber [Fiber] The fiber that is waiting.
 			# @parameter io [IO] The IO object to wait on.
 			# @parameter events [Integer] The events to wait for.
-			def io_wait(fiber, io, events)
-				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
-				
-				@loop.transfer
-			ensure
-				waiter&.invalidate
+			if IO.method_defined?(:interruptable_operation)
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					io.interruptable_operation do
+						@loop.transfer
+					end
+				ensure
+					waiter&.invalidate
+				end
+			else
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					@loop.transfer
+				ensure
+					waiter&.invalidate
+				end
 			end
 			
 			# Wait for multiple IO objects to become readable or writable.
@@ -341,8 +355,8 @@ module IO::Event
 					end
 					
 					return total
-				rescue IOError => error
-					return -Errno::EBADF::Errno
+				# rescue IOError => error
+				# 	return -Errno::EBADF::Errno
 				rescue SystemCallError => error
 					return -error.errno
 				end
