@@ -48,10 +48,7 @@ VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv) 
 	IO_Event_Profile_stop(profile);
 	
 	float duration = IO_Event_Profile_duration(profile);
-	
 	if (duration > IO_Event_Selector_stall_log_threshold) {
-		fprintf(stderr, "Fiber stalled for %.3f seconds\n", duration);
-		
 		IO_Event_Profile_print(profile, stderr);
 	}
 	

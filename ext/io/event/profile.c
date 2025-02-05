@@ -152,19 +152,19 @@ void IO_Event_Profile_stop(VALUE self) {
 
 static const float IO_EVENT_PROFILE_PRINT_MINIMUM_PROPORTION = 0.01;
 
-void IO_Event_Profile_print(VALUE self, FILE *restrict stream) {
+void IO_Event_Profile_print_tty(VALUE self, FILE *restrict stream) {
 	struct IO_Event_Profile *profile = IO_Event_Profile_get(self);
 	
 	struct timespec total_duration = {};
 	IO_Event_Time_elapsed(&profile->start_time, &profile->stop_time, &total_duration);
 	
+	fprintf(stderr, "Fiber stalled for %.3f seconds\n", total_duration);
+	
 	size_t skipped = 0;
 	
 	for (size_t i = 0; i < profile->calls.limit; i += 1) {
 		struct IO_Event_Profile_Call *call = profile->calls.base[i];
-		
 		struct timespec duration = {};
-		
 		IO_Event_Time_elapsed(&call->enter_time, &call->exit_time, &duration);
 		
 		// Skip calls that are too short to be meaningful:
@@ -185,6 +185,57 @@ void IO_Event_Profile_print(VALUE self, FILE *restrict stream) {
 	
 	if (skipped > 0) {
 		fprintf(stream, "Skipped %zu calls that were too short to be meaningful.\n", skipped);
+	}
+}
+
+void IO_Event_Profile_print_json(VALUE self, FILE *restrict stream) {
+	struct IO_Event_Profile *profile = IO_Event_Profile_get(self);
+	
+	struct timespec total_duration = {};
+	IO_Event_Time_elapsed(&profile->start_time, &profile->stop_time, &total_duration);
+	
+	fputc('{', stream);
+	
+	fprintf(stream, "\"duration\":" IO_EVENT_TIME_PRINTF_TIMESPEC, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(total_duration));
+	
+	size_t skipped = 0;
+	
+	fprintf(stream, ",\"calls\":[");
+	int first = 1;
+	
+	for (size_t i = 0; i < profile->calls.limit; i += 1) {
+		struct IO_Event_Profile_Call *call = profile->calls.base[i];
+		struct timespec duration = {};
+		IO_Event_Time_elapsed(&call->enter_time, &call->exit_time, &duration);
+		
+		// Skip calls that are too short to be meaningful:
+		if (IO_Event_Time_proportion(&duration, &total_duration) < IO_EVENT_PROFILE_PRINT_MINIMUM_PROPORTION) {
+			skipped += 1;
+			continue;
+		}
+		
+		VALUE class_inspect = rb_inspect(call->klass);
+		const char *name = rb_id2name(call->id);
+		
+		fprintf(stream, "%s{\"path\":\"%s\",\"line\":%d,\"class\":\"%s\",\"method\":\"%s\",\"duration\":" IO_EVENT_TIME_PRINTF_TIMESPEC ",\"nesting\":%zu}", first ? "" : ",", call->path, call->line, RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration), call->nesting);
+		
+		first = 0;
+	}
+	
+	fprintf(stream, "]");
+	
+	if (skipped > 0) {
+		fprintf(stream, ",\"skipped\":%zu", skipped);
+	}
+	
+	fprintf(stream, "}\n");
+}
+
+void IO_Event_Profile_print(VALUE self, FILE *restrict stream) {
+	if (isatty(fileno(stream))) {
+		IO_Event_Profile_print_tty(self, stream);
+	} else {
+		IO_Event_Profile_print_json(self, stream);
 	}
 }
 
