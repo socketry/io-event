@@ -7,8 +7,10 @@
 #include "array.h"
 #include "time.h"
 
-struct IO_Event_Profile_Event {
-	struct timespec time;
+struct IO_Event_Profile_Call {
+	struct timespec enter_time;
+	struct timespec exit_time;
+	
 	size_t nesting;
 	
 	rb_event_flag_t event_flag;
@@ -18,8 +20,7 @@ struct IO_Event_Profile_Event {
 	const char *path;
 	int line;
 	
-	struct IO_Event_Profile_Event *parent;
-	struct IO_Event_Profile_Event *pair;
+	struct IO_Event_Profile_Call *parent;
 };
 
 struct IO_Event_Profile {
@@ -32,7 +33,7 @@ struct IO_Event_Profile {
 	size_t nesting;
 	
 	// The current call frame:
-	struct IO_Event_Profile_Event *current;
+	struct IO_Event_Profile_Call *current;
 	
 	struct IO_Event_Array events;
 };

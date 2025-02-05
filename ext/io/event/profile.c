@@ -8,9 +8,12 @@
 
 #include <stdio.h>
 
-void IO_Event_Profile_Event_initialize(struct IO_Event_Profile_Event *event) {
-	event->time.tv_sec = 0;
-	event->time.tv_nsec = 0;
+void IO_Event_Profile_Call_initialize(struct IO_Event_Profile_Call *event) {
+	event->enter_time.tv_sec = 0;
+	event->enter_time.tv_nsec = 0;
+	event->exit_time.tv_sec = 0;
+	event->exit_time.tv_nsec = 0;
+	
 	event->nesting = 0;
 	
 	event->event_flag = 0;
@@ -20,24 +23,9 @@ void IO_Event_Profile_Event_initialize(struct IO_Event_Profile_Event *event) {
 	event->line = 0;
 }
 
-void IO_Event_Profile_Event_free(struct IO_Event_Profile_Event *event) {
+void IO_Event_Profile_Call_free(struct IO_Event_Profile_Call *event) {
 	if (event->path) {
 		free((void*)event->path);
-	}
-}
-
-static const char *event_flag_name(rb_event_flag_t event_flag) {
-	switch (event_flag) {
-		case RUBY_EVENT_LINE:
-			return "line";
-		case RUBY_EVENT_CALL:
-		case RUBY_EVENT_C_CALL:
-			return "call";
-		case RUBY_EVENT_RETURN:
-		case RUBY_EVENT_C_RETURN:
-			return "return";
-		default:
-			return "unknown";
 	}
 }
 
@@ -51,13 +39,13 @@ int event_flag_return_p(rb_event_flag_t event_flags) {
 
 static void profile_event_callback(rb_event_flag_t event_flag, VALUE data, VALUE self, ID id, VALUE klass) {
 	struct IO_Event_Profile *profile = (struct IO_Event_Profile*)data;
-	struct IO_Event_Profile_Event *event = IO_Event_Array_push(&profile->events);
-	
-	IO_Event_Time_current(&event->time);
-	
-	event->event_flag = event_flag;
 	
 	if (event_flag_call_p(event_flag)) {
+		struct IO_Event_Profile_Call *event = IO_Event_Array_push(&profile->events);
+		IO_Event_Time_current(&event->enter_time);
+	
+		event->event_flag = event_flag;
+		
 		event->parent = profile->current;
 		profile->current = event;
 		
@@ -77,25 +65,25 @@ static void profile_event_callback(rb_event_flag_t event_flag, VALUE data, VALUE
 		}
 		event->line = rb_sourceline();
 	} else if (event_flag_return_p(event_flag)) {
-		// Set up the call/return pair:
-		profile->current->pair = event;
-		event->pair = profile->current;
+		struct IO_Event_Profile_Call *event = profile->current;
 		
-		profile->current = profile->current->parent;
-		event->parent = profile->current;
+		// Bad event sequence?
+		if (event == NULL) return;
 		
+		IO_Event_Time_current(&event->exit_time);
+		
+		profile->current = event->parent;
 		profile->nesting -= 1;
-		event->nesting = profile->nesting;
 	}
 }
 
 void IO_Event_Profile_initialize(struct IO_Event_Profile *profile, VALUE fiber) {
 	profile->fiber = fiber;
 	
-	profile->events.element_initialize = (void (*)(void*))IO_Event_Profile_Event_initialize;
-	profile->events.element_free = (void (*)(void*))IO_Event_Profile_Event_free;
+	profile->events.element_initialize = (void (*)(void*))IO_Event_Profile_Call_initialize;
+	profile->events.element_free = (void (*)(void*))IO_Event_Profile_Call_free;
 	
-	IO_Event_Array_initialize(&profile->events, 0, sizeof(struct IO_Event_Profile_Event));
+	IO_Event_Array_initialize(&profile->events, 0, sizeof(struct IO_Event_Profile_Call));
 }
 
 void IO_Event_Profile_start(struct IO_Event_Profile *profile) {
@@ -128,27 +116,27 @@ void IO_Event_Profile_print(FILE *restrict stream, struct IO_Event_Profile *prof
 	size_t skipped = 0;
 	
 	for (size_t i = 0; i < profile->events.limit; i += 1) {
-		struct IO_Event_Profile_Event *event = profile->events.base[i];
+		struct IO_Event_Profile_Call *event = profile->events.base[i];
 		
-		if (event_flag_call_p(event->event_flag)) {
-			struct timespec duration = {};
-			
-			if (event->pair) {
-				IO_Event_Time_elapsed(&event->time, &event->pair->time, &duration);
-				
-				// Skip events that are too short to be meaningful:
-				if (IO_Event_Time_proportion(&duration, &total_duration) < IO_EVENT_PROFILE_PRINT_MINIMUM_PROPORTION) {
-					skipped += 1;
-					continue;
-				}
-			}
-			
-			for (size_t i = 0; i < event->nesting; i += 1) {
-				fputc('\t', stream);
-			}
-			
-			const char *name = rb_id2name(event->id);
-			fprintf(stream, "\t%s:%d in '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", event->path, event->line, RSTRING_PTR(rb_inspect(event->klass)), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
+		struct timespec duration = {};
+		
+		IO_Event_Time_elapsed(&event->enter_time, &event->exit_time, &duration);
+		
+		// Skip events that are too short to be meaningful:
+		if (IO_Event_Time_proportion(&duration, &total_duration) < IO_EVENT_PROFILE_PRINT_MINIMUM_PROPORTION) {
+			skipped += 1;
+			continue;
 		}
+		
+		for (size_t i = 0; i < event->nesting; i += 1) {
+			fputc('\t', stream);
+		}
+		
+		const char *name = rb_id2name(event->id);
+		fprintf(stream, "\t%s:%d in '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", event->path, event->line, RSTRING_PTR(rb_inspect(event->klass)), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
+	}
+	
+	if (skipped > 0) {
+		fprintf(stream, "Skipped %zu events that were too short to be meaningful.\n", skipped);
 	}
 }
