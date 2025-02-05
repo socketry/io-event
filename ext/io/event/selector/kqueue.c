@@ -975,7 +975,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	// Non-comprehensive testing shows this gives a 1.5x speedup.
 	
 	// First do the syscall with no timeout to get any immediately available events:
-	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl timeout=" IO_EVENT_PRINTF_TIMESPEC "\r\n", IO_EVENT_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
+	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl timeout=" IO_EVENT_TIME_PRINTF_TIMESPEC "\r\n", IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
 	select_internal_with_gvl(&arguments);
 	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl done\r\n");
 	
@@ -993,7 +993,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 			
-			if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_select timeout=" IO_EVENT_PRINTF_TIMESPEC "\n", IO_EVENT_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
+			if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_select timeout=" IO_EVENT_TIME_PRINTF_TIMESPEC "\n", IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
 			select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
