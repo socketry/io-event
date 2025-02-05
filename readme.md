@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.8.0
+
+  - [Detecing fibers that are stalling the event loop.](https://socketry.github.io/io-event/releases/index#detecing-fibers-that-are-stalling-the-event-loop.)
+
 ### v1.7.5
 
   - Fix `process_wait` race condition on EPoll that could cause a hang.
