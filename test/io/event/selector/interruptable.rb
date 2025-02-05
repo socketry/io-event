@@ -7,7 +7,7 @@ require "io/event"
 require "io/event/selector"
 require "socket"
 
-Interruptable = Sus::Shared("interruptable") do
+Interruptible = Sus::Shared("interruptible") do
 	it "can interrupt sleeping selector" do
 		result = nil
 		
@@ -62,6 +62,6 @@ IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
 	
 	describe(klass, unique: name) do
-		it_behaves_like Interruptable
+		it_behaves_like Interruptible
 	end
 end

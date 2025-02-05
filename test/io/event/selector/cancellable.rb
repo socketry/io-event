@@ -5,6 +5,7 @@
 
 require "io/event"
 require "io/event/selector"
+require "io/event/scheduler"
 require "socket"
 
 require "unix_socket"
@@ -55,6 +56,68 @@ Cancellable = Sus::Shared("cancellable") do
 				reader.raise(Interrupt)
 				output.write(".")
 				selector.select(0.1)
+			end
+		end
+		
+		with "a scheduler" do
+			let(:scheduler) {IO::Event::Scheduler.new(@selector)}
+			
+			def with_scheduler
+				Fiber.set_scheduler(scheduler)
+				
+				yield
+			ensure
+				Fiber.set_scheduler(nil)
+			end
+			
+			def skip_unless_interruptible
+				skip("IO#close interruption unsupported") unless IO::Event::INTERRUPTABLE
+			end
+			
+			it "can interrupt read" do
+				skip_unless_interruptible
+				
+				error = nil
+				
+				with_scheduler do
+					buffer = IO::Buffer.new(64)
+					
+					Fiber.schedule do
+						begin
+							buffer.read(input, 1)
+						rescue => error
+							# Ignore.
+						end
+					end
+					
+					Fiber.schedule do
+						input.close
+					end
+				end
+				
+				expect(error).to be_a(IOError)
+			end
+			
+			it "can interrupt wait_readable" do
+				skip_unless_interruptible
+				
+				error = nil
+				
+				with_scheduler do
+					Fiber.schedule do
+						begin
+							input.wait_readable
+						rescue => error
+							# Ignore.
+						end
+					end
+					
+					Fiber.schedule do
+						input.close
+					end
+				end
+				
+				expect(error).to be_a(IOError)
 			end
 		end
 	end

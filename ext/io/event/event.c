@@ -29,4 +29,10 @@ void Init_IO_Event(void)
 	#ifdef IO_EVENT_SELECTOR_KQUEUE
 	Init_IO_Event_Selector_KQueue(IO_Event_Selector);
 	#endif
+	
+	#ifdef HAVE_RB_IO_INTERRUPTABLE_OPERATION
+	rb_define_const(IO_Event, "INTERRUPTABLE", Qtrue);
+	#else
+	rb_define_const(IO_Event, "INTERRUPTABLE", Qfalse);
+	#endif
 }
