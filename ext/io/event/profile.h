@@ -35,7 +35,7 @@ struct IO_Event_Profile {
 	// The current call frame:
 	struct IO_Event_Profile_Call *current;
 	
-	struct IO_Event_Array events;
+	struct IO_Event_Array calls;
 };
 
 void IO_Event_Profile_initialize(struct IO_Event_Profile *profile, VALUE fiber);
