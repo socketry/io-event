@@ -20,7 +20,7 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 
 ### v1.8.0
 
-  - [Detecing fibers that are stalling the event loop.](https://socketry.github.io/io-event/releases/index#detecing-fibers-that-are-stalling-the-event-loop.)
+  - [Detecting fibers that are stalling the event loop.](https://socketry.github.io/io-event/releases/index#detecting-fibers-that-are-stalling-the-event-loop.)
 
 ### v1.7.5
 

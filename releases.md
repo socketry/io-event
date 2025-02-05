@@ -2,7 +2,7 @@
 
 ## v1.8.0
 
-### Detecing fibers that are stalling the event loop.
+### Detecting fibers that are stalling the event loop.
 
 A new (experimental) feature for detecting fiber stalls has been added. This feature is disabled by default and can be enabled by setting the `IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD` to `true` or a floating point number representing the threshold in seconds.
 
