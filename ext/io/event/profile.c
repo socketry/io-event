@@ -158,7 +158,7 @@ void IO_Event_Profile_print_tty(VALUE self, FILE *restrict stream) {
 	struct timespec total_duration = {};
 	IO_Event_Time_elapsed(&profile->start_time, &profile->stop_time, &total_duration);
 	
-	fprintf(stderr, "Fiber stalled for %.3f seconds\n", total_duration);
+	fprintf(stderr, "Fiber stalled for %.3f seconds\n", IO_Event_Time_duration(&total_duration));
 	
 	size_t skipped = 0;
 	
