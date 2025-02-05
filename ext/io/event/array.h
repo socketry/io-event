@@ -28,7 +28,7 @@ struct IO_Event_Array {
 	void (*element_free)(void*);
 };
 
-inline static int IO_Event_Array_allocate(struct IO_Event_Array *array, size_t count, size_t element_size)
+inline static int IO_Event_Array_initialize(struct IO_Event_Array *array, size_t count, size_t element_size)
 {
 	array->limit = 0;
 	array->element_size = element_size;
@@ -151,6 +151,12 @@ inline static void* IO_Event_Array_lookup(struct IO_Event_Array *array, size_t i
 	}
 	
 	return *element;
+}
+
+inline static void* IO_Event_Array_last(struct IO_Event_Array *array)
+{
+	if (array->limit == 0) return NULL;
+	else return array->base[array->limit - 1];
 }
 
 // Push a new element onto the end of the array.

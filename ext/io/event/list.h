@@ -1,5 +1,5 @@
 // Released under the MIT License.
-// Copyright, 2023, by Samuel Williams.
+// Copyright, 2023-2025, by Samuel Williams.
 
 #include <ruby.h>
 #include <stdio.h>

@@ -1,27 +1,10 @@
-// Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Released under the MIT License.
+// Copyright, 2021-2025, by Samuel Williams.
 
 #include "uring.h"
 #include "selector.h"
-#include "list.h"
-#include "array.h"
+#include "../list.h"
+#include "../array.h"
 
 #include <liburing.h>
 #include <poll.h>
@@ -238,9 +221,9 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	
 	selector->completions.element_initialize = IO_Event_Selector_URing_Completion_initialize;
 	selector->completions.element_free = IO_Event_Selector_URing_Completion_free;
-	int result = IO_Event_Array_allocate(&selector->completions, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_URing_Completion));
+	int result = IO_Event_Array_initialize(&selector->completions, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_URing_Completion));
 	if (result < 0) {
-		rb_sys_fail("IO_Event_Selector_URing_allocate:IO_Event_Array_allocate");
+		rb_sys_fail("IO_Event_Selector_URing_allocate:IO_Event_Array_initialize");
 	}
 	
 	return instance;
@@ -318,7 +301,7 @@ VALUE IO_Event_Selector_URing_push(VALUE self, VALUE fiber)
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	IO_Event_Selector_queue_push(&selector->backend, fiber);
+	IO_Event_Selector_ready_push(&selector->backend, fiber);
 	
 	return Qnil;
 }
@@ -1103,7 +1086,7 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		if (waiting && waiting->fiber) {
 			assert(waiting->result != -ECANCELED);
 			
-			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
+			IO_Event_Selector_fiber_transfer_user(waiting->fiber, 0, NULL);
 		}
 	}
 	
@@ -1122,7 +1105,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	// Flush any pending events:
 	io_uring_submit_flush(selector);
 	
-	int ready = IO_Event_Selector_queue_flush(&selector->backend);
+	int ready = IO_Event_Selector_ready_flush(&selector->backend);
 	
 	int result = select_process_completions(selector);
 	
@@ -1142,14 +1125,14 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		
 		if (!selector->backend.ready && !timeout_nonblocking(arguments.timeout)) {
 			struct timespec start_time;
-			IO_Event_Selector_current_time(&start_time);
+			IO_Event_Time_current(&start_time);
 			
 			// This is a blocking operation, we wait for events:
 			result = select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
-			IO_Event_Selector_current_time(&end_time);
-			IO_Event_Selector_elapsed_time(&start_time, &end_time, &selector->idle_duration);
+			IO_Event_Time_current(&end_time);
+			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
 			
 			// After waiting/flushing the SQ, check if there are any completions:
 			if (result > 0) {

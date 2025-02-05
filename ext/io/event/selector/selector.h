@@ -1,28 +1,13 @@
-// Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Released under the MIT License.
+// Copyright, 2021-2025, by Samuel Williams.
 
 #pragma once
 
 #include <ruby.h>
 #include <ruby/thread.h>
 #include <ruby/io.h>
+
+#include "../time.h"
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 #include <ruby/io/buffer.h>
@@ -32,8 +17,6 @@
 #ifndef RUBY_FIBER_SCHEDULER_VERSION
 #define RUBY_FIBER_SCHEDULER_VERSION 1
 #endif
-
-#include <time.h>
 
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
@@ -57,6 +40,9 @@ static inline int IO_Event_try_again(int error) {
 }
 
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
+
+// Specifically for transferring control to a user fiber.
+VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv);
 
 #ifdef HAVE__RB_FIBER_RAISE
 #define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
@@ -146,11 +132,8 @@ VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend)
 	return IO_Event_Selector_resume(backend, 1, &backend->loop);
 }
 
-void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber);
-int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend);
+// Append to the ready queue.
+void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber);
 
-void IO_Event_Selector_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration);
-void IO_Event_Selector_current_time(struct timespec *time);
-
-#define IO_EVENT_PRINTF_TIMESPEC "%lld.%.9ld"
-#define IO_EVENT_PRINTF_TIMESPEC_ARGUMENTS(ts) (long long)((ts).tv_sec), (ts).tv_nsec
+// Flush the ready queue by transferring control one at a time.
+int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend);

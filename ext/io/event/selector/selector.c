@@ -1,29 +1,17 @@
-// Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Released under the MIT License.
+// Copyright, 2021-2025, by Samuel Williams.
 
 #include "selector.h"
+#include "../profile.h"
+
 #include <fcntl.h>
+#include <stdlib.h>
 
 static const int DEBUG = 0;
 
 static ID id_transfer, id_alive_p;
+
+static float IO_Event_Selector_stall_log_threshold = 0;
 
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	// TODO Consider introducing something like `rb_fiber_scheduler_transfer(...)`.
@@ -41,6 +29,31 @@ VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	}
 	
 	return Qnil;
+}
+
+VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv) {
+	// Bypass if the threshold is not set:
+	if (IO_Event_Selector_stall_log_threshold == 0) {
+		return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+	}
+	
+	struct IO_Event_Profile profile;
+	IO_Event_Profile_initialize(&profile, fiber);
+	IO_Event_Profile_start(&profile);
+	
+	// Transfer control to the fiber:
+	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+	
+	IO_Event_Profile_stop(&profile);
+	
+	float duration = IO_Event_Profile_duration(&profile);
+	
+	if (duration > IO_Event_Selector_stall_log_threshold) {
+		fprintf(stderr, "Fiber stalled for %.3f seconds\n", duration);
+		IO_Event_Profile_print(stderr, &profile);
+	}
+	
+	return result;
 }
 
 #ifndef HAVE__RB_FIBER_RAISE
@@ -156,8 +169,25 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
 	rb_gc_register_mark_object(rb_Process_Status);
 #endif
-
+	
 	rb_define_singleton_method(IO_Event_Selector, "nonblock", IO_Event_Selector_nonblock, 1);
+	
+	// Extract the stall log threshold if specified:
+	
+	char *stall_log_threshold = getenv("IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD");
+	// Can be true, false or a floating point time in seconds:
+	
+	if (stall_log_threshold) {
+		if (strcmp(stall_log_threshold, "true") == 0) {
+			IO_Event_Selector_stall_log_threshold = 0.001;
+		} else if (strcmp(stall_log_threshold, "false") == 0) {
+			IO_Event_Selector_stall_log_threshold = 0;
+		} else {
+			IO_Event_Selector_stall_log_threshold = strtof(stall_log_threshold, NULL);
+		}
+		
+		if (DEBUG) fprintf(stderr, "IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD = %.3f\n", IO_Event_Selector_stall_log_threshold);
+	}
 }
 
 struct wait_and_transfer_arguments {
@@ -211,7 +241,7 @@ static VALUE wait_and_transfer(VALUE _arguments) {
 	int argc = arguments->argc - 1;
 	VALUE *argv = arguments->argv + 1;
 	
-	return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+	return IO_Event_Selector_fiber_transfer_user(fiber, argc, argv);
 }
 
 static VALUE wait_and_transfer_ensure(VALUE _arguments) {
@@ -282,7 +312,7 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 	return rb_ensure(wait_and_raise, (VALUE)&arguments, wait_and_transfer_ensure, (VALUE)&arguments);
 }
 
-void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber)
+void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber)
 {
 	struct IO_Event_Selector_Queue *waiting = malloc(sizeof(struct IO_Event_Selector_Queue));
 	assert(waiting);
@@ -297,26 +327,26 @@ void IO_Event_Selector_queue_push(struct IO_Event_Selector *backend, VALUE fiber
 }
 
 static inline
-void IO_Event_Selector_queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *ready)
+void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *ready)
 {
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_queue_pop -> %p\n", (void*)ready->fiber);
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_ready_pop -> %p\n", (void*)ready->fiber);
 	
-	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
-		IO_Event_Selector_fiber_transfer(ready->fiber, 0, NULL);
-	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_INTERNAL) {
-		VALUE fiber = ready->fiber;
+	VALUE fiber = ready->fiber;
+	
+	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_INTERNAL) {
+		// This means that the fiber was added to the ready queue by the selector itself, and we need to transfer control to it, but before we do that, we need to remove it from the queue, as there is no expectation that returning from `transfer` will remove it.
 		queue_pop(backend, ready);
 		free(ready);
-		
-		if (RTEST(rb_funcall(fiber, id_alive_p, 0))) {
-			rb_funcall(fiber, id_transfer, 0);
-		}
+	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
+		// This means the fiber added itself to the ready queue, and we need to transfer control back to it. Transferring control back to the fiber will call `queue_pop` and remove it from the queue.
 	} else {
 		rb_raise(rb_eRuntimeError, "Unknown queue type!");
 	}
+	
+	IO_Event_Selector_fiber_transfer_user(fiber, 0, NULL);
 }
 
-int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend)
+int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
 {
 	int count = 0;
 	
@@ -324,7 +354,7 @@ int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend)
 	
 	// Get the current tail and head of the queue:
 	struct IO_Event_Selector_Queue *waiting = backend->waiting;
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_queue_flush waiting = %p\n", waiting);
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_ready_flush waiting = %p\n", waiting);
 	
 	// Process from head to tail in order:
 	// During this, more items may be appended to tail.
@@ -333,25 +363,10 @@ int IO_Event_Selector_queue_flush(struct IO_Event_Selector *backend)
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
 		count += 1;
-		IO_Event_Selector_queue_pop(backend, ready);
+		IO_Event_Selector_ready_pop(backend, ready);
 		
 		if (ready == waiting) break;
 	}
 	
 	return count;
-}
-
-void IO_Event_Selector_elapsed_time(struct timespec* start, struct timespec* stop, struct timespec *duration)
-{
-	if ((stop->tv_nsec - start->tv_nsec) < 0) {
-		duration->tv_sec = stop->tv_sec - start->tv_sec - 1;
-		duration->tv_nsec = stop->tv_nsec - start->tv_nsec + 1000000000;
-	} else {
-		duration->tv_sec = stop->tv_sec - start->tv_sec;
-		duration->tv_nsec = stop->tv_nsec - start->tv_nsec;
-	}
-}
-
-void IO_Event_Selector_current_time(struct timespec *time) {
-	clock_gettime(CLOCK_MONOTONIC, time);
 }

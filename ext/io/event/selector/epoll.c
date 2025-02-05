@@ -1,27 +1,10 @@
-// Copyright, 2021, by Samuel G. D. Williams. <http://www.codeotaku.com>
-// 
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-// 
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-// 
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
+// Released under the MIT License.
+// Copyright, 2021-2025, by Samuel Williams.
 
 #include "epoll.h"
 #include "selector.h"
-#include "list.h"
-#include "array.h"
+#include "../list.h"
+#include "../array.h"
 
 #include <sys/epoll.h>
 #include <time.h>
@@ -337,9 +320,9 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	
 	selector->descriptors.element_initialize = IO_Event_Selector_EPoll_Descriptor_initialize;
 	selector->descriptors.element_free = IO_Event_Selector_EPoll_Descriptor_free;
-	int result = IO_Event_Array_allocate(&selector->descriptors, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_EPoll_Descriptor));
+	int result = IO_Event_Array_initialize(&selector->descriptors, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_EPoll_Descriptor));
 	if (result < 0) {
-		rb_sys_fail("IO_Event_Selector_EPoll_allocate:IO_Event_Array_allocate");
+		rb_sys_fail("IO_Event_Selector_EPoll_allocate:IO_Event_Array_initialize");
 	}
 	
 	return instance;
@@ -435,7 +418,7 @@ VALUE IO_Event_Selector_EPoll_push(VALUE self, VALUE fiber)
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	IO_Event_Selector_queue_push(&selector->backend, fiber);
+	IO_Event_Selector_ready_push(&selector->backend, fiber);
 	
 	return Qnil;
 }
@@ -584,7 +567,7 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	if (result == -1) {
 		if (errno == EPERM) {
-			IO_Event_Selector_queue_push(&selector->backend, fiber);
+			IO_Event_Selector_ready_push(&selector->backend, fiber);
 			IO_Event_Selector_yield(&selector->backend);
 			return events;
 		}
@@ -942,7 +925,7 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 			
 			// Resume the fiber:
 			waiting->ready = matching_events;
-			IO_Event_Selector_fiber_transfer(waiting->fiber, 0, NULL);
+			IO_Event_Selector_fiber_transfer_user(waiting->fiber, 0, NULL);
 			
 			node = saved->tail;
 			IO_Event_List_pop(saved);
@@ -994,7 +977,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	selector->idle_duration.tv_sec = 0;
 	selector->idle_duration.tv_nsec = 0;
 	
-	int ready = IO_Event_Selector_queue_flush(&selector->backend);
+	int ready = IO_Event_Selector_ready_flush(&selector->backend);
 	
 	struct select_arguments arguments = {
 		.selector = selector,
@@ -1020,14 +1003,14 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
 			struct timespec start_time;
-			IO_Event_Selector_current_time(&start_time);
+			IO_Event_Time_current(&start_time);
 			
 			// Wait for events to occur:
 			select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
-			IO_Event_Selector_current_time(&end_time);
-			IO_Event_Selector_elapsed_time(&start_time, &end_time, &selector->idle_duration);
+			IO_Event_Time_current(&end_time);
+			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
 		}
 	}
 	
