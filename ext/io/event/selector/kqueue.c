@@ -381,7 +381,7 @@ VALUE IO_Event_Selector_KQueue_transfer(VALUE self)
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	return IO_Event_Selector_backend_yield(&selector->backend);
+	return IO_Event_Selector_loop_yield(&selector->backend);
 }
 
 VALUE IO_Event_Selector_KQueue_resume(int argc, VALUE *argv, VALUE self)
@@ -455,7 +455,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_backend_yield(&arguments->selector->backend);
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
 	if (arguments->waiting->ready) {
 		process_prewait(arguments->pid);
@@ -531,7 +531,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_backend_yield(&arguments->selector->backend);
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
 	if (arguments->waiting->ready) {
 		return RB_INT2NUM(arguments->waiting->ready);

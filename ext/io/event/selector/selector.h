@@ -80,10 +80,13 @@ struct IO_Event_Selector_Queue {
 	VALUE fiber;
 };
 
+// The internal state of the event selector.
+// The event selector is responsible for managing the scheduling of fibers, as well as selecting for events.
 struct IO_Event_Selector {
 	VALUE self;
 	VALUE loop;
 	
+	// The ready queue is a list of fibers that are ready to be resumed from the event loop fiber.
 	// Append to waiting (front/head of queue).
 	struct IO_Event_Selector_Queue *waiting;
 	// Process from ready (back/tail of queue).
@@ -124,8 +127,10 @@ void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 }
 
 // Transfer from a user fiber back to the event loop.
+// This is used to transfer control back to the event loop.
+// Strictly speaking, it's not a scheduling operation.
 static inline
-VALUE IO_Event_Selector_backend_yield(struct IO_Event_Selector *backend)
+VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 {
 	// TODO Why is this assertion failing in async?
 	// RUBY_ASSERT(backend->loop != rb_fiber_current());
@@ -133,16 +138,38 @@ VALUE IO_Event_Selector_backend_yield(struct IO_Event_Selector *backend)
 	return IO_Event_Selector_fiber_transfer(backend->loop, 0, NULL);
 }
 
+// Resume a specific fiber. This is a scheduling operation.
+// The first argument is the fiber, the rest are the arguments to the resume.
+//
+// The implementation has two possible strategies:
+// 1. Add the current fiber to the ready queue and transfer control to the target fiber.
+// 2. Schedule the target fiber to be resumed by the event loop later on.
+//
+// We currently only implement the first strategy.
 VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALUE *argv);
+
+// Raise an exception on a specific fiber.
+// The first argument is the fiber, the rest are the arguments to the exception.
+//
+// The implementation has two possible strategies:
+// 1. Add the current fiber to the ready queue and transfer control to the target fiber.
+// 2. Schedule the target fiber to be resumed by the event loop with an exception later on.
+//
+// We currently only implement the first strategy.
 VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE *argv);
 
+// Yield control to the event loop. This is a scheduling operation.
+//
+// The implementation adds the current fiber to the ready queue and transfers control to the event loop.
 static inline
 VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend)
 {
 	return IO_Event_Selector_resume(backend, 1, &backend->loop);
 }
 
-// Append to the ready queue.
+// Append a specific fiber to the ready queue.
+// The fiber can be an actual fiber or an object that responds to `alive?` and `transfer`.
+// The implementation will transfer control to the fiber later on.
 void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber);
 
 // Flush the ready queue by transferring control one at a time.
