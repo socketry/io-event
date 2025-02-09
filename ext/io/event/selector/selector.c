@@ -22,6 +22,7 @@ VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 			return rb_fiber_transfer(fiber, argc, argv);
 		}
 		
+		// If it's a fiber, but dead, we are done.
 		return Qnil;
 	}
 #endif
