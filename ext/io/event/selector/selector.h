@@ -123,6 +123,15 @@ void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 	}
 }
 
+// Transfer from a user fiber back to the event loop.
+static inline
+VALUE IO_Event_Selector_backend_yield(struct IO_Event_Selector *backend)
+{
+	RUBY_ASSERT(backend->loop != rb_fiber_current());
+	
+	return IO_Event_Selector_fiber_transfer(backend->loop, 0, NULL);
+}
+
 VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALUE *argv);
 VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE *argv);
 

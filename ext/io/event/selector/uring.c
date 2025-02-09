@@ -277,7 +277,7 @@ VALUE IO_Event_Selector_URing_transfer(VALUE self)
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	return IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
+	return IO_Event_Selector_backend_yield(&selector->backend);
 }
 
 VALUE IO_Event_Selector_URing_resume(int argc, VALUE *argv, VALUE self)
@@ -433,7 +433,7 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_fiber_transfer(arguments->selector->backend.loop, 0, NULL);
+	IO_Event_Selector_backend_yield(&arguments->selector->backend);
 	
 	if (arguments->waiting->result) {
 		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
@@ -548,7 +548,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
+	IO_Event_Selector_backend_yield(&selector->backend);
 	
 	if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
 	
@@ -638,7 +638,7 @@ io_read_submit(VALUE _arguments)
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_now(selector);
 	
-	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
+	IO_Event_Selector_backend_yield(&selector->backend);
 	
 	return RB_INT2NUM(arguments->waiting->result);
 }
@@ -802,7 +802,7 @@ io_write_submit(VALUE _argument)
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_pending(selector);
 	
-	IO_Event_Selector_fiber_transfer(selector->backend.loop, 0, NULL);
+	IO_Event_Selector_backend_yield(&selector->backend);
 	
 	return RB_INT2NUM(arguments->waiting->result);
 }
