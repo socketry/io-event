@@ -897,7 +897,7 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 			IO_Event_List_append(node, saved);
 			
 			waiting->ready = matching_events;
-			IO_Event_Selector_fiber_transfer_user(waiting->fiber, 0, NULL);
+			IO_Event_Selector_loop_resume(&selector->backend, waiting->fiber, 0, NULL);
 			
 			node = saved->tail;
 			IO_Event_List_pop(saved);

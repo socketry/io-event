@@ -41,9 +41,6 @@ static inline int IO_Event_try_again(int error) {
 
 VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
 
-// Specifically for transferring control to a user fiber.
-VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv);
-
 #ifdef HAVE__RB_FIBER_RAISE
 #define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
 #else
@@ -86,6 +83,9 @@ struct IO_Event_Selector {
 	VALUE self;
 	VALUE loop;
 	
+	// The profile is used to detect stalls between scheduling operations.
+	VALUE profiler;
+	
 	// The ready queue is a list of fibers that are ready to be resumed from the event loop fiber.
 	// Append to waiting (front/head of queue).
 	struct IO_Event_Selector_Queue *waiting;
@@ -93,13 +93,7 @@ struct IO_Event_Selector {
 	struct IO_Event_Selector_Queue *ready;
 };
 
-static inline
-void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop) {
-	RB_OBJ_WRITE(self, &backend->self, self);
-	RB_OBJ_WRITE(self, &backend->loop, loop);
-	backend->waiting = NULL;
-	backend->ready = NULL;
-}
+void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop);
 
 static inline
 void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
@@ -126,17 +120,15 @@ void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 	}
 }
 
+// Transfer control from the event loop to a user fiber.
+// This is used to transfer control to a user fiber when it may proceed.
+// Strictly speaking, it's not a scheduling operation (does not schedule the current fiber).
+VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv);
+
 // Transfer from a user fiber back to the event loop.
-// This is used to transfer control back to the event loop.
-// Strictly speaking, it's not a scheduling operation.
-static inline
-VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
-{
-	// TODO Why is this assertion failing in async?
-	// RUBY_ASSERT(backend->loop != rb_fiber_current());
-	
-	return IO_Event_Selector_fiber_transfer(backend->loop, 0, NULL);
-}
+// This is used to transfer control back to the event loop in order to wait for events.
+// Strictly speaking, it's not a scheduling operation (does not schedule the current fiber).
+VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend);
 
 // Resume a specific fiber. This is a scheduling operation.
 // The first argument is the fiber, the rest are the arguments to the resume.

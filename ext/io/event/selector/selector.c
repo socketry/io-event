@@ -2,7 +2,7 @@
 // Copyright, 2021-2025, by Samuel Williams.
 
 #include "selector.h"
-#include "../profile.h"
+#include "../profiler.h"
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -31,29 +31,6 @@ VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	}
 	
 	return Qnil;
-}
-
-VALUE IO_Event_Selector_fiber_transfer_user(VALUE fiber, int argc, VALUE *argv) {
-	// Bypass if the threshold is not set:
-	if (IO_Event_Selector_stall_log_threshold == 0) {
-		return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
-	}
-	
-	VALUE profile = IO_Event_Profile_allocate(IO_Event_Profile);
-	
-	IO_Event_Profile_start(profile, IO_Event_Selector_stall_log_profile);
-	
-	// Transfer control to the fiber:
-	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
-	
-	IO_Event_Profile_stop(profile);
-	
-	float duration = IO_Event_Profile_duration(profile);
-	if (duration > IO_Event_Selector_stall_log_threshold) {
-		IO_Event_Profile_print(profile, stderr);
-	}
-	
-	return result;
 }
 
 #ifndef HAVE__RB_FIBER_RAISE
@@ -198,6 +175,33 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	}
 }
 
+void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop) {
+	RB_OBJ_WRITE(self, &backend->self, self);
+	RB_OBJ_WRITE(self, &backend->loop, loop);
+	
+	if (IO_Event_Selector_stall_log_threshold > 0) {
+		backend->profiler = IO_Event_Profiler_allocate(IO_Event_Profiler);
+	} else {
+		backend->profiler = Qnil;	
+	}
+	
+	backend->waiting = NULL;
+	backend->ready = NULL;
+}
+
+VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {
+	// IO_Event_Profiler_loop_resume(fiber);
+	return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+}
+
+VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
+{
+	// TODO Why is this assertion failing in async?
+	// RUBY_ASSERT(backend->loop != rb_fiber_current());
+	
+	return IO_Event_Selector_fiber_transfer(backend->loop, 0, NULL);
+}
+
 struct wait_and_transfer_arguments {
 	int argc;
 	VALUE *argv;
@@ -249,7 +253,7 @@ static VALUE wait_and_transfer(VALUE _arguments) {
 	int argc = arguments->argc - 1;
 	VALUE *argv = arguments->argv + 1;
 	
-	return IO_Event_Selector_fiber_transfer_user(fiber, argc, argv);
+	return IO_Event_Selector_loop_resume(arguments->backend, fiber, argc, argv);
 }
 
 static VALUE wait_and_transfer_ensure(VALUE _arguments) {
@@ -351,7 +355,7 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 		rb_raise(rb_eRuntimeError, "Unknown queue type!");
 	}
 	
-	IO_Event_Selector_fiber_transfer_user(fiber, 0, NULL);
+	IO_Event_Selector_loop_resume(backend, fiber, 0, NULL);
 }
 
 int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)

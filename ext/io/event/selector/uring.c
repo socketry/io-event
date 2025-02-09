@@ -1086,7 +1086,7 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		if (waiting && waiting->fiber) {
 			assert(waiting->result != -ECANCELED);
 			
-			IO_Event_Selector_fiber_transfer_user(waiting->fiber, 0, NULL);
+			IO_Event_Selector_loop_resume(&selector->backend, waiting->fiber, 0, NULL);
 		}
 	}
 	

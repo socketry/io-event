@@ -10,5 +10,6 @@
 /ext/**/*.o
 /ext/**/*.so
 /ext/**/*.bundle
+/ext/**/*.dSYM
 
 /benchmark/server/compiled

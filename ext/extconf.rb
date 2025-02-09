@@ -22,7 +22,7 @@ if ENV.key?("RUBY_DEBUG")
 	$CFLAGS << " -DRUBY_DEBUG -O0"
 end
 
-$srcs = ["io/event/event.c", "io/event/selector/selector.c", "io/event/time.c", "io/event/profile.c"]
+$srcs = ["io/event/event.c", "io/event/selector/selector.c", "io/event/time.c", "io/event/profiler.c"]
 $VPATH << "$(srcdir)/io/event"
 $VPATH << "$(srcdir)/io/event/selector"
 

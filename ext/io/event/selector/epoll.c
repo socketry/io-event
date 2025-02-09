@@ -925,7 +925,7 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 			
 			// Resume the fiber:
 			waiting->ready = matching_events;
-			IO_Event_Selector_fiber_transfer_user(waiting->fiber, 0, NULL);
+			IO_Event_Selector_loop_resume(&selector->backend, waiting->fiber, 0, NULL);
 			
 			node = saved->tail;
 			IO_Event_List_pop(saved);
