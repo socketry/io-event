@@ -33,7 +33,9 @@ VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 	return Qnil;
 }
 
-#ifndef HAVE__RB_FIBER_RAISE
+#ifdef HAVE__RB_FIBER_RAISE
+#define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
+#else
 static ID id_raise;
 
 VALUE IO_Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv) {
@@ -48,7 +50,6 @@ static VALUE rb_fiber_current() {
 	return rb_funcall(rb_cFiber, id_current, 0);
 }
 #endif
-
 
 #ifndef HAVE_RB_IO_DESCRIPTOR
 static ID id_fileno;
@@ -190,8 +191,11 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 }
 
 VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {
-	// IO_Event_Profiler_loop_resume(fiber);
-	return IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+	// IO_Event_Profiler_enter(backend->profiler, fiber);
+	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
+	// IO_Event_Profiler_exit(backend->profiler, fiber);
+	
+	return result;
 }
 
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)

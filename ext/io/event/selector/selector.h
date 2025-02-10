@@ -39,14 +39,6 @@ static inline int IO_Event_try_again(int error) {
 	return error == EAGAIN || error == EWOULDBLOCK;
 }
 
-VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv);
-
-#ifdef HAVE__RB_FIBER_RAISE
-#define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
-#else
-VALUE IO_Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv);
-#endif
-
 #ifdef HAVE_RB_IO_DESCRIPTOR
 #define IO_Event_Selector_io_descriptor(io) rb_io_descriptor(io)
 #else
