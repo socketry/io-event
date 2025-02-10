@@ -40,6 +40,13 @@ static VALUE IO_Event_Fiber_current() {
 }
 #endif
 
+// There is no public interface for this... yet.
+static ID id_blocking_p;
+
+int IO_Event_Fiber_blocking(VALUE fiber) {
+	return RTEST(rb_funcall(fiber, id_blocking_p, 0));
+}
+
 void Init_IO_Event_Fiber(VALUE IO_Event) {
 	id_transfer = rb_intern("transfer");
 	id_alive_p = rb_intern("alive?");
@@ -51,4 +58,6 @@ void Init_IO_Event_Fiber(VALUE IO_Event) {
 #ifndef HAVE_RB_FIBER_CURRENT
 	id_current = rb_intern("current");
 #endif
+	
+	id_blocking_p = rb_intern("blocking?");
 }

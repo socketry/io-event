@@ -76,9 +76,6 @@ struct IO_Event_Selector {
 	VALUE self;
 	VALUE loop;
 	
-	// The profile is used to detect stalls between scheduling operations.
-	VALUE profiler;
-	
 	// The ready queue is a list of fibers that are ready to be resumed from the event loop fiber.
 	// Append to waiting (front/head of queue).
 	struct IO_Event_Selector_Queue *waiting;
@@ -93,10 +90,6 @@ void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
 	rb_gc_mark_movable(backend->self);
 	rb_gc_mark_movable(backend->loop);
 	
-	if (backend->profiler != Qnil) {
-		rb_gc_mark_movable(backend->profiler);
-	}
-	
 	// Walk backwards through the ready queue:
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {
@@ -109,10 +102,6 @@ static inline
 void IO_Event_Selector_compact(struct IO_Event_Selector *backend) {
 	backend->self = rb_gc_location(backend->self);
 	backend->loop = rb_gc_location(backend->loop);
-	
-	if (backend->profiler != Qnil) {
-		backend->profiler = rb_gc_location(backend->profiler);
-	}
 	
 	struct IO_Event_Selector_Queue *ready = backend->ready;
 	while (ready) {

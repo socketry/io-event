@@ -2,15 +2,11 @@
 // Copyright, 2021-2025, by Samuel Williams.
 
 #include "selector.h"
-#include "../profiler.h"
 
 #include <fcntl.h>
 #include <stdlib.h>
 
 static const int DEBUG = 0;
-
-static float IO_Event_Selector_stall_log_threshold = 0;
-static int IO_Event_Selector_stall_log_profile = 0;
 
 #ifndef HAVE_RB_IO_DESCRIPTOR
 static ID id_fileno;
@@ -99,60 +95,24 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 #endif
 	
 	rb_define_singleton_method(IO_Event_Selector, "nonblock", IO_Event_Selector_nonblock, 1);
-	
-	// Extract the stall log threshold if specified:
-	
-	char *stall_log_threshold = getenv("IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD");
-	// Can be true, false or a floating point time in seconds:
-	
-	if (stall_log_threshold) {
-		if (strcmp(stall_log_threshold, "true") == 0) {
-			IO_Event_Selector_stall_log_threshold = 0.01;
-		} else if (strcmp(stall_log_threshold, "false") == 0) {
-			IO_Event_Selector_stall_log_threshold = 0;
-		} else {
-			IO_Event_Selector_stall_log_threshold = strtof(stall_log_threshold, NULL);
-		}
-		
-		if (DEBUG) fprintf(stderr, "IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD = %.3f\n", IO_Event_Selector_stall_log_threshold);
-	}
-	
-	char *stall_log_profile = getenv("IO_EVENT_SELECTOR_STALL_LOG_PROFILE");
-	
-	if (stall_log_profile) {
-		if (strcmp(stall_log_profile, "true") == 0) {
-			IO_Event_Selector_stall_log_profile = 1;
-		}
-	}
 }
 
 void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop) {
 	RB_OBJ_WRITE(self, &backend->self, self);
 	RB_OBJ_WRITE(self, &backend->loop, loop);
 	
-	if (IO_Event_Selector_stall_log_threshold > 0) {
-		backend->profiler = IO_Event_Profiler_new(IO_Event_Selector_stall_log_threshold, IO_Event_Selector_stall_log_profile);
-	} else {
-		backend->profiler = Qnil;	
-	}
-	
 	backend->waiting = NULL;
 	backend->ready = NULL;
 }
 
 VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {
-	if (backend->profiler != Qnil) {
-		return IO_Event_Profiler_fiber_transfer(backend->profiler, fiber, argc, argv);
-	} else {
-		return IO_Event_Fiber_transfer(fiber, argc, argv);
-	}
+	return IO_Event_Fiber_transfer(fiber, argc, argv);
 }
 
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 {
 	// TODO Why is this assertion failing in async?
 	// RUBY_ASSERT(backend->loop != IO_Event_Fiber_current());
-	
 	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
 }
 

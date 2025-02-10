@@ -19,4 +19,6 @@ VALUE IO_Event_Fiber_raise(VALUE fiber, int argc, VALUE *argv);
 VALUE IO_Event_Fiber_current();
 #endif
 
+int IO_Event_Fiber_blocking(VALUE fiber);
+
 void Init_IO_Event_Fiber(VALUE IO_Event);
