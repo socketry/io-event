@@ -29,8 +29,6 @@ struct IO_Event_Profiler_Call {
 };
 
 struct IO_Event_Profiler {
-	VALUE self;
-	
 	float log_threshold;
 	int track_calls;
 	
@@ -52,6 +50,12 @@ struct IO_Event_Profiler {
 	
 	struct IO_Event_Array calls;
 };
+
+void IO_Event_Profiler_reset(struct IO_Event_Profiler *profiler) {
+	profiler->nesting = 0;
+	profiler->current = NULL;
+	IO_Event_Array_truncate(&profiler->calls, 0);
+}
 
 void IO_Event_Profiler_Call_initialize(struct IO_Event_Profiler_Call *call) {
 	call->enter_time.tv_sec = 0;
@@ -78,8 +82,6 @@ void IO_Event_Profiler_Call_free(struct IO_Event_Profiler_Call *call) {
 static void IO_Event_Profiler_mark(void *ptr) {
 	struct IO_Event_Profiler *profiler = (struct IO_Event_Profiler*)ptr;
 	
-	rb_gc_mark_movable(profiler->self);
-	
 	// If `klass` is stored as a VALUE in calls, we need to mark them here:
 	for (size_t i = 0; i < profiler->calls.limit; i += 1) {
 		struct IO_Event_Profiler_Call *call = profiler->calls.base[i];
@@ -89,7 +91,6 @@ static void IO_Event_Profiler_mark(void *ptr) {
 
 static void IO_Event_Profiler_compact(void *ptr) {
 	struct IO_Event_Profiler *profiler = (struct IO_Event_Profiler*)ptr;
-	profiler->self = rb_gc_location(profiler->self);
 	
 	// If `klass` is stored as a VALUE in calls, we need to update their locations here:
 	for (size_t i = 0; i < profiler->calls.limit; i += 1) {
@@ -139,17 +140,23 @@ VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	
 	profiler->calls.element_initialize = (void (*)(void*))IO_Event_Profiler_Call_initialize;
 	profiler->calls.element_free = (void (*)(void*))IO_Event_Profiler_Call_free;
-	
 	IO_Event_Array_initialize(&profiler->calls, 0, sizeof(struct IO_Event_Profiler_Call));
 	
-	VALUE self = TypedData_Wrap_Struct(klass, &IO_Event_Profiler_Type, profiler);
-	RB_OBJ_WRITE(self, &profiler->self, self);
+	return TypedData_Wrap_Struct(klass, &IO_Event_Profiler_Type, profiler);
+}
+
+int IO_Event_Profiler_p(void) {
+	const char *enabled = getenv("IO_EVENT_PROFILER");
 	
-	return self;
+	if (enabled && strcmp(enabled, "true") == 0) {
+		return 1;
+	}
+	
+	return 0;
 }
 
 float IO_Event_Profiler_default_log_threshold(void) {
-	const char *log_threshold = getenv("IO_EVENT_PROFILER_DEFAULT_LOG_THRESHOLD");
+	const char *log_threshold = getenv("IO_EVENT_PROFILER_LOG_THRESHOLD");
 	
 	if (log_threshold) {
 		return strtof(log_threshold, NULL);
@@ -159,10 +166,10 @@ float IO_Event_Profiler_default_log_threshold(void) {
 }
 
 int IO_Event_Profiler_default_track_calls(void) {
-	const char *track_calls = getenv("IO_EVENT_PROFILER_DEFAULT_TRACK_CALLS");
+	const char *track_calls = getenv("IO_EVENT_PROFILER_TRACK_CALLS");
 	
-	if (track_calls) {
-		return atoi(track_calls);
+	if (track_calls && strcmp(track_calls, "false") == 0) {
+		return 0;
 	} else {
 		return 1;
 	}
@@ -190,6 +197,10 @@ VALUE IO_Event_Profiler_initialize(int argc, VALUE *argv, VALUE self) {
 }
 
 VALUE IO_Event_Profiler_default(VALUE klass) {
+	if (!IO_Event_Profiler_p()) {
+		return Qnil;
+	}
+	
 	VALUE profiler = IO_Event_Profiler_allocate(klass);
 	
 	struct IO_Event_Profiler *profiler_data = IO_Event_Profiler_get(profiler);
@@ -210,19 +221,21 @@ VALUE IO_Event_Profiler_new(float log_threshold, int track_calls) {
 }
 
 int event_flag_call_p(rb_event_flag_t event_flags) {
-	return event_flags & (RUBY_EVENT_CALL | RUBY_EVENT_C_CALL);
+	return event_flags & (RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_B_CALL);
 }
 
 int event_flag_return_p(rb_event_flag_t event_flags) {
-	return event_flags & (RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN);
+	return event_flags & (RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN | RUBY_EVENT_B_RETURN);
 }
 
 const char *event_flag_name(rb_event_flag_t event_flag) {
 	switch (event_flag) {
 		case RUBY_EVENT_CALL: return "call";
 		case RUBY_EVENT_C_CALL: return "c-call";
+		case RUBY_EVENT_B_CALL: return "b-call";
 		case RUBY_EVENT_RETURN: return "return";
 		case RUBY_EVENT_C_RETURN: return "c-return";
+		case RUBY_EVENT_B_RETURN: return "b-return";
 		default: return "unknown";
 	}
 }
@@ -259,13 +272,13 @@ void IO_Event_Profiler_fiber_switch(struct IO_Event_Profiler *profiler);
 static void IO_Event_Profiler_callback(rb_event_flag_t event_flag, VALUE data, VALUE self, ID id, VALUE klass) {
 	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(data);
 	
-	if (event_flag == RUBY_EVENT_FIBER_SWITCH) {
+	if (event_flag & RUBY_EVENT_FIBER_SWITCH) {
 		IO_Event_Profiler_fiber_switch(profiler);
 		return;
 	}
 	
 	// We don't want to capture data if we're not running:
-	if (!profiler->running) return;
+	if (!profiler->capture) return;
 	
 	if (event_flag_call_p(event_flag)) {
 		struct IO_Event_Profiler_Call *call = profiler_event_record_call(profiler, event_flag, id, klass);
@@ -304,17 +317,19 @@ VALUE IO_Event_Profiler_start(VALUE self) {
 	
 	profiler->running = 1;
 	
-	// Reset the profiler state:
-	profiler->nesting = 0;
-	profiler->current = NULL;
+	IO_Event_Profiler_reset(profiler);
+	IO_Event_Time_current(&profiler->start_time);
 	
 	rb_event_flag_t event_flags = RUBY_EVENT_FIBER_SWITCH;
+	
 	if (profiler->track_calls) {
-		event_flags |= RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN;
+		event_flags |= RUBY_EVENT_CALL | RUBY_EVENT_RETURN;
+		event_flags |= RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN;
+		// event_flags |= RUBY_EVENT_B_CALL | RUBY_EVENT_B_RETURN;
 	}
 	
 	VALUE thread = rb_thread_current();
-	rb_thread_add_event_hook(thread, IO_Event_Profiler_callback, event_flags, profiler->self);
+	rb_thread_add_event_hook(thread, IO_Event_Profiler_callback, event_flags, self);
 	
 	return self;
 }
@@ -327,7 +342,10 @@ VALUE IO_Event_Profiler_stop(VALUE self) {
 	profiler->running = 0;
 	
 	VALUE thread = rb_thread_current();
-	rb_thread_remove_event_hook_with_data(thread, IO_Event_Profiler_callback, profiler->self);
+	rb_thread_remove_event_hook_with_data(thread, IO_Event_Profiler_callback, self);
+	
+	IO_Event_Time_current(&profiler->stop_time);
+	IO_Event_Profiler_reset(profiler);
 	
 	return self;
 }
@@ -343,28 +361,36 @@ static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profile
 
 void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict stream);
 
+void IO_Event_Profiler_finish(struct IO_Event_Profiler *profiler) {
+	profiler->capture = 0;
+	
+	struct IO_Event_Profiler_Call *current = profiler->current;
+	while (current) {
+		IO_Event_Time_current(&current->exit_time);
+		
+		current = current->parent;
+	}
+}
+
 void IO_Event_Profiler_fiber_switch(struct IO_Event_Profiler *profiler)
 {
 	float duration = IO_Event_Profiler_duration(profiler);
 	
 	if (profiler->capture) {
-		profiler->capture = 0;
+		IO_Event_Profiler_finish(profiler);
 		
 		if (duration > profiler->log_threshold) {
 			IO_Event_Profiler_print(profiler, stderr);
 		}
-		
-		// Clear the profile state:
-		profiler->nesting = 0;
-		profiler->current = NULL;
-		IO_Event_Array_truncate(&profiler->calls, 0);
 	}
 	
+	IO_Event_Profiler_reset(profiler);
+	
 	if (!IO_Event_Fiber_blocking(IO_Event_Fiber_current())) {
-		profiler->capture = 1;
-		
 		// Reset the start time:
 		IO_Event_Time_current(&profiler->start_time);
+		
+		profiler->capture = 1;
 	}
 }
 
@@ -383,13 +409,10 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 		struct timespec duration = {};
 		IO_Event_Time_elapsed(&call->enter_time, &call->exit_time, &duration);
 		
-		const char *prefix = "";
-		
 		// Skip calls that are too short to be meaningful:
 		if (IO_Event_Time_proportion(&duration, &total_duration) < IO_EVENT_PROFILER_PRINT_MINIMUM_PROPORTION) {
 			skipped += 1;
 			continue;
-			//prefix = "*";
 		}
 		
 		for (size_t i = 0; i < call->nesting; i += 1) {
@@ -399,7 +422,7 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 		VALUE class_inspect = rb_inspect(call->klass);
 		const char *name = rb_id2name(call->id);
 		
-		fprintf(stream, "%s%s:%d in %s '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", prefix, call->path, call->line, event_flag_name(call->event_flag), RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
+		fprintf(stream, "%s:%d in %s '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", call->path, call->line, event_flag_name(call->event_flag), RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
 	}
 	
 	if (skipped > 0) {

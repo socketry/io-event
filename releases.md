@@ -1,5 +1,31 @@
 # Releases
 
+## Unreleased
+
+### Improved `IO::Event::Profiler` for detecting stalls.
+
+A new `IO::Event::Profiler` class has been added to help detect stalls in the event loop. The previous approach was insufficient to detect all possible stalls. This new approach uses the `RUBY_EVENT_FIBER_SWITCH` event to track context switching by the scheduler, and can detect stalls no matter how they occur.
+
+```ruby
+profiler = IO::Event::Profiler.new
+
+profiler.start
+		
+Fiber.new do
+	sleep 1.0
+end.transfer
+
+profiler.stop
+```
+
+A default profiler is exposed using `IO::Event::Profiler.default` which is controlled by the following environment variables:
+
+- `IO_EVENT_PROFILER=true` - Enable the profiler, otherwise `IO::Event::Profiler.default` will return `nil`.
+- `IO_EVENT_PROFILER_LOG_THRESHOLD` - Specify the threshold in seconds for logging a stall. Defaults to `0.01`.
+- `IO_EVENT_PROFILER_TRACK_CALLS` - Track the method call for each event, in order to log specifically which method is causing the stall. Defaults to `true`.
+
+The previous environment variables `IO_EVENT_SELECTOR_STALL_LOG_THRESHOLD` and `IO_EVENT_SELECTOR_STALL_LOG` no longer have any effect.
+
 ## v1.8.0
 
 ### Detecting fibers that are stalling the event loop.
