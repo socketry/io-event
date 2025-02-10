@@ -148,7 +148,7 @@ VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	return self;
 }
 
-float IO_Event_Profiler_default_log_threshold() {
+float IO_Event_Profiler_default_log_threshold(void) {
 	const char *log_threshold = getenv("IO_EVENT_PROFILER_DEFAULT_LOG_THRESHOLD");
 	
 	if (log_threshold) {
@@ -158,7 +158,7 @@ float IO_Event_Profiler_default_log_threshold() {
 	}
 }
 
-int IO_Event_Profiler_default_track_calls() {
+int IO_Event_Profiler_default_track_calls(void) {
 	const char *track_calls = getenv("IO_EVENT_PROFILER_DEFAULT_TRACK_CALLS");
 	
 	if (track_calls) {
