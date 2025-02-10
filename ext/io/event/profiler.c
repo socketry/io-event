@@ -121,61 +121,81 @@ int event_flag_return_p(rb_event_flag_t event_flags) {
 	return event_flags & (RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN);
 }
 
+const char *event_flag_name(rb_event_flag_t event_flag) {
+	switch (event_flag) {
+		case RUBY_EVENT_CALL: return "call";
+		case RUBY_EVENT_C_CALL: return "c-call";
+		case RUBY_EVENT_RETURN: return "return";
+		case RUBY_EVENT_C_RETURN: return "c-return";
+		default: return "unknown";
+	}
+}
+
+static struct IO_Event_Profiler_Call* profiler_event_record_call(struct IO_Event_Profiler *profiler, rb_event_flag_t event_flag, ID id, VALUE klass) {
+	struct IO_Event_Profiler_Call *call = IO_Event_Array_push(&profiler->calls);
+	
+	call->event_flag = event_flag;
+
+	call->parent = profiler->current;
+	profiler->current = call;
+
+	call->nesting = profiler->nesting;
+	profiler->nesting += 1;
+
+	if (id) {
+		call->id = id;
+		call->klass = klass;
+	} else {
+		rb_frame_method_id_and_class(&call->id, &call->klass);
+	}
+
+	const char *path = rb_sourcefile();
+	if (path) {
+		call->path = strdup(path);
+	}
+	call->line = rb_sourceline();
+	
+	return call;
+}
+
 static void profiler_event_callback(rb_event_flag_t event_flag, VALUE data, VALUE self, ID id, VALUE klass) {
 	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(data);
 	
 	if (event_flag_call_p(event_flag)) {
-		struct IO_Event_Profiler_Call *call = IO_Event_Array_push(&profiler->calls);
+		struct IO_Event_Profiler_Call *call = profiler_event_record_call(profiler, event_flag, id, klass);
 		IO_Event_Time_current(&call->enter_time);
-	
-		call->event_flag = event_flag;
-		
-		call->parent = profiler->current;
-		profiler->current = call;
-		
-		call->nesting = profiler->nesting;
-		profiler->nesting += 1;
-		
-		if (id) {
-			call->id = id;
-			call->klass = klass;
-		} else {
-			rb_frame_method_id_and_class(&call->id, &call->klass);
-		}
-		
-		const char *path = rb_sourcefile();
-		if (path) {
-			call->path = strdup(path);
-		}
-		call->line = rb_sourceline();
 	} else if (event_flag_return_p(event_flag)) {
 		struct IO_Event_Profiler_Call *call = profiler->current;
 		
-		// Bad call sequence?
-		if (call == NULL) return;
+		// We may encounter returns without a preceeding call. This isn't an error, but we should pretend like the call started at the beginning of the profiling session:
+		if (call == NULL) {
+			struct IO_Event_Profiler_Call *last_call = IO_Event_Array_last(&profiler->calls);
+			call = profiler_event_record_call(profiler, event_flag, id, klass);
+			
+			if (last_call) {
+				call->enter_time = last_call->enter_time;
+			} else {
+				call->enter_time = profiler->start_time;
+			}
+		}
 		
 		IO_Event_Time_current(&call->exit_time);
 		
 		profiler->current = call->parent;
-		profiler->nesting -= 1;
+		
+		// We may encounter returns without a preceeding call.
+		if (profiler->nesting > 0)
+			profiler->nesting -= 1;
 	}
 }
 
-void IO_Event_Profiler_restart(struct IO_Event_Profiler *profiler) {
+void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
+	profiler->running = 1;
+	
 	IO_Event_Time_current(&profiler->start_time);
 	
 	profiler->nesting = 0;
 	profiler->current = NULL;
-	
-	IO_Event_Array_truncate(&profiler->calls, 0);
-}
-
-void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
-	if (DEBUG) fprintf(stderr, "Starting profiler (tracking calls: %d)\n", profiler->track_calls);
-	
-	profiler->running = 1;
-	
-	IO_Event_Profiler_restart(profiler);
 	
 	// Since fibers are currently limited to a single thread, we use this in the hope that it's a little more efficient:
 	if (profiler->track_calls) {
@@ -184,35 +204,36 @@ void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
 	}
 }
 
-void IO_Event_Profiler_stop(struct IO_Event_Profiler *profiler) {
-	if (DEBUG) fprintf(stderr, "Stopping profiler...\n");
-	
-	profiler->running = 0;
-	
-	if (profiler->track_calls) {
-		VALUE thread = rb_thread_current();
-		rb_thread_remove_event_hook_with_data(thread, profiler_event_callback, profiler->self);
-	}
-}
-
 static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profiler) {
 	struct timespec duration;
 	
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &duration);
 	
 	return IO_Event_Time_duration(&duration);
 }
 
 void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict stream);
 
-void IO_Event_Profile_finish(struct IO_Event_Profiler *profiler) {
-	IO_Event_Time_current(&profiler->finish_time);
+void IO_Event_Profiler_stop(struct IO_Event_Profiler *profiler) {
+	profiler->running = 0;
 	
+	if (profiler->track_calls) {
+		VALUE thread = rb_thread_current();
+		rb_thread_remove_event_hook_with_data(thread, profiler_event_callback, profiler->self);
+	}
+	
+	IO_Event_Time_current(&profiler->stop_time);
 	float duration = IO_Event_Profiler_duration(profiler);
 	
 	if (duration > profiler->log_threshold) {
 		IO_Event_Profiler_print(profiler, stderr);
 	}
+}
+
+void IO_Event_Profiler_restart(struct IO_Event_Profiler *profiler) {
+	IO_Event_Profiler_stop(profiler);
+	IO_Event_Array_truncate(&profiler->calls, 0);
+	IO_Event_Profiler_start(profiler);
 }
 
 VALUE IO_Event_Profiler_fiber_transfer(VALUE self, VALUE fiber, int argc, VALUE *argv) {
@@ -226,7 +247,6 @@ VALUE IO_Event_Profiler_fiber_transfer(VALUE self, VALUE fiber, int argc, VALUE 
 		running = profiler->running;
 		
 		// We are switching to a different fiber, so consider the current profile complete:
-		IO_Event_Profile_finish(profiler);
 		IO_Event_Profiler_restart(profiler);
 	}
 	
@@ -238,7 +258,6 @@ VALUE IO_Event_Profiler_fiber_transfer(VALUE self, VALUE fiber, int argc, VALUE 
 		IO_Event_Profiler_restart(profiler);
 	} else {
 		// Otherwise, we need to stop it:
-		IO_Event_Profile_finish(profiler);
 		IO_Event_Profiler_stop(profiler);
 	}
 	
@@ -249,7 +268,7 @@ static const float IO_EVENT_PROFILER_PRINT_MINIMUM_PROPORTION = 0.01;
 
 void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &total_duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
 	
 	fprintf(stderr, "Fiber stalled for %.3f seconds\n", IO_Event_Time_duration(&total_duration));
 	
@@ -260,10 +279,13 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 		struct timespec duration = {};
 		IO_Event_Time_elapsed(&call->enter_time, &call->exit_time, &duration);
 		
+		const char *prefix = "";
+		
 		// Skip calls that are too short to be meaningful:
 		if (IO_Event_Time_proportion(&duration, &total_duration) < IO_EVENT_PROFILER_PRINT_MINIMUM_PROPORTION) {
 			skipped += 1;
 			continue;
+			//prefix = "*";
 		}
 		
 		for (size_t i = 0; i < call->nesting; i += 1) {
@@ -273,7 +295,7 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 		VALUE class_inspect = rb_inspect(call->klass);
 		const char *name = rb_id2name(call->id);
 		
-		fprintf(stream, "\t%s:%d in '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", call->path, call->line, RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
+		fprintf(stream, "%s%s:%d in %s '%s#%s' (" IO_EVENT_TIME_PRINTF_TIMESPEC "s)\n", prefix, call->path, call->line, event_flag_name(call->event_flag), RSTRING_PTR(class_inspect), name, IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(duration));
 	}
 	
 	if (skipped > 0) {
@@ -283,7 +305,7 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 
 void IO_Event_Profiler_print_json(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &total_duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
 	
 	fputc('{', stream);
 	

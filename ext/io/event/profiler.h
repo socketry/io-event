@@ -34,7 +34,7 @@ struct IO_Event_Profiler {
 	int running;
 	
 	struct timespec start_time;
-	struct timespec finish_time;
+	struct timespec stop_time;
 	
 	// The depth of the call stack:
 	size_t nesting;
