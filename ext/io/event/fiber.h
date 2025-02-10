@@ -20,5 +20,4 @@ VALUE IO_Event_Fiber_current(void);
 #endif
 
 int IO_Event_Fiber_blocking(VALUE fiber);
-
 void Init_IO_Event_Fiber(VALUE IO_Event);

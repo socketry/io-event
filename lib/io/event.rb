@@ -6,10 +6,4 @@
 require_relative "event/version"
 require_relative "event/selector"
 require_relative "event/timers"
-
-begin
-	require "IO_Event"
-rescue LoadError => error
-	warn "Could not load native event selector: #{error}"
-	require_relative "event/selector/nonblock"
-end
+require_relative "event/native"

@@ -9,6 +9,8 @@ describe IO::Event::Profiler do
 	let(:profiler) {subject.new}
 
 	it "should start profiling" do
+		skip "Not implemented" unless subject.respond_to?(:new)
+		
 		profiler.start
 		
 		Fiber.new do
