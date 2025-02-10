@@ -159,6 +159,21 @@ inline static void* IO_Event_Array_last(struct IO_Event_Array *array)
 	else return array->base[array->limit - 1];
 }
 
+inline static void IO_Event_Array_truncate(struct IO_Event_Array *array, size_t limit)
+{
+	if (limit < array->limit) {
+		for (size_t i = limit; i < array->limit; i += 1) {
+			void *element = array->base[i];
+			if (element) {
+				array->element_free(element);
+				free(element);
+			}
+		}
+		
+		array->limit = limit;
+	}
+}
+
 // Push a new element onto the end of the array.
 inline static void* IO_Event_Array_push(struct IO_Event_Array *array)
 {

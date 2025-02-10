@@ -69,6 +69,16 @@ VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	return TypedData_Wrap_Struct(klass, &IO_Event_Profiler_Type, profiler);
 }
 
+VALUE IO_Event_Profiler_new(float log_threshold, int track_calls) {
+	VALUE profiler = IO_Event_Profiler_allocate(IO_Event_Profiler);
+	
+	struct IO_Event_Profiler *profiler_data = IO_Event_Profiler_get(profiler);
+	profiler_data->log_threshold = log_threshold;
+	profiler_data->track_calls = track_calls;
+	
+	return profiler;
+}
+
 struct IO_Event_Profiler *IO_Event_Profiler_get(VALUE self) {
 	struct IO_Event_Profiler *profiler;
 	TypedData_Get_Struct(self, struct IO_Event_Profiler, &IO_Event_Profiler_Type, profiler);
@@ -123,14 +133,14 @@ static void profiler_event_callback(rb_event_flag_t event_flag, VALUE data, VALU
 	}
 }
 
-void IO_Event_Profiler_start(VALUE self, int track_calls) {
+void IO_Event_Profiler_start(VALUE self) {
 	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
 	
 	IO_Event_Time_current(&profiler->start_time);
 	profiler->nesting = 0;
 	profiler->current = NULL;
 	
-	profiler->track_calls = track_calls;
+	IO_Event_Array_truncate(&profiler->calls, 0);
 	
 	// Since fibers are currently limited to a single thread, we use this in the hope that it's a little more efficient:
 	if (profiler->track_calls) {
@@ -139,7 +149,7 @@ void IO_Event_Profiler_start(VALUE self, int track_calls) {
 	}
 }
 
-void IO_Event_Profiler_stop(VALUE self) {
+struct IO_Event_Profiler * IO_Event_Profiler_stop(VALUE self) {
 	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
 	
 	IO_Event_Time_current(&profiler->stop_time);
@@ -147,6 +157,36 @@ void IO_Event_Profiler_stop(VALUE self) {
 	if (profiler->track_calls) {
 		VALUE thread = rb_thread_current();
 		rb_thread_remove_event_hook_with_data(thread, profiler_event_callback, self);
+	}
+	
+	return profiler;
+}
+
+static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profiler) {
+	struct timespec duration;
+	
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &duration);
+	
+	return IO_Event_Time_duration(&duration);
+}
+
+
+// Track entry into a fiber (scheduling operation).
+void IO_Event_Profiler_enter(VALUE self, VALUE fiber) {
+	if (self == Qnil) return;
+	
+	IO_Event_Profiler_start(self);
+}
+
+// Track exit from a fiber (scheduling operation).
+void IO_Event_Profiler_exit(VALUE self, VALUE fiber) {
+	if (self == Qnil) return;
+	
+	struct IO_Event_Profiler *profiler = IO_Event_Profiler_stop(self);
+	float duration = IO_Event_Profiler_duration(profiler);
+	
+	if (profiler->log_threshold > 0 && duration > profiler->log_threshold) {
+		IO_Event_Profiler_print(self, stderr);
 	}
 }
 

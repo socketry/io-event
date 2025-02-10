@@ -181,7 +181,7 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 	RB_OBJ_WRITE(self, &backend->loop, loop);
 	
 	if (IO_Event_Selector_stall_log_threshold > 0) {
-		backend->profiler = IO_Event_Profiler_allocate(IO_Event_Profiler);
+		backend->profiler = IO_Event_Profiler_new(IO_Event_Selector_stall_log_threshold, IO_Event_Selector_stall_log_profile);
 	} else {
 		backend->profiler = Qnil;	
 	}
@@ -191,9 +191,9 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 }
 
 VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {
-	// IO_Event_Profiler_enter(backend->profiler, fiber);
+	IO_Event_Profiler_enter(backend->profiler, fiber);
 	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
-	// IO_Event_Profiler_exit(backend->profiler, fiber);
+	IO_Event_Profiler_exit(backend->profiler, fiber);
 	
 	return result;
 }
