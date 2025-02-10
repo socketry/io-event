@@ -31,8 +31,10 @@ struct IO_Event_Profiler {
 	float log_threshold;
 	int track_calls;
 	
+	int running;
+	
 	struct timespec start_time;
-	struct timespec stop_time;
+	struct timespec finish_time;
 	
 	// The depth of the call stack:
 	size_t nesting;

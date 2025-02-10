@@ -9,6 +9,8 @@
 
 #include <stdio.h>
 
+static const int DEBUG = 0;
+
 VALUE IO_Event_Profiler = Qnil;
 
 void IO_Event_Profiler_Call_initialize(struct IO_Event_Profiler_Call *call) {
@@ -63,6 +65,8 @@ const rb_data_type_t IO_Event_Profiler_Type = {
 
 VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	struct IO_Event_Profiler *profiler = ALLOC(struct IO_Event_Profiler);
+	
+	profiler->running = 0;
 	
 	profiler->calls.element_initialize = (void (*)(void*))IO_Event_Profiler_Call_initialize;
 	profiler->calls.element_free = (void (*)(void*))IO_Event_Profiler_Call_free;
@@ -139,12 +143,21 @@ static void profiler_event_callback(rb_event_flag_t event_flag, VALUE data, VALU
 	}
 }
 
-void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
+void IO_Event_Profiler_restart(struct IO_Event_Profiler *profiler) {
 	IO_Event_Time_current(&profiler->start_time);
+	
 	profiler->nesting = 0;
 	profiler->current = NULL;
 	
 	IO_Event_Array_truncate(&profiler->calls, 0);
+}
+
+void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
+	if (DEBUG) fprintf(stderr, "Starting profiler (tracking calls: %d)\n", profiler->track_calls);
+	
+	profiler->running = 1;
+	
+	IO_Event_Profiler_restart(profiler);
 	
 	// Since fibers are currently limited to a single thread, we use this in the hope that it's a little more efficient:
 	if (profiler->track_calls) {
@@ -154,7 +167,9 @@ void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
 }
 
 void IO_Event_Profiler_stop(struct IO_Event_Profiler *profiler) {
-	IO_Event_Time_current(&profiler->stop_time);
+	if (DEBUG) fprintf(stderr, "Stopping profiler...\n");
+	
+	profiler->running = 0;
 	
 	if (profiler->track_calls) {
 		VALUE thread = rb_thread_current();
@@ -165,39 +180,49 @@ void IO_Event_Profiler_stop(struct IO_Event_Profiler *profiler) {
 static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profiler) {
 	struct timespec duration;
 	
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &duration);
 	
 	return IO_Event_Time_duration(&duration);
 }
 
-
-// Track entry into a fiber (scheduling operation).
-int IO_Event_Profiler_enter(struct IO_Event_Profiler *profiler) {
-	IO_Event_Profiler_start(profiler);
-	
-	return 0;
-}
-
 void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict stream);
 
-// Track exit from a fiber (scheduling operation).
-void IO_Event_Profiler_exit(struct IO_Event_Profiler *profiler, int state) {
-	IO_Event_Profiler_stop(profiler);
+void IO_Event_Profile_finish(struct IO_Event_Profiler *profiler) {
+	IO_Event_Time_current(&profiler->finish_time);
 	
 	float duration = IO_Event_Profiler_duration(profiler);
 	
-	if (profiler->log_threshold > 0 && duration > profiler->log_threshold) {
+	if (duration > profiler->log_threshold) {
 		IO_Event_Profiler_print(profiler, stderr);
 	}
 }
 
 VALUE IO_Event_Profiler_fiber_transfer(VALUE self, VALUE fiber, int argc, VALUE *argv) {
 	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
-	int state = IO_Event_Profiler_enter(profiler);
+	int running = 0;
 	
+	// If we are running when we enter, that means we are currently profiling, and we need to restart the profiler when we exit:
+	if (!profiler->running) {
+		IO_Event_Profiler_start(profiler);
+	} else {
+		running = profiler->running;
+		
+		// We are switching to a different fiber, so consider the current profile complete:
+		IO_Event_Profile_finish(profiler);
+		IO_Event_Profiler_restart(profiler);
+	}
+	
+	if (DEBUG) fprintf(stderr, "Transferring to fiber %p\n", (void*)fiber);
 	VALUE result = IO_Event_Fiber_transfer(fiber, argc, argv);
 	
-	IO_Event_Profiler_exit(profiler, state);
+	if (running) {
+		// If the profiler was running, we need to restart it:
+		IO_Event_Profiler_restart(profiler);
+	} else {
+		// Otherwise, we need to stop it:
+		IO_Event_Profile_finish(profiler);
+		IO_Event_Profiler_stop(profiler);
+	}
 	
 	return result;
 }
@@ -206,7 +231,7 @@ static const float IO_EVENT_PROFILER_PRINT_MINIMUM_PROPORTION = 0.01;
 
 void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &total_duration);
 	
 	fprintf(stderr, "Fiber stalled for %.3f seconds\n", IO_Event_Time_duration(&total_duration));
 	
@@ -240,7 +265,7 @@ void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restr
 
 void IO_Event_Profiler_print_json(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
-	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
+	IO_Event_Time_elapsed(&profiler->start_time, &profiler->finish_time, &total_duration);
 	
 	fputc('{', stream);
 	

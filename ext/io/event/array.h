@@ -163,10 +163,11 @@ inline static void IO_Event_Array_truncate(struct IO_Event_Array *array, size_t 
 {
 	if (limit < array->limit) {
 		for (size_t i = limit; i < array->limit; i += 1) {
-			void *element = array->base[i];
-			if (element) {
-				array->element_free(element);
-				free(element);
+			void **element = array->base + i;
+			if (*element) {
+				array->element_free(*element);
+				free(*element);
+				*element = NULL;
 			}
 		}
 		
