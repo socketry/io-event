@@ -26,6 +26,8 @@ struct IO_Event_Profiler_Call {
 };
 
 struct IO_Event_Profiler {
+	VALUE self;
+	
 	float log_threshold;
 	int track_calls;
 	
@@ -44,15 +46,8 @@ struct IO_Event_Profiler {
 extern const rb_data_type_t IO_Event_Profiler_Type;
 VALUE IO_Event_Profiler_allocate(VALUE klass);
 struct IO_Event_Profiler *IO_Event_Profiler_get(VALUE self);
-
 VALUE IO_Event_Profiler_new(float log_threshold, int track_calls);
 
-void IO_Event_Profiler_print(VALUE profiler, FILE *restrict stream);
+VALUE IO_Event_Profiler_fiber_transfer(VALUE profiler, VALUE fiber, int argc, VALUE *argv);
 
 void Init_IO_Event_Profiler(VALUE IO_Event);
-
-// Track entry into a fiber (scheduling operation).
-void IO_Event_Profiler_enter(VALUE self, VALUE fiber);
-
-// Track exit from a fiber (scheduling operation).
-void IO_Event_Profiler_exit(VALUE self, VALUE fiber);

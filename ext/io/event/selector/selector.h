@@ -8,6 +8,7 @@
 #include <ruby/io.h>
 
 #include "../time.h"
+#include "../fiber.h"
 
 #ifdef HAVE_RUBY_IO_BUFFER_H
 #include <ruby/io/buffer.h>

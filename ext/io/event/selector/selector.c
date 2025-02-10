@@ -9,47 +9,8 @@
 
 static const int DEBUG = 0;
 
-static ID id_transfer, id_alive_p;
-
 static float IO_Event_Selector_stall_log_threshold = 0;
 static int IO_Event_Selector_stall_log_profile = 0;
-
-VALUE IO_Event_Selector_fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
-	// TODO Consider introducing something like `rb_fiber_scheduler_transfer(...)`.
-#ifdef HAVE__RB_FIBER_TRANSFER
-	if (RTEST(rb_obj_is_fiber(fiber))) {
-		if (RTEST(rb_fiber_alive_p(fiber))) {
-			return rb_fiber_transfer(fiber, argc, argv);
-		}
-		
-		// If it's a fiber, but dead, we are done.
-		return Qnil;
-	}
-#endif
-	if (RTEST(rb_funcall(fiber, id_alive_p, 0))) {
-		return rb_funcallv(fiber, id_transfer, argc, argv);
-	}
-	
-	return Qnil;
-}
-
-#ifdef HAVE__RB_FIBER_RAISE
-#define IO_Event_Selector_fiber_raise(fiber, argc, argv) rb_fiber_raise(fiber, argc, argv)
-#else
-static ID id_raise;
-
-VALUE IO_Event_Selector_fiber_raise(VALUE fiber, int argc, VALUE *argv) {
-	return rb_funcallv(fiber, id_raise, argc, argv);
-}
-#endif
-
-#ifndef HAVE_RB_FIBER_CURRENT
-static ID id_current;
-
-static VALUE rb_fiber_current() {
-	return rb_funcall(rb_cFiber, id_current, 0);
-}
-#endif
 
 #ifndef HAVE_RB_IO_DESCRIPTOR
 static ID id_fileno;
@@ -127,17 +88,6 @@ static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
 }
 
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
-	id_transfer = rb_intern("transfer");
-	id_alive_p = rb_intern("alive?");
-	
-#ifndef HAVE__RB_FIBER_RAISE
-	id_raise = rb_intern("raise");
-#endif
-	
-#ifndef HAVE_RB_FIBER_CURRENT
-	id_current = rb_intern("current");
-#endif
-	
 #ifndef HAVE_RB_IO_DESCRIPTOR
 	id_fileno = rb_intern("fileno");
 #endif
@@ -191,19 +141,19 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 }
 
 VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {
-	IO_Event_Profiler_enter(backend->profiler, fiber);
-	VALUE result = IO_Event_Selector_fiber_transfer(fiber, argc, argv);
-	IO_Event_Profiler_exit(backend->profiler, fiber);
-	
-	return result;
+	if (backend->profiler != Qnil) {
+		return IO_Event_Profiler_fiber_transfer(backend->profiler, fiber, argc, argv);
+	} else {
+		return IO_Event_Fiber_transfer(fiber, argc, argv);
+	}
 }
 
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 {
 	// TODO Why is this assertion failing in async?
-	// RUBY_ASSERT(backend->loop != rb_fiber_current());
+	// RUBY_ASSERT(backend->loop != IO_Event_Fiber_current());
 	
-	return IO_Event_Selector_fiber_transfer(backend->loop, 0, NULL);
+	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
 }
 
 struct wait_and_transfer_arguments {
@@ -276,7 +226,7 @@ VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALU
 		.head = NULL,
 		.tail = NULL,
 		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
-		.fiber = rb_fiber_current()
+		.fiber = IO_Event_Fiber_current()
 	};
 	
 	RB_OBJ_WRITTEN(backend->self, Qundef, waiting.fiber);
@@ -300,7 +250,7 @@ static VALUE wait_and_raise(VALUE _arguments) {
 	int argc = arguments->argc - 1;
 	VALUE *argv = arguments->argv + 1;
 	
-	return IO_Event_Selector_fiber_raise(fiber, argc, argv);
+	return IO_Event_Fiber_raise(fiber, argc, argv);
 }
 
 VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE *argv)
@@ -311,7 +261,7 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 		.head = NULL,
 		.tail = NULL,
 		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
-		.fiber = rb_fiber_current()
+		.fiber = IO_Event_Fiber_current()
 	};
 	
 	RB_OBJ_WRITTEN(backend->self, Qundef, waiting.fiber);

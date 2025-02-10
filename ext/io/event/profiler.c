@@ -3,6 +3,7 @@
 
 #include "profiler.h"
 #include "time.h"
+#include "fiber.h"
 
 #include <ruby/debug.h>
 
@@ -33,6 +34,8 @@ void IO_Event_Profiler_Call_free(struct IO_Event_Profiler_Call *call) {
 
 static void IO_Event_Profiler_mark(void *ptr) {
 	struct IO_Event_Profiler *profiler = (struct IO_Event_Profiler*)ptr;
+	
+	rb_gc_mark(profiler->self);
 	
 	// If `klass` is stored as a VALUE in calls, we need to mark them here:
 	for (size_t i = 0; i < profiler->calls.limit; i += 1) {
@@ -66,7 +69,10 @@ VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	
 	IO_Event_Array_initialize(&profiler->calls, 0, sizeof(struct IO_Event_Profiler_Call));
 	
-	return TypedData_Wrap_Struct(klass, &IO_Event_Profiler_Type, profiler);
+	VALUE self = TypedData_Wrap_Struct(klass, &IO_Event_Profiler_Type, profiler);
+	RB_OBJ_WRITE(self, &profiler->self, self);
+	
+	return self;
 }
 
 VALUE IO_Event_Profiler_new(float log_threshold, int track_calls) {
@@ -133,9 +139,7 @@ static void profiler_event_callback(rb_event_flag_t event_flag, VALUE data, VALU
 	}
 }
 
-void IO_Event_Profiler_start(VALUE self) {
-	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
-	
+void IO_Event_Profiler_start(struct IO_Event_Profiler *profiler) {
 	IO_Event_Time_current(&profiler->start_time);
 	profiler->nesting = 0;
 	profiler->current = NULL;
@@ -145,21 +149,17 @@ void IO_Event_Profiler_start(VALUE self) {
 	// Since fibers are currently limited to a single thread, we use this in the hope that it's a little more efficient:
 	if (profiler->track_calls) {
 		VALUE thread = rb_thread_current();
-		rb_thread_add_event_hook(thread, profiler_event_callback, RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN, self);
+		rb_thread_add_event_hook(thread, profiler_event_callback, RUBY_EVENT_CALL | RUBY_EVENT_C_CALL | RUBY_EVENT_RETURN | RUBY_EVENT_C_RETURN, profiler->self);
 	}
 }
 
-struct IO_Event_Profiler * IO_Event_Profiler_stop(VALUE self) {
-	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
-	
+void IO_Event_Profiler_stop(struct IO_Event_Profiler *profiler) {
 	IO_Event_Time_current(&profiler->stop_time);
 	
 	if (profiler->track_calls) {
 		VALUE thread = rb_thread_current();
-		rb_thread_remove_event_hook_with_data(thread, profiler_event_callback, self);
+		rb_thread_remove_event_hook_with_data(thread, profiler_event_callback, profiler->self);
 	}
-	
-	return profiler;
 }
 
 static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profiler) {
@@ -172,29 +172,39 @@ static inline float IO_Event_Profiler_duration(struct IO_Event_Profiler *profile
 
 
 // Track entry into a fiber (scheduling operation).
-void IO_Event_Profiler_enter(VALUE self, VALUE fiber) {
-	if (self == Qnil) return;
+int IO_Event_Profiler_enter(struct IO_Event_Profiler *profiler) {
+	IO_Event_Profiler_start(profiler);
 	
-	IO_Event_Profiler_start(self);
+	return 0;
 }
 
+void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict stream);
+
 // Track exit from a fiber (scheduling operation).
-void IO_Event_Profiler_exit(VALUE self, VALUE fiber) {
-	if (self == Qnil) return;
+void IO_Event_Profiler_exit(struct IO_Event_Profiler *profiler, int state) {
+	IO_Event_Profiler_stop(profiler);
 	
-	struct IO_Event_Profiler *profiler = IO_Event_Profiler_stop(self);
 	float duration = IO_Event_Profiler_duration(profiler);
 	
 	if (profiler->log_threshold > 0 && duration > profiler->log_threshold) {
-		IO_Event_Profiler_print(self, stderr);
+		IO_Event_Profiler_print(profiler, stderr);
 	}
+}
+
+VALUE IO_Event_Profiler_fiber_transfer(VALUE self, VALUE fiber, int argc, VALUE *argv) {
+	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
+	int state = IO_Event_Profiler_enter(profiler);
+	
+	VALUE result = IO_Event_Fiber_transfer(fiber, argc, argv);
+	
+	IO_Event_Profiler_exit(profiler, state);
+	
+	return result;
 }
 
 static const float IO_EVENT_PROFILER_PRINT_MINIMUM_PROPORTION = 0.01;
 
-void IO_Event_Profiler_print_tty(VALUE self, FILE *restrict stream) {
-	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
-	
+void IO_Event_Profiler_print_tty(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
 	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
 	
@@ -228,9 +238,7 @@ void IO_Event_Profiler_print_tty(VALUE self, FILE *restrict stream) {
 	}
 }
 
-void IO_Event_Profiler_print_json(VALUE self, FILE *restrict stream) {
-	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
-	
+void IO_Event_Profiler_print_json(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	struct timespec total_duration = {};
 	IO_Event_Time_elapsed(&profiler->start_time, &profiler->stop_time, &total_duration);
 	
@@ -271,11 +279,11 @@ void IO_Event_Profiler_print_json(VALUE self, FILE *restrict stream) {
 	fprintf(stream, "}\n");
 }
 
-void IO_Event_Profiler_print(VALUE self, FILE *restrict stream) {
+void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict stream) {
 	if (isatty(fileno(stream))) {
-		IO_Event_Profiler_print_tty(self, stream);
+		IO_Event_Profiler_print_tty(profiler, stream);
 	} else {
-		IO_Event_Profiler_print_json(self, stream);
+		IO_Event_Profiler_print_json(profiler, stream);
 	}
 }
 
