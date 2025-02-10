@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.9.0
+
+  - [Improved `IO::Event::Profiler` for detecting stalls.](https://socketry.github.io/io-event/releases/index#improved-io::event::profiler-for-detecting-stalls.)
+
 ### v1.8.0
 
   - [Detecting fibers that are stalling the event loop.](https://socketry.github.io/io-event/releases/index#detecting-fibers-that-are-stalling-the-event-loop.)
