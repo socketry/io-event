@@ -127,7 +127,7 @@ size_t IO_Event_Selector_URing_Type_size(const void *_selector)
 }
 
 static const rb_data_type_t IO_Event_Selector_URing_Type = {
-	.wrap_struct_name = "IO_Event::Backend::URing",
+	.wrap_struct_name = "IO::Event::Backend::URing",
 	.function = {
 		.dmark = IO_Event_Selector_URing_Type_mark,
 		.dcompact = IO_Event_Selector_URing_Type_compact,

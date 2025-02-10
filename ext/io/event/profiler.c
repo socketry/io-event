@@ -50,7 +50,7 @@ static void IO_Event_Profiler_free(void *ptr) {
 }
 
 const rb_data_type_t IO_Event_Profiler_Type = {
-	.wrap_struct_name = "IO_Event_Profiler",
+	.wrap_struct_name = "IO::Event::Profiler",
 	.function = {
 		.dmark = IO_Event_Profiler_mark,
 		.dfree = IO_Event_Profiler_free,

@@ -156,7 +156,7 @@ size_t IO_Event_Selector_KQueue_Type_size(const void *_selector)
 }
 
 static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
-	.wrap_struct_name = "IO_Event::Backend::KQueue",
+	.wrap_struct_name = "IO::Event::Backend::KQueue",
 	.function = {
 		.dmark = IO_Event_Selector_KQueue_Type_mark,
 		.dcompact = IO_Event_Selector_KQueue_Type_compact,

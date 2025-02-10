@@ -157,7 +157,7 @@ size_t IO_Event_Selector_EPoll_Type_size(const void *_selector)
 }
 
 static const rb_data_type_t IO_Event_Selector_EPoll_Type = {
-	.wrap_struct_name = "IO_Event::Backend::EPoll",
+	.wrap_struct_name = "IO::Event::Backend::EPoll",
 	.function = {
 		.dmark = IO_Event_Selector_EPoll_Type_mark,
 		.dcompact = IO_Event_Selector_EPoll_Type_compact,
