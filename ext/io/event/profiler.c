@@ -37,12 +37,23 @@ void IO_Event_Profiler_Call_free(struct IO_Event_Profiler_Call *call) {
 static void IO_Event_Profiler_mark(void *ptr) {
 	struct IO_Event_Profiler *profiler = (struct IO_Event_Profiler*)ptr;
 	
-	rb_gc_mark(profiler->self);
+	rb_gc_mark_movable(profiler->self);
 	
 	// If `klass` is stored as a VALUE in calls, we need to mark them here:
 	for (size_t i = 0; i < profiler->calls.limit; i += 1) {
 		struct IO_Event_Profiler_Call *call = profiler->calls.base[i];
-		rb_gc_mark(call->klass);
+		rb_gc_mark_movable(call->klass);
+	}
+}
+
+static void IO_Event_Profiler_compact(void *ptr) {
+	struct IO_Event_Profiler *profiler = (struct IO_Event_Profiler*)ptr;
+	profiler->self = rb_gc_location(profiler->self);
+	
+	// If `klass` is stored as a VALUE in calls, we need to update their locations here:
+	for (size_t i = 0; i < profiler->calls.limit; i += 1) {
+			struct IO_Event_Profiler_Call *call = profiler->calls.base[i];
+			call->klass = rb_gc_location(call->klass);
 	}
 }
 
@@ -54,13 +65,20 @@ static void IO_Event_Profiler_free(void *ptr) {
 	free(profiler);
 }
 
+static size_t IO_Event_Profiler_memsize(const void *ptr) {
+	const struct IO_Event_Profiler *profiler = (const struct IO_Event_Profiler*)ptr;
+	return sizeof(*profiler) + IO_Event_Array_memory_size(&profiler->calls);
+}
+
 const rb_data_type_t IO_Event_Profiler_Type = {
 	.wrap_struct_name = "IO::Event::Profiler",
 	.function = {
 		.dmark = IO_Event_Profiler_mark,
+		.dcompact = IO_Event_Profiler_compact,
 		.dfree = IO_Event_Profiler_free,
+		.dsize = IO_Event_Profiler_memsize,
 	},
-	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED,
 };
 
 VALUE IO_Event_Profiler_allocate(VALUE klass) {
