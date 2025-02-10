@@ -3,7 +3,8 @@
 # Released under the MIT License.
 # Copyright, 2021-2024, by Samuel Williams.
 
-$LOAD_PATH << ::File.expand_path("../ext", __dir__)
+require_relative 'environment'
+
 Warning[:experimental] = false
 
 require "covered/sus"
