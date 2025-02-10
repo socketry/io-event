@@ -131,8 +131,11 @@ struct IO_Event_Profiler *IO_Event_Profiler_get(VALUE self) {
 VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	struct IO_Event_Profiler *profiler = ALLOC(struct IO_Event_Profiler);
 	
+	// Initialize the profiler state:
 	profiler->running = 0;
 	profiler->capture = 0;
+	profiler->nesting = 0;
+	profiler->current = NULL;
 	
 	profiler->calls.element_initialize = (void (*)(void*))IO_Event_Profiler_Call_initialize;
 	profiler->calls.element_free = (void (*)(void*))IO_Event_Profiler_Call_free;
@@ -300,6 +303,10 @@ VALUE IO_Event_Profiler_start(VALUE self) {
 	if (profiler->running) return Qfalse;
 	
 	profiler->running = 1;
+	
+	// Reset the profiler state:
+	profiler->nesting = 0;
+	profiler->current = NULL;
 	
 	rb_event_flag_t event_flags = RUBY_EVENT_FIBER_SWITCH;
 	if (profiler->track_calls) {
