@@ -29,16 +29,19 @@ struct IO_Event_Profiler_Call {
 };
 
 struct IO_Event_Profiler {
+	// Configuration:
 	float log_threshold;
 	int track_calls;
 	
+	// Whether or not the profiler is currently running:
 	int running;
 	
 	// Whether or not to capture call data:
 	int capture;
 	
-	// From this point on, the state of any profile in progress:
+	size_t stalls;
 	
+	// From this point on, the state of any profile in progress:
 	struct timespec start_time;
 	struct timespec stop_time;
 	
@@ -135,6 +138,7 @@ VALUE IO_Event_Profiler_allocate(VALUE klass) {
 	// Initialize the profiler state:
 	profiler->running = 0;
 	profiler->capture = 0;
+	profiler->stalls = 0;
 	profiler->nesting = 0;
 	profiler->current = NULL;
 	
@@ -380,6 +384,7 @@ void IO_Event_Profiler_fiber_switch(struct IO_Event_Profiler *profiler)
 		IO_Event_Profiler_finish(profiler);
 		
 		if (duration > profiler->log_threshold) {
+			profiler->stalls += 1;
 			IO_Event_Profiler_print(profiler, stderr);
 		}
 	}
@@ -479,6 +484,12 @@ void IO_Event_Profiler_print(struct IO_Event_Profiler *profiler, FILE *restrict 
 	}
 }
 
+VALUE IO_Event_Profiler_stalls(VALUE self) {
+	struct IO_Event_Profiler *profiler = IO_Event_Profiler_get(self);
+	
+	return SIZET2NUM(profiler->stalls);
+}
+
 void Init_IO_Event_Profiler(VALUE IO_Event) {
 	IO_Event_Profiler = rb_define_class_under(IO_Event, "Profiler", rb_cObject);
 	rb_define_alloc_func(IO_Event_Profiler, IO_Event_Profiler_allocate);
@@ -489,4 +500,6 @@ void Init_IO_Event_Profiler(VALUE IO_Event) {
 	
 	rb_define_method(IO_Event_Profiler, "start", IO_Event_Profiler_start, 0);
 	rb_define_method(IO_Event_Profiler, "stop", IO_Event_Profiler_stop, 0);
+	
+	rb_define_method(IO_Event_Profiler, "stalls", IO_Event_Profiler_stalls, 0);
 }
