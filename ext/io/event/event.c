@@ -3,7 +3,6 @@
 
 #include "event.h"
 #include "fiber.h"
-#include "profiler.h"
 #include "selector/selector.h"
 
 void Init_IO_Event(void)
@@ -15,7 +14,6 @@ void Init_IO_Event(void)
 	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
 	
 	Init_IO_Event_Fiber(IO_Event);
-	Init_IO_Event_Profiler(IO_Event);
 	
 	VALUE IO_Event_Selector = rb_define_module_under(IO_Event, "Selector");
 	Init_IO_Event_Selector(IO_Event_Selector);
