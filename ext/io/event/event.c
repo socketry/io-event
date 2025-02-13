@@ -5,7 +5,6 @@
 #include "fiber.h"
 #include "profiler.h"
 #include "selector/selector.h"
-#include <complex.h>
 
 void Init_IO_Event(void)
 {
