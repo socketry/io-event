@@ -15,6 +15,8 @@
 
 #include "../interrupt.h"
 
+#include <ruby/debug.h>
+
 enum {
 	DEBUG = 0,
 	DEBUG_IO_READ = 0,
@@ -947,6 +949,11 @@ VALUE select_handle_events_ensure(VALUE _arguments)
 	return Qnil;
 }
 
+static
+void IO_Event_Selector_thread_switch(rb_event_flag_t event_flag, VALUE data, VALUE self, ID id, VALUE klass) {
+	fprintf(stderr, "IO_Event_Selector_thread_switch\n");
+}
+
 VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
@@ -954,7 +961,14 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	selector->idle_duration.tv_sec = 0;
 	selector->idle_duration.tv_nsec = 0;
 	
+	fprintf(stderr, "Adding event hook...\n");
+	// VALUE thread = rb_thread_current();
+	rb_add_event_hook(IO_Event_Selector_thread_switch, RUBY_INTERNAL_EVENT_SWITCH, self);
+	
 	int ready = IO_Event_Selector_ready_flush(&selector->backend);
+	
+	fprintf(stderr, "Removing event hook\n");
+	rb_remove_event_hook_with_data(IO_Event_Selector_thread_switch, self);
 	
 	struct select_arguments arguments = {
 		.selector = selector,
