@@ -1,4 +1,4 @@
-# ![Event](logo.svg)
+# ![IO::Event](logo.svg)
 
 Provides low level cross-platform primitives for constructing event loops, with support for `select`, `kqueue`, `epoll` and `io_uring`.
 
