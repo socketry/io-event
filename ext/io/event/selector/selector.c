@@ -116,6 +116,21 @@ VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
 }
 
+#ifndef HAVE_RB_IO_INTERRUPTABLE_OPERATION
+static inline VALUE
+rb_io_interruptible_operation(VALUE self, VALUE(*function)(VALUE), VALUE argument) {
+	return function(argument);
+}
+#endif
+
+static VALUE IO_Event_Selector_loop_yield_io_interruptible(VALUE fiber) {
+	return IO_Event_Fiber_transfer(fiber, 0, NULL);
+}
+
+VALUE IO_Event_Selector_loop_yield_io(struct IO_Event_Selector *backend, VALUE io) {
+	return rb_io_interruptible_operation(io, IO_Event_Selector_loop_yield_io_interruptible, backend->loop);
+}
+
 struct wait_and_transfer_arguments {
 	int argc;
 	VALUE *argv;

@@ -120,6 +120,9 @@ VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fib
 // Strictly speaking, it's not a scheduling operation (does not schedule the current fiber).
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend);
 
+// Similar to `IO_Event_Selector_loop_yield` but allows the caller to specify an IO which may be interrupted.
+VALUE IO_Event_Selector_loop_yield_io(struct IO_Event_Selector *backend, VALUE io);
+
 // Resume a specific fiber. This is a scheduling operation.
 // The first argument is the fiber, the rest are the arguments to the resume.
 //

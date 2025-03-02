@@ -20,6 +20,8 @@ module IO::Event
 						@input.read_nonblock(1)
 					end
 				end
+			ensure
+				@input.close
 			end
 			
 			@fiber.transfer
@@ -34,9 +36,7 @@ module IO::Event
 		end
 		
 		def close
-			@input.close
 			@output.close
-			# @fiber.raise(::Interrupt)
 		end
 	end
 	
