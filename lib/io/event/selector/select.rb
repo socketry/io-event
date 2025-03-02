@@ -19,7 +19,7 @@ module IO::Event
 				
 				@blocked = false
 				
-				@ready = Queue.new
+				@ready = ::Thread::Queue.new
 				@interrupt = Interrupt.attach(self)
 				
 				@idle_duration = 0.0
@@ -92,6 +92,8 @@ module IO::Event
 			# Append the given fiber into the ready list.
 			def push(fiber)
 				@ready.push(fiber)
+				
+				return fiber
 			end
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
@@ -154,12 +156,24 @@ module IO::Event
 			# @parameter fiber [Fiber] The fiber that is waiting.
 			# @parameter io [IO] The IO object to wait on.
 			# @parameter events [Integer] The events to wait for.
-			def io_wait(fiber, io, events)
-				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
-				
-				@loop.transfer
-			ensure
-				waiter&.invalidate
+			if IO.method_defined?(:interruptable_operation)
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					io.interruptable_operation do
+						@loop.transfer
+					end
+				ensure
+					waiter&.invalidate
+				end
+			else
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					@loop.transfer
+				ensure
+					waiter&.invalidate
+				end
 			end
 			
 			# Wait for multiple IO objects to become readable or writable.
@@ -341,8 +355,8 @@ module IO::Event
 					end
 					
 					return total
-				rescue IOError => error
-					return -Errno::EBADF::Errno
+				# rescue IOError => error
+				# 	return -Errno::EBADF::Errno
 				rescue SystemCallError => error
 					return -error.errno
 				end
@@ -412,6 +426,7 @@ module IO::Event
 			end
 			
 			def select(duration = nil)
+				Fiber.blocking{$stderr.puts "-> Selecting for #{duration.inspect}..."}
 				if pop_ready
 					# If we have popped items from the ready list, they may influence the duration calculation, so we don't delay the event loop:
 					duration = 0
@@ -449,6 +464,7 @@ module IO::Event
 				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
 				Thread.handle_interrupt(::Exception => :on_blocking) do
 					@blocked = true
+					Fiber.blocking{$stderr.puts "-> IO.select(#{readable.inspect}, #{writable.inspect}, #{priority.inspect}, #{duration.inspect})..."}
 					readable, writable, priority = ::IO.select(readable, writable, priority, duration)
 				rescue ::Exception => error
 					# Requeue below...
