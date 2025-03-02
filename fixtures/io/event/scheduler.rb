@@ -220,8 +220,10 @@ module IO::Event
 				end
 			end
 			
+			Fiber.blocking{$stderr.puts "-> (#{fiber}) io_wait(#{io}, #{events}, #{timeout})"}
 			return @selector.io_wait(fiber, io, events)
 		ensure
+			Fiber.blocking{$stderr.puts "<- io_wait(#{io}, #{events}, #{timeout})"}
 			timer&.cancel!
 		end
 		
@@ -304,6 +306,7 @@ module IO::Event
 		# @parameter fiber [Fiber] The fiber to raise the exception on.
 		# @parameter exception [Exception] The exception to raise.
 		def fiber_interrupt(fiber, exception)
+			Fiber.blocking{$stderr.puts "fiber_interrupt(#{fiber}, #{exception})"}
 			unblock(nil, RaiseException.new(fiber, exception))
 		end
 		

@@ -426,6 +426,7 @@ module IO::Event
 			end
 			
 			def select(duration = nil)
+				Fiber.blocking{$stderr.puts "-> Selecting for #{duration.inspect}..."}
 				if pop_ready
 					# If we have popped items from the ready list, they may influence the duration calculation, so we don't delay the event loop:
 					duration = 0
@@ -463,6 +464,7 @@ module IO::Event
 				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
 				Thread.handle_interrupt(::Exception => :on_blocking) do
 					@blocked = true
+					Fiber.blocking{$stderr.puts "-> IO.select(#{readable.inspect}, #{writable.inspect}, #{priority.inspect}, #{duration.inspect})..."}
 					readable, writable, priority = ::IO.select(readable, writable, priority, duration)
 				rescue ::Exception => error
 					# Requeue below...

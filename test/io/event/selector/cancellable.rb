@@ -70,8 +70,12 @@ Cancellable = Sus::Shared("cancellable") do
 				Fiber.set_scheduler(nil)
 			end
 			
-			it "can interrupt reads" do
+			def skip_unless_interruptable
 				skip("IO#close interruption unsupported") unless IO::Event::INTERRUPTABLE
+			end
+			
+			it "can interrupt read" do
+				skip_unless_interruptable
 				
 				error = nil
 				
@@ -79,19 +83,37 @@ Cancellable = Sus::Shared("cancellable") do
 					buffer = IO::Buffer.new(64)
 					
 					Fiber.schedule do
-						$stderr.puts "Reading..."
 						begin
 							buffer.read(input, 1)
 						rescue => error
-						ensure
-							$stderr.puts "Read: #{error}"
+							# Ignore.
 						end
 					end
 					
 					Fiber.schedule do
-						$stderr.puts "Closing input..."
 						input.close
-						$stderr.puts "Closed input."
+					end
+				end
+				
+				expect(error).to be_a(IOError)
+			end
+			
+			it "can interrupt wait_readable" do
+				skip_unless_interruptable
+				
+				error = nil
+				
+				with_scheduler do
+					Fiber.schedule do
+						begin
+							input.wait_readable
+						rescue => error
+							# Ignore.
+						end
+					end
+					
+					Fiber.schedule do
+						input.close
 					end
 				end
 				
