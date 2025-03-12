@@ -1175,7 +1175,24 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 #pragma mark - Native Methods
 
+int IO_Event_Selector_URing_supported_p() {
+	struct io_uring ring;
+	int result = io_uring_queue_init(1, &ring, 0);
+	
+	if (result < 0) {
+		return 0;
+	}
+	
+	io_uring_queue_exit(&ring);
+	
+	return 1;
+}
+
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
+	if (!IO_Event_Selector_URing_supported_p()) {
+		return;
+	}
+	
 	VALUE IO_Event_Selector_URing = rb_define_class_under(IO_Event_Selector, "URing", rb_cObject);
 	
 	rb_define_alloc_func(IO_Event_Selector_URing, IO_Event_Selector_URing_allocate);
