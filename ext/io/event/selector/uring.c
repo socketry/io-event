@@ -1177,9 +1177,11 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
-	int result = io_uring_queue_init(1, &ring, 0);
+	int result = io_uring_queue_init(32, &ring, 0);
 	
 	if (result < 0) {
+		rb_warn("io_uring_queue_init() was available at compile time but failed at run time: %s\n", strerror(-result));
+		
 		return 0;
 	}
 	

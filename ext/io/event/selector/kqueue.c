@@ -1050,7 +1050,9 @@ static int IO_Event_Selector_KQueue_supported_p(void) {
 	int fd = kqueue();
 	
 	if (fd < 0) {
-			return 0;
+		rb_warn("kqueue() was available at compile time but failed at run time: %s\n", strerror(errno));
+		
+		return 0;
 	}
 	
 	close(fd);
@@ -1060,7 +1062,7 @@ static int IO_Event_Selector_KQueue_supported_p(void) {
 
 void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	if (!IO_Event_Selector_KQueue_supported_p()) {
-			return;
+		return;
 	}
 	
 	VALUE IO_Event_Selector_KQueue = rb_define_class_under(IO_Event_Selector, "KQueue", rb_cObject);

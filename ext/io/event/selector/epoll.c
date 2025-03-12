@@ -1039,7 +1039,9 @@ static int IO_Event_Selector_EPoll_supported_p(void) {
 	int fd = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (fd < 0) {
-			return 0;
+		rb_warn("epoll_create1() was available at compile time but failed at run time: %s\n", strerror(errno));
+		
+		return 0;
 	}
 	
 	close(fd);
