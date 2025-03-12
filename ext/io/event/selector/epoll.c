@@ -1035,7 +1035,25 @@ VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
 	return Qfalse;
 }
 
+static int IO_Event_Selector_EPoll_supported_p(void) {
+	int fd = epoll_create1(EPOLL_CLOEXEC);
+	
+	if (fd < 0) {
+		rb_warn("epoll_create1() was available at compile time but failed at run time: %s\n", strerror(errno));
+		
+		return 0;
+	}
+	
+	close(fd);
+	
+	return 1;
+}
+
 void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
+	if (!IO_Event_Selector_EPoll_supported_p()) {
+		return;
+	}
+	
 	VALUE IO_Event_Selector_EPoll = rb_define_class_under(IO_Event_Selector, "EPoll", rb_cObject);
 	
 	rb_define_alloc_func(IO_Event_Selector_EPoll, IO_Event_Selector_EPoll_allocate);
