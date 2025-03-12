@@ -1046,7 +1046,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 }
 
 
-int IO_Event_Selector_KQueue_supported_p() {
+static int IO_Event_Selector_KQueue_supported_p(void) {
 	int fd = kqueue();
 	
 	if (fd < 0) {

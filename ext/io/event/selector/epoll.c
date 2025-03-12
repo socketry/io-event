@@ -1035,7 +1035,7 @@ VALUE IO_Event_Selector_EPoll_wakeup(VALUE self) {
 	return Qfalse;
 }
 
-int IO_Event_Selector_EPoll_supported_p() {
+static int IO_Event_Selector_EPoll_supported_p(void) {
 	int fd = epoll_create1(EPOLL_CLOEXEC);
 	
 	if (fd < 0) {

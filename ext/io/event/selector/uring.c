@@ -1175,7 +1175,7 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 #pragma mark - Native Methods
 
-int IO_Event_Selector_URing_supported_p() {
+static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
 	int result = io_uring_queue_init(1, &ring, 0);
 	
