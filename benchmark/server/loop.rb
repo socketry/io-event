@@ -6,15 +6,18 @@
 
 require "socket"
 
-port = Integer(ARGV.pop || 9090)
+RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 
+port = Integer(ARGV.pop || 9090)
 server = TCPServer.new("localhost", port)
 
 loop do
 	peer, address = server.accept
 	
-	peer.recv(1024)
-	peer.send("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n", 0)
+	while (peer.recv(1024) rescue nil)
+		peer.send(RESPONSE, 0)
+	end
+	
 	peer.close
 end
 

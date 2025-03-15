@@ -5,19 +5,24 @@
 # Copyright, 2021-2024, by Samuel Williams.
 
 require "async"
-require "async/io/tcp_socket"
+require "socket"
+
+RESPONSE = "HTTP/1.1 204 No Content\r\nXonnection: close\r\n\r\n"
 
 port = Integer(ARGV.pop || 9090)
 
 Async do |task|
-	server = Async::IO::TCPServer.new("localhost", port)
+	server = TCPServer.new("localhost", port)
 	
 	loop do
 		peer, address = server.accept
 		
 		task.async do
-			peer.recv(1024)
-			peer.send("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+			while (peer.recv(1024) rescue nil)
+				sleep 0.02
+				peer.send(RESPONSE, 0)
+			end
+		ensure
 			peer.close
 		end
 	end

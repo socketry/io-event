@@ -7,13 +7,13 @@
 require_relative "scheduler"
 require "io/nonblock"
 
+RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
+
 #scheduler = DirectScheduler.new
 scheduler = Scheduler.new
 Fiber.set_scheduler(scheduler)
 
 port = Integer(ARGV.pop || 9090)
-
-RESPONSE = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n"
 
 Fiber.schedule do
 	server = TCPServer.new("localhost", port)
@@ -21,10 +21,12 @@ Fiber.schedule do
 	
 	loop do
 		peer, address = server.accept
-
+		
 		Fiber.schedule do
-			peer.readpartial(1024) rescue nil
-			peer.write(RESPONSE)
+			while (peer.readpartial(1024) rescue nil)
+				peer.write(RESPONSE)
+			end
+			
 			peer.close
 		end
 	end
