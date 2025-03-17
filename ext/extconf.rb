@@ -28,6 +28,7 @@ $VPATH << "$(srcdir)/io/event/selector"
 
 have_func("rb_ext_ractor_safe")
 have_func("&rb_fiber_transfer")
+have_func("rb_io_interruptible_operation")
 
 if have_library("uring") and have_header("liburing.h")
 	# We might want to consider using this in the future:

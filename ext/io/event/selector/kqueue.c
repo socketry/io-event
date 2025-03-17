@@ -19,7 +19,8 @@ enum {
 	DEBUG = 0,
 	DEBUG_IO_READ = 0,
 	DEBUG_IO_WRITE = 0,
-	DEBUG_IO_WAIT = 0
+	DEBUG_IO_WAIT = 0,
+	DEBUG_IO_INTERRUPT = 1
 };
 
 #ifndef EVFILT_USER
@@ -407,7 +408,7 @@ VALUE IO_Event_Selector_KQueue_push(VALUE self, VALUE fiber)
 	
 	IO_Event_Selector_ready_push(&selector->backend, fiber);
 	
-	return Qnil;
+	return fiber;
 }
 
 VALUE IO_Event_Selector_KQueue_raise(int argc, VALUE *argv, VALUE self)
@@ -516,6 +517,8 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 struct io_wait_arguments {
 	struct IO_Event_Selector_KQueue *selector;
 	struct IO_Event_Selector_KQueue_Waiting *waiting;
+	
+	VALUE io;
 };
 
 static
@@ -531,7 +534,7 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	IO_Event_Selector_loop_yield_io(&arguments->selector->backend, arguments->io);
 	
 	if (arguments->waiting->ready) {
 		return RB_INT2NUM(arguments->waiting->ready);
@@ -564,6 +567,7 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
+		.io = io,
 	};
 	
 	if (DEBUG_IO_WAIT) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait descriptor=%d\n", descriptor);

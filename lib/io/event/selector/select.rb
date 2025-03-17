@@ -19,7 +19,7 @@ module IO::Event
 				
 				@blocked = false
 				
-				@ready = Queue.new
+				@ready = ::Thread::Queue.new
 				@interrupt = Interrupt.attach(self)
 				
 				@idle_duration = 0.0
@@ -92,6 +92,8 @@ module IO::Event
 			# Append the given fiber into the ready list.
 			def push(fiber)
 				@ready.push(fiber)
+				
+				return fiber
 			end
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
@@ -149,17 +151,29 @@ module IO::Event
 				end
 			end
 			
-			# Wait for the given IO to become readable or writable.
-			#
-			# @parameter fiber [Fiber] The fiber that is waiting.
-			# @parameter io [IO] The IO object to wait on.
-			# @parameter events [Integer] The events to wait for.
-			def io_wait(fiber, io, events)
-				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
-				
-				@loop.transfer
-			ensure
-				waiter&.invalidate
+			if IO.method_defined?(:interruptible_operation)
+				# Wait for the given IO to become readable or writable.
+				#
+				# @parameter fiber [Fiber] The fiber that is waiting.
+				# @parameter io [IO] The IO object to wait on.
+				# @parameter events [Integer] The events to wait for.
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					io.interruptible_operation do
+						@loop.transfer
+					end
+				ensure
+					waiter&.invalidate
+				end
+			else
+				def io_wait(fiber, io, events)
+					waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
+					
+					@loop.transfer
+				ensure
+					waiter&.invalidate
+				end
 			end
 			
 			# Wait for multiple IO objects to become readable or writable.
@@ -341,8 +355,8 @@ module IO::Event
 					end
 					
 					return total
-				rescue IOError => error
-					return -Errno::EBADF::Errno
+				# rescue IOError => error
+				# 	return -Errno::EBADF::Errno
 				rescue SystemCallError => error
 					return -error.errno
 				end
@@ -422,6 +436,10 @@ module IO::Event
 				priority = Array.new
 				
 				@waiting.each do |io, waiter|
+					# If an IO is closed, we can no longer wait on it:
+					next if io.closed?
+					# This is consistent with epoll/kqueue behavior, which will remove the IO from the set of watched IOs if it is closed. This can be a problem if the IO is closed during `pop_ready` above, while another Fiber is waiting on it. The interruption to `io_wait` will be delivered on the next iteration of the event loop, but we can't use it with `IO.select` as it will raise an exception and break the event loop.
+					
 					waiter.each do |fiber, events|
 						if (events & IO::READABLE) > 0
 							readable << io

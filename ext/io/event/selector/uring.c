@@ -303,7 +303,7 @@ VALUE IO_Event_Selector_URing_push(VALUE self, VALUE fiber)
 	
 	IO_Event_Selector_ready_push(&selector->backend, fiber);
 	
-	return Qnil;
+	return fiber;
 }
 
 VALUE IO_Event_Selector_URing_raise(int argc, VALUE *argv, VALUE self)
@@ -522,6 +522,7 @@ int events_from_poll_flags(short flags) {
 struct io_wait_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	VALUE io;
 	short flags;
 };
 
@@ -548,7 +549,7 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	IO_Event_Selector_loop_yield(&selector->backend);
+	IO_Event_Selector_loop_yield_io(&selector->backend, arguments->io);
 	
 	if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
 	
@@ -588,7 +589,8 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
-		.flags = flags
+		.io = io,
+		.flags = flags,
 	};
 	
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
@@ -619,6 +621,7 @@ static inline off_t io_seekable(int descriptor)
 struct io_read_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	VALUE io;
 	int descriptor;
 	off_t offset;
 	char *buffer;
@@ -638,7 +641,7 @@ io_read_submit(VALUE _arguments)
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_now(selector);
 	
-	IO_Event_Selector_loop_yield(&selector->backend);
+	IO_Event_Selector_loop_yield_io(&selector->backend, arguments->io);
 	
 	return RB_INT2NUM(arguments->waiting->result);
 }
@@ -664,7 +667,7 @@ io_read_ensure(VALUE _arguments)
 }
 
 static int
-io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
+io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, VALUE io, int descriptor, char *buffer, size_t length, off_t offset)
 {
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -677,6 +680,7 @@ io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, c
 	struct io_read_arguments io_read_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
+		.io = io,
 		.descriptor = descriptor,
 		.offset = offset,
 		.buffer = buffer,
@@ -705,7 +709,7 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		int result = io_read(selector, fiber, io, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
@@ -756,7 +760,7 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		int result = io_read(selector, fiber, io, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
@@ -783,6 +787,7 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 struct io_write_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	VALUE io;
 	int descriptor;
 	off_t offset;
 	char *buffer;
@@ -802,7 +807,7 @@ io_write_submit(VALUE _argument)
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
 	io_uring_submit_pending(selector);
 	
-	IO_Event_Selector_loop_yield(&selector->backend);
+	IO_Event_Selector_loop_yield_io(&selector->backend, arguments->io);
 	
 	return RB_INT2NUM(arguments->waiting->result);
 }
@@ -828,7 +833,7 @@ io_write_ensure(VALUE _argument)
 }
 
 static int
-io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
+io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, VALUE io, int descriptor, char *buffer, size_t length, off_t offset)
 {
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -841,6 +846,7 @@ io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, 
 	struct io_write_arguments arguments = {
 		.selector = selector,
 		.waiting = &waiting,
+		.io = io,
 		.descriptor = descriptor,
 		.offset = offset,
 		.buffer = buffer,
@@ -873,7 +879,7 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		int result = io_write(selector, fiber, io, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
@@ -928,7 +934,7 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
+		int result = io_write(selector, fiber, io, descriptor, (char*)base+offset, maximum_size, from);
 		
 		if (result > 0) {
 			total += result;
