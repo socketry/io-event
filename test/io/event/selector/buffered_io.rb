@@ -17,6 +17,8 @@ BufferedIO = Sus::Shared("buffered io") do
 		let(:output) {pipe.last}
 		
 		it "can read using a buffer" do
+			# Non-blocking pipes are probably not implemented in Ruby's compatibility layer.
+			# https://learn.microsoft.com/en-gb/windows/win32/api/namedpipeapi/nf-namedpipeapi-setnamedpipehandlestate?redirectedfrom=MSDN
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
 			writer = Fiber.new do
