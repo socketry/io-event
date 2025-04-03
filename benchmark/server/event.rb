@@ -23,10 +23,8 @@ Fiber.schedule do
 		peer, address = server.accept
 		
 		Fiber.schedule do
-			while (peer.readpartial(1024) rescue nil)
-				peer.write(RESPONSE)
-			end
-			
+			peer.recv(1024)
+			peer.send(RESPONSE, 0)
 			peer.close
 		end
 	end

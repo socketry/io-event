@@ -15,8 +15,7 @@ class Scheduler
 	def initialize(selector = nil)
 		@fiber = Fiber.current
 		@selector = selector || IO::Event::Selector.new(@fiber)
-		@pending = []
-		@waiting = {}
+		@waiting = 0
 		
 		unless @selector.respond_to?(:io_close)
 			instance_eval{undef io_close}
@@ -35,10 +34,10 @@ class Scheduler
 	
 	def io_wait(io, events, timeout)
 		fiber = Fiber.current
-		@waiting[fiber] = io
+		@waiting += 1
 		@selector.io_wait(fiber, io, events)
 	ensure
-		@waiting.delete(fiber)
+		@waiting -= 1
 	end
 
 	def io_close(io)
@@ -50,7 +49,7 @@ class Scheduler
 	end
 	
 	def close
-		while @selector.ready? || @waiting.any?
+		while @selector.ready? || @waiting > 0
 			begin
 				@selector.select(nil)
 			rescue Errno::EINTR
@@ -73,17 +72,17 @@ end
 class DirectScheduler < Scheduler
 	def io_read(io, buffer, length)
 		fiber = Fiber.current
-		@waiting[fiber] = io
+		@waiting += 1
 		result = @selector.io_read(fiber, io, buffer, length)
 	ensure
-		@waiting.delete(fiber)
+		@waiting -= 1
 	end
 
 	def io_write(io, buffer, length)
 		fiber = Fiber.current
-		@waiting[fiber] = io
+		@waiting += 1
 		@selector.io_write(fiber, io, buffer, length)
 	ensure
-		@waiting.delete(fiber)
+		@waiting -= 1
 	end
 end
