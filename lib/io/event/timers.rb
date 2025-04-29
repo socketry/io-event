@@ -46,6 +46,13 @@ class IO
 				def call(...)
 					@block.call(...)
 				end
+
+				# Reset the timer to a new time.
+				#
+				# @parameter time [Float] The new time at which the block should be called.
+				def reset(time)
+					@time = time
+				end
 				
 				# Cancel the timer.
 				def cancel!
