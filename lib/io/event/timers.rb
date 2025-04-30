@@ -91,7 +91,6 @@ class IO
 				schedule(self.now + offset.to_f, block)
 			end
 			
-			
 			# Compute the time interval until the next timer fires.
 			#
 			# @parameter now [Float] The current time.
