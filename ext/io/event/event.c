@@ -29,4 +29,8 @@ void Init_IO_Event(void)
 	#ifdef IO_EVENT_SELECTOR_KQUEUE
 	Init_IO_Event_Selector_KQueue(IO_Event_Selector);
 	#endif
+	
+	#ifdef IO_EVENT_SELECTOR_IOCP
+	Init_IO_Event_Selector_IOCP(IO_Event_Selector);
+	#endif
 }

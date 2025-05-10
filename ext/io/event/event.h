@@ -18,3 +18,7 @@ void Init_IO_Event(void);
 #ifdef HAVE_SYS_EVENT_H
 #include "selector/kqueue.h"
 #endif
+
+#ifdef HAVE_WINDOWS_H
+#include "selector/iocp.h"
+#endif
