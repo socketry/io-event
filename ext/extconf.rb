@@ -4,6 +4,7 @@
 # Released under the MIT License.
 # Copyright, 2021-2025, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
+# Copyright, 2025, by Stanislav (Stas) Katkov.
 
 return if RUBY_DESCRIPTION =~ /jruby/
 

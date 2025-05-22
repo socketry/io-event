@@ -11,6 +11,7 @@ Copyright, 2024, by Pavel Rosický.
 Copyright, 2024, by Anthony Ross.  
 Copyright, 2024, by Shizuo Fujita.  
 Copyright, 2024, by Jean Boussier.  
+Copyright, 2025, by Stanislav (Stas) Katkov.  
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
