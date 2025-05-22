@@ -14,12 +14,12 @@ extension_name = "IO_Event"
 
 # dir_config(extension_name)
 
-$CFLAGS << " -Wall -Wno-unknown-pragmas -std=c99"
+append_cflags(["-Wall", "-Wno-unknown-pragmas", "-std=c99"])
 
 if ENV.key?("RUBY_DEBUG")
 	$stderr.puts "Enabling debug mode..."
-	
-	$CFLAGS << " -DRUBY_DEBUG -O0"
+
+	append_cflags(["-DRUBY_DEBUG", "-O0"])
 end
 
 $srcs = ["io/event/event.c", "io/event/time.c", "io/event/fiber.c", "io/event/selector/selector.c"]
@@ -32,7 +32,7 @@ have_func("&rb_fiber_transfer")
 if have_library("uring") and have_header("liburing.h")
 	# We might want to consider using this in the future:
 	# have_func("io_uring_submit_and_wait_timeout", "liburing.h")
-	
+
 	$srcs << "io/event/selector/uring.c"
 end
 
@@ -59,9 +59,9 @@ have_header("ruby/io/buffer.h")
 
 if ENV.key?("RUBY_SANITIZE")
 	$stderr.puts "Enabling sanitizers..."
-	
+
 	# Add address and undefined behaviour sanitizers:
-	$CFLAGS << " -fsanitize=address -fsanitize=undefined -fno-omit-frame-pointer"
+	append_cflags(["-fsanitize=address", "-fsanitize=undefined", "-fno-omit-frame-pointer"])
 	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"
 end
 
