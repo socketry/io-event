@@ -424,6 +424,39 @@ Selector = Sus::Shared("a selector") do
 				expect(writable2).to be == true
 			end
 		end
+		
+		it "can handle io being closed by another fiber while waiting" do
+			error = nil
+			
+			wait_fiber = Fiber.new do
+				wait_fiber_started = true
+				events << :wait_readable
+				begin
+					selector.io_wait(Fiber.current, local, IO::READABLE)
+					events << :readable
+				rescue => error
+					events << :error
+				end
+			end
+			
+			close_fiber = Fiber.new do
+				events << :close_io
+				local.close
+			end
+			
+			events << :transfer
+			wait_fiber.transfer
+			close_fiber.transfer
+			
+			expect do
+				events << :select
+				selector.select(0)
+			end.not.to raise_exception
+			
+			expect(events).to be == [
+				:transfer, :wait_readable, :close_io, :select
+			]
+		end
 	end
 	
 	with "#io_read" do
