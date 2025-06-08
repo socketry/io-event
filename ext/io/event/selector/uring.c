@@ -18,7 +18,7 @@
 enum {
 	DEBUG = 0,
 	DEBUG_COMPLETION = 0,
-	DEBUG_IO_READ = 1,
+	DEBUG_CQE = 0,
 };
 
 enum {URING_ENTRIES = 64};
@@ -552,7 +552,10 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	
 	if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
 	
-	if (arguments->waiting->result) {
+	int32_t result = arguments->waiting->result;
+	if (result < 0) {
+		rb_syserr_fail(-result, "io_wait_transfer:io_uring_poll_add");
+	} else if (result > 0) {
 		// We explicitly filter the resulting events based on the requested events.
 		// In some cases, poll will report events we didn't ask for.
 		return RB_INT2NUM(events_from_poll_flags(arguments->waiting->result & arguments->flags));
@@ -1059,7 +1062,7 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 	}
 	
 	io_uring_for_each_cqe(ring, head, cqe) {
-		if (DEBUG) fprintf(stderr, "select_process_completions: cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
+		if (DEBUG_CQE) fprintf(stderr, "select_process_completions: cqe res=%d user_data=%p\n", cqe->res, (void*)cqe->user_data);
 		
 		++completed;
 		

@@ -421,19 +421,25 @@ module IO::Event
 				writable = Array.new
 				priority = Array.new
 				
-				@waiting.each do |io, waiter|
-					waiter.each do |fiber, events|
-						if (events & IO::READABLE) > 0
-							readable << io
+				@waiting.delete_if do |io, waiter|
+					if io.closed?
+						true
+					else
+						waiter.each do |fiber, events|
+							if (events & IO::READABLE) > 0
+								readable << io
+							end
+							
+							if (events & IO::WRITABLE) > 0
+								writable << io
+							end
+							
+							if (events & IO::PRIORITY) > 0
+								priority << io
+							end
 						end
-						
-						if (events & IO::WRITABLE) > 0
-							writable << io
-						end
-						
-						if (events & IO::PRIORITY) > 0
-							priority << io
-						end
+
+						false
 					end
 				end
 				
