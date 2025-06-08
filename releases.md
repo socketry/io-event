@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.10.2
 
   - Improved consistency of handling closed IO when invoking `#select`.
 
