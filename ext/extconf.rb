@@ -23,7 +23,7 @@ if ENV.key?("RUBY_DEBUG")
 	append_cflags(["-DRUBY_DEBUG", "-O0"])
 end
 
-$srcs = ["io/event/event.c", "io/event/time.c", "io/event/fiber.c", "io/event/selector/selector.c"]
+$srcs = ["io/event/event.c", "io/event/time.c", "io/event/fiber.c", "io/event/worker_pool.c", "io/event/selector/selector.c"]
 $VPATH << "$(srcdir)/io/event"
 $VPATH << "$(srcdir)/io/event/selector"
 
@@ -55,6 +55,11 @@ have_func("&rb_process_status_wait")
 have_func("rb_fiber_current")
 have_func("&rb_fiber_raise")
 have_func("epoll_pwait2")
+
+# Feature detection for blocking operation support
+have_func("rb_fiber_scheduler_blocking_operation_extract")
+have_func("rb_fiber_scheduler_blocking_operation_execute")
+have_func("rb_fiber_scheduler_blocking_operation_cancel")
 
 have_header("ruby/io/buffer.h")
 
