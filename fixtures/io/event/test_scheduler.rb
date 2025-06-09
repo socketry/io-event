@@ -12,21 +12,23 @@ module IO::Event
 	# blocking operations to a WorkerPool instance for testing.
 	#
 	# @example Testing usage
-	#   # Create with default selector and worker pool
-	#   scheduler = IO::Event::TestScheduler.new
-	#   
-	#   # Or provide custom selector and/or worker pool
-	#   selector = IO::Event::Selector.new(Fiber.current)
-	#   worker_pool = IO::Event::WorkerPool.new(max_threads: 4)
-	#   scheduler = IO::Event::TestScheduler.new(selector: selector, worker_pool: worker_pool)
-	#   
-	#   Fiber.set_scheduler(scheduler)
-	#   
-	#   # Standard Ruby operations that use rb_nogvl will be handled by the worker pool
-	#   # Examples: sleep, file I/O, network operations, etc.
-	#   Fiber.schedule do
-	#     sleep(0.001)  # This triggers rb_nogvl and uses the worker pool
-	#   end.resume
+	# ```ruby
+	# # Create with default selector and worker pool
+	# scheduler = IO::Event::TestScheduler.new
+	# 
+	# # Or provide custom selector and/or worker pool
+	# selector = IO::Event::Selector.new(Fiber.current)
+	# worker_pool = IO::Event::WorkerPool.new(max_threads: 4)
+	# scheduler = IO::Event::TestScheduler.new(selector: selector, worker_pool: worker_pool)
+	# 
+	# Fiber.set_scheduler(scheduler)
+	# 
+	# # Standard Ruby operations that use rb_nogvl will be handled by the worker pool
+	# # Examples: sleep, file I/O, network operations, etc.
+	# Fiber.schedule do
+	#   sleep(0.001)  # This triggers rb_nogvl and uses the worker pool
+	# end.resume
+	# ```
 	class TestScheduler
 		def initialize(selector: nil, worker_pool: nil, max_threads: 2)
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
@@ -35,9 +37,6 @@ module IO::Event
 
 			# Track the number of fibers that are blocked.
 			@blocked = 0
-			
-			# Track how many times blocking_operation_wait was called.
-			@blocking_operation_count = 0
 		end
 		
 		# @attribute [WorkerPool] The worker pool used for executing blocking operations.
@@ -134,11 +133,17 @@ module IO::Event
 		
 		# Run the scheduler event loop
 		def run
-			while @blocked > 0 || @timers.size > 0
+			while @blocked > 0 or @timers.size > 0
 				interval = @timers.wait_interval
 				@selector.select(interval)
 				@timers.fire
 			end
+		end
+
+		def scheduler_close(error = $!)
+			self.run
+		ensure
+			self.close
 		end
 		
 		private

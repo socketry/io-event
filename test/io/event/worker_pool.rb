@@ -53,24 +53,24 @@ describe IO::Event::WorkerPool do
 			
 			# Fill source buffer with some data
 			source.clear("A".ord)
-			
-			# Track initial count
-			worker_pool = scheduler.worker_pool
-			initial_count = worker_pool.statistics[:completed_count]
+			worker_pool = nil
 			
 			Thread.new do
 				Fiber.set_scheduler(scheduler)
+				worker_pool = scheduler.worker_pool
 				
 				# Perform the large copy operation in a scheduled fiber
-				completed = false
-				fiber = Fiber.schedule do
+				Fiber.schedule do
 					destination.copy(source, 0, buffer_size, 0)
 				end
 			end.join
 			
 			# Confirm that the copy worked:
 			expect(destination.get_string(0, 10)).to be == "AAAAAAAAAA"
-			expect(worker_pool.statistics[:completed_count]).to be > initial_count
+
+			expect(worker_pool.statistics[:call_count]).to be > 0
+			expect(worker_pool.statistics[:completed_count]).to be > 0
+			inform worker_pool.statistics
 		end
 	end
 end

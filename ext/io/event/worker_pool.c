@@ -4,6 +4,8 @@
 #include "worker_pool.h"
 #include "fiber.h"
 
+#include <ruby/thread.h>
+
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -15,7 +17,14 @@ static VALUE IO_Event_WorkerPool;
 
 // Thread pool structure
 struct IO_Event_WorkerPool_Worker {
-	pthread_t thread;
+	VALUE thread;
+	
+	// Flag to indicate this specific worker should exit:
+	bool interrupted;
+
+	// Currently executing operation:
+	rb_fiber_scheduler_blocking_operation_t *current_blocking_operation;
+
 	struct IO_Event_WorkerPool *pool;
 	struct IO_Event_WorkerPool_Worker *next;
 };
@@ -23,7 +32,12 @@ struct IO_Event_WorkerPool_Worker {
 // Work item structure
 struct IO_Event_WorkerPool_Work {
 	rb_fiber_scheduler_blocking_operation_t *blocking_operation;
+	
 	bool completed;
+	
+	VALUE scheduler;
+	VALUE blocker;
+	VALUE fiber;
 	
 	struct IO_Event_WorkerPool_Work *next;
 };
@@ -32,7 +46,6 @@ struct IO_Event_WorkerPool_Work {
 struct IO_Event_WorkerPool {
 	pthread_mutex_t mutex;
 	pthread_cond_t work_available;
-	pthread_cond_t work_completed;
 	
 	struct IO_Event_WorkerPool_Work *work_queue;
 	struct IO_Event_WorkerPool_Work *work_queue_tail;
@@ -62,7 +75,7 @@ static void worker_pool_free(void *ptr) {
 		// Wait for all workers to finish
 		struct IO_Event_WorkerPool_Worker *thread = pool->workers;
 		while (thread) {
-			pthread_join(thread->thread, NULL);
+			rb_funcall(thread->thread, rb_intern("join"), 0);
 			struct IO_Event_WorkerPool_Worker *next = thread->next;
 			free(thread);
 			thread = next;
@@ -78,7 +91,6 @@ static void worker_pool_free(void *ptr) {
 		
 		pthread_mutex_destroy(&pool->mutex);
 		pthread_cond_destroy(&pool->work_available);
-		pthread_cond_destroy(&pool->work_completed);
 		
 		free(pool);
 	}
@@ -96,9 +108,49 @@ static const rb_data_type_t IO_Event_WorkerPool_type = {
 	0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
-// Worker thread function
-static void* worker_thread_func(void *arg) {
-	struct IO_Event_WorkerPool_Worker *worker = (struct IO_Event_WorkerPool_Worker *)arg;
+// Helper function to enqueue work (must be called with mutex held)
+static void enqueue_work(struct IO_Event_WorkerPool *pool, struct IO_Event_WorkerPool_Work *work) {
+	if (pool->work_queue_tail) {
+		pool->work_queue_tail->next = work;
+	} else {
+		pool->work_queue = work;
+	}
+	pool->work_queue_tail = work;
+}
+
+// Helper function to dequeue work (must be called with mutex held)
+static struct IO_Event_WorkerPool_Work *dequeue_work(struct IO_Event_WorkerPool *pool) {
+	struct IO_Event_WorkerPool_Work *work = pool->work_queue;
+	if (work) {
+		pool->work_queue = work->next;
+		if (!pool->work_queue) {
+			pool->work_queue_tail = NULL;
+		}
+		work->next = NULL; // Clear the next pointer for safety
+	}
+	return work;
+}
+
+// Unblock function to interrupt a specific worker.
+static void worker_unblock_func(void *_worker) {
+	struct IO_Event_WorkerPool_Worker *worker = (struct IO_Event_WorkerPool_Worker *)_worker;
+	struct IO_Event_WorkerPool *pool = worker->pool;
+	
+	// Mark this specific worker as interrupted
+	pthread_mutex_lock(&pool->mutex);
+	worker->interrupted = true;
+	pthread_cond_broadcast(&pool->work_available);
+	pthread_mutex_unlock(&pool->mutex);
+	
+	// If there's a currently executing blocking operation, cancel it
+	if (worker->current_blocking_operation) {
+		rb_fiber_scheduler_blocking_operation_cancel(worker->current_blocking_operation);
+	}
+}
+
+// Function to wait for work and execute it without GVL.
+static void *worker_wait_and_execute(void *_worker) {
+	struct IO_Event_WorkerPool_Worker *worker = (struct IO_Event_WorkerPool_Worker *)_worker;
 	struct IO_Event_WorkerPool *pool = worker->pool;
 	
 	while (true) {
@@ -106,41 +158,54 @@ static void* worker_thread_func(void *arg) {
 		
 		pthread_mutex_lock(&pool->mutex);
 		
-		// Wait for work or shutdown
-		while (!pool->work_queue && !pool->shutdown) {
+		// Wait for work, shutdown, or interruption
+		while (!pool->work_queue && !pool->shutdown && !worker->interrupted) {
 			pthread_cond_wait(&pool->work_available, &pool->mutex);
 		}
 		
-		if (pool->shutdown) {
+		if (pool->shutdown || worker->interrupted) {
 			pthread_mutex_unlock(&pool->mutex);
 			break;
 		}
 		
-		// Dequeue work item
-		if (pool->work_queue) {
-			work = pool->work_queue;
-			pool->work_queue = work->next;
-			if (!pool->work_queue) {
-				pool->work_queue_tail = NULL;
-			}
-		}
+		work = dequeue_work(pool);
 		
 		pthread_mutex_unlock(&pool->mutex);
 		
-		// Execute work
+		// Execute work WITHOUT GVL (this is the whole point!)
 		if (work) {
+			worker->current_blocking_operation = work->blocking_operation;
 			rb_fiber_scheduler_blocking_operation_execute(work->blocking_operation);
-			
-			// Mark work as completed (mutex required for worker thread)
-			pthread_mutex_lock(&pool->mutex);
-			work->completed = true;
-			pool->completed_count++;
-			pthread_cond_signal(&pool->work_completed);
-			pthread_mutex_unlock(&pool->mutex);
+			worker->current_blocking_operation = NULL;
 		}
+
+		return work;
 	}
 	
-	return NULL;
+	return NULL; // Shutdown signal
+}
+
+static VALUE worker_thread_func(void *_worker) {
+	struct IO_Event_WorkerPool_Worker *worker = (struct IO_Event_WorkerPool_Worker *)_worker;
+	
+	while (true) {
+		// Wait for work and execute it without holding GVL
+		struct IO_Event_WorkerPool_Work *work = (struct IO_Event_WorkerPool_Work *)rb_thread_call_without_gvl(worker_wait_and_execute, worker, worker_unblock_func, worker);
+		
+		if (!work) {
+			// Shutdown signal received
+			break;
+		}
+
+		// Protected by GVL:
+		work->completed = true;
+		worker->pool->completed_count++;
+		
+		// Work was executed without GVL, now unblock the waiting fiber (we have GVL here)
+		rb_fiber_scheduler_unblock(work->scheduler, work->blocker, work->fiber);
+	}
+	
+	return Qnil;
 }
 
 // Create a new worker thread
@@ -155,9 +220,12 @@ static int create_worker_thread(struct IO_Event_WorkerPool *pool) {
 	}
 	
 	worker->pool = pool;
+	worker->interrupted = false;
+	worker->current_blocking_operation = NULL;
 	worker->next = pool->workers;
 	
-	if (pthread_create(&worker->thread, NULL, worker_thread_func, worker) != 0) {
+	worker->thread = rb_thread_create(worker_thread_func, worker);
+	if (NIL_P(worker->thread)) {
 		free(worker);
 		return -1;
 	}
@@ -203,7 +271,6 @@ static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
 	
 	pthread_mutex_init(&pool->mutex, NULL);
 	pthread_cond_init(&pool->work_available, NULL);
-	pthread_cond_init(&pool->work_completed, NULL);
 	
 	pool->work_queue = NULL;
 	pool->work_queue_tail = NULL;
@@ -228,44 +295,6 @@ static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
 	return self;
 }
 
-// Structure to pass both work and pool to rb_ensure functions
-struct worker_pool_call_arguments {
-	struct IO_Event_WorkerPool_Work *work;
-	struct IO_Event_WorkerPool *pool;
-};
-
-// Cleanup function for rb_ensure
-static VALUE worker_pool_call_cleanup(VALUE _arguments) {
-	struct worker_pool_call_arguments *arguments = (struct worker_pool_call_arguments *)_arguments;
-	if (arguments && arguments->work) {
-		// Cancel the blocking operation if possible
-		if (arguments->work->blocking_operation) {
-			rb_fiber_scheduler_blocking_operation_cancel(arguments->work->blocking_operation);
-			
-			// Increment cancelled count (protected by GVL)
-			arguments->pool->cancelled_count++;
-		}
-		free(arguments->work);
-	}
-	return Qnil;
-}
-
-// Main work execution function
-static VALUE worker_pool_call_body(VALUE _arguments) {
-	struct worker_pool_call_arguments *arguments = (struct worker_pool_call_arguments *)_arguments;
-	struct IO_Event_WorkerPool_Work *work = arguments->work;
-	struct IO_Event_WorkerPool *pool = arguments->pool;
-	
-	// Wait for completion
-	pthread_mutex_lock(&pool->mutex);
-	while (!work->completed) {
-		pthread_cond_wait(&pool->work_completed, &pool->mutex);
-	}
-	pthread_mutex_unlock(&pool->mutex);
-	
-	return Qnil;
-}
-
 // Ruby method to submit work and wait for completion
 static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	struct IO_Event_WorkerPool *pool;
@@ -277,6 +306,13 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	
 	// Increment call count (protected by GVL)
 	pool->call_count++;
+	
+	// Get current fiber and scheduler
+	VALUE fiber = rb_fiber_current();
+	VALUE scheduler = rb_fiber_scheduler_current();
+	if (NIL_P(scheduler)) {
+		rb_raise(rb_eRuntimeError, "WorkerPool requires a fiber scheduler!");
+	}
 	
 	// Extract blocking operation handle
 	rb_fiber_scheduler_blocking_operation_t *blocking_operation = rb_fiber_scheduler_blocking_operation_extract(_blocking_operation);
@@ -293,26 +329,27 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	
 	work->blocking_operation = blocking_operation;
 	work->completed = false;
+	work->scheduler = scheduler;
+	work->blocker = self;
+	work->fiber = fiber;
 	work->next = NULL;
 	
-	// Enqueue work
+	// Enqueue work:
 	pthread_mutex_lock(&pool->mutex);
-	
-	if (pool->work_queue_tail) {
-		pool->work_queue_tail->next = work;
-	} else {
-		pool->work_queue = work;
-	}
-	pool->work_queue_tail = work;
-	
+	enqueue_work(pool, work);
 	pthread_cond_signal(&pool->work_available);
 	pthread_mutex_unlock(&pool->mutex);
 	
-	// Wait for completion with proper cleanup using rb_ensure
-	struct worker_pool_call_arguments arguments = {work, pool};
-	rb_ensure(worker_pool_call_body, (VALUE)&arguments, worker_pool_call_cleanup, (VALUE)&arguments);
+	// Block the current fiber until work is completed
+	while (true) {
+		rb_fiber_scheduler_block(scheduler, work->blocker, Qnil);
+		
+		if (work->completed) {
+			break;
+		}
+	}
 	
-	return Qnil;
+	return Qtrue;
 }
 
 static VALUE worker_pool_allocate(VALUE klass) {
@@ -363,7 +400,9 @@ static VALUE worker_pool_statistics(VALUE self) {
 void Init_IO_Event_WorkerPool(VALUE IO_Event) {
 	IO_Event_WorkerPool = rb_define_class_under(IO_Event, "WorkerPool", rb_cObject);
 	rb_define_alloc_func(IO_Event_WorkerPool, worker_pool_allocate);
+
 	rb_define_method(IO_Event_WorkerPool, "initialize", worker_pool_initialize, -1);
 	rb_define_method(IO_Event_WorkerPool, "call", worker_pool_call, 1);
+	
 	rb_define_method(IO_Event_WorkerPool, "statistics", worker_pool_statistics, 0);
 }
