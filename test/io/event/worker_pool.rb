@@ -26,10 +26,12 @@ describe IO::Event::WorkerPool do
 			statistics = pool.statistics
 			
 			expect(statistics).to be_a(Hash)
-			expect(statistics[:thread_count]).to be_a(Integer)
-			expect(statistics[:max_threads]).to be == 2
-			expect(statistics[:queue_size]).to be == 0
-			expect(statistics[:shutdown]).to be == false
+			expect(statistics).to have_keys(
+				current_worker_count: be_a(Integer),
+				maximum_worker_count: be == 2,
+				current_queue_size: be == 0,
+				shutdown: be == false
+			)
 		end
 	end
 	
@@ -53,7 +55,8 @@ describe IO::Event::WorkerPool do
 			source.clear("A".ord)
 			
 			# Track initial count
-			initial_count = scheduler.blocking_operation_count
+			worker_pool = scheduler.worker_pool
+			initial_count = worker_pool.statistics[:completed_count]
 			
 			Thread.new do
 				Fiber.set_scheduler(scheduler)
@@ -67,7 +70,7 @@ describe IO::Event::WorkerPool do
 			
 			# Confirm that the copy worked:
 			expect(destination.get_string(0, 10)).to be == "AAAAAAAAAA"
-			expect(scheduler.blocking_operation_count).to be > initial_count
+			expect(worker_pool.statistics[:completed_count]).to be > initial_count
 		end
 	end
 end

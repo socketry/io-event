@@ -45,24 +45,11 @@ module IO::Event
 		
 		# @attribute [IO::Event::Selector] The I/O event selector used for managing fiber scheduling.
 		attr_reader :selector
-		
-		# @attribute [Integer] The number of times blocking_operation_wait was called.
-		attr_reader :blocking_operation_count
 
 		# Required fiber scheduler hook - delegates to WorkerPool
 		def blocking_operation_wait(operation)
-			@blocking_operation_count += 1
-			
-			# Submit the operation to the worker pool
-			promise = @worker_pool.call(operation)
-			
-			# Wait for completion
-			result = promise&.wait
-			
-			promise = nil
-			return result
-		ensure
-			promise&.cancel
+			# Submit the operation to the worker pool and wait for completion
+			@worker_pool.call(operation)
 		end
 		
 		# Required fiber scheduler hooks
