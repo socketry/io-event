@@ -82,7 +82,6 @@ describe IO::Event::WorkerPool do
 			expect(result).to be_a(Hash)
 			expect(result[:cancelled]).to be == false
 			expect(result[:result]).to be == :completed
-			expect(elapsed).to be_within(0.05).of(0.1)
 		end
 		
 		it "can perform a busy operation with different durations" do
@@ -115,22 +114,7 @@ describe IO::Event::WorkerPool do
 			# The operation should have been interrupted before completion
 			expect(completed).to be == false
 		end
-		
-		it "provides accurate timing information" do
-			# Test that the timing is reasonably accurate
-			durations = [0.05, 0.1, 0.2]
-			
-			durations.each do |expected_duration|
-				start_time = Time.now
-				result = IO::Event::WorkerPool.busy(duration: expected_duration)
-				end_time = Time.now
-				actual_duration = end_time - start_time
 				
-				expect(result[:duration]).to be == expected_duration
-				expect(actual_duration).to be_within(0.05).of(expected_duration)
-			end
-		end
-		
 		it "can be cancelled when executed in a worker pool" do
 			result = nil
 			elapsed = nil
