@@ -20,16 +20,16 @@ describe IO::Event::WorkerPool do
 			expect(worker_pool).to be_a(IO::Event::WorkerPool)
 		end
 		
-		it "provides stats" do
+		it "provides statistics" do
 			# Force initialization by calling a method on the pool
 			pool = worker_pool # This should trigger initialization
-			stats = pool.stats
+			statistics = pool.statistics
 			
-			expect(stats).to be_a(Hash)
-			expect(stats[:thread_count]).to be_a(Integer)
-			expect(stats[:max_threads]).to be == 2
-			expect(stats[:queue_size]).to be == 0
-			expect(stats[:shutdown]).to be == false
+			expect(statistics).to be_a(Hash)
+			expect(statistics[:thread_count]).to be_a(Integer)
+			expect(statistics[:max_threads]).to be == 2
+			expect(statistics[:queue_size]).to be == 0
+			expect(statistics[:shutdown]).to be == false
 		end
 	end
 	

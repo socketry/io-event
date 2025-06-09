@@ -9,5 +9,4 @@
 #include <ruby/fiber/scheduler.h>
 #endif
 
-// Worker pool functionality
 void Init_IO_Event_WorkerPool(VALUE IO_Event); 
