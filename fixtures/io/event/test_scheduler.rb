@@ -128,7 +128,7 @@ module IO::Event
 		end
 		
 		def fiber(&block)
-			Fiber.new(&block).tap(&:resume)
+			Fiber.new(&block).tap(&:transfer)
 		end
 		
 		# Run the scheduler event loop

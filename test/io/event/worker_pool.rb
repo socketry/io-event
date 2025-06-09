@@ -10,11 +10,7 @@ return unless defined?(IO::Event::WorkerPool)
 
 describe IO::Event::WorkerPool do		
 	with "an instance" do
-		let(:worker_pool) { subject.new(max_threads: 2) }
-		
-		after do
-			worker_pool = nil # This should trigger GC cleanup
-		end
+		let(:worker_pool) {subject.new(max_threads: 2)}
 		
 		it "can create a worker pool" do
 			expect(worker_pool).to be_a(IO::Event::WorkerPool)
@@ -71,6 +67,97 @@ describe IO::Event::WorkerPool do
 			expect(worker_pool.statistics[:call_count]).to be > 0
 			expect(worker_pool.statistics[:completed_count]).to be > 0
 			inform worker_pool.statistics
+		end
+	end
+	
+	with "cancellable busy operation" do
+		let(:scheduler) {IO::Event::TestScheduler.new(max_threads: 1)}
+
+		it "can perform a busy operation that completes normally" do
+			start_time = Time.now
+			result = IO::Event::WorkerPool.busy(duration: 0.1)
+			end_time = Time.now
+			elapsed = end_time - start_time
+			
+			expect(result).to be_a(Hash)
+			expect(result[:cancelled]).to be == false
+			expect(result[:result]).to be == :completed
+			expect(elapsed).to be_within(0.05).of(0.1)
+		end
+		
+		it "can perform a busy operation with different durations" do
+			result = IO::Event::WorkerPool.busy(duration: 0.05)
+			
+			expect(result).to be_a(Hash)
+			expect(result[:cancelled]).to be == false
+			expect(result[:result]).to be == :completed
+			expect(result[:duration]).to be == 0.05
+		end
+		
+		it "can cancel a busy operation using unblock function" do
+			# This tests the cancellation mechanism through rb_thread_call_without_gvl
+			completed = false
+			thread = Thread.new do
+				start_time = Time.now
+				result = IO::Event::WorkerPool.busy(duration: 1.0)  # Long operation
+				end_time = Time.now
+				elapsed = end_time - start_time
+				completed = true
+				
+				{result: result, elapsed: elapsed}
+			end
+			
+			# Let it start, then kill the thread (which should trigger the unblock function)
+			sleep(0.1)
+			thread.kill
+			thread.join(0.5)  # Wait up to 0.5s for thread to finish
+			
+			# The operation should have been interrupted before completion
+			expect(completed).to be == false
+		end
+		
+		it "provides accurate timing information" do
+			# Test that the timing is reasonably accurate
+			durations = [0.05, 0.1, 0.2]
+			
+			durations.each do |expected_duration|
+				start_time = Time.now
+				result = IO::Event::WorkerPool.busy(duration: expected_duration)
+				end_time = Time.now
+				actual_duration = end_time - start_time
+				
+				expect(result[:duration]).to be == expected_duration
+				expect(actual_duration).to be_within(0.05).of(expected_duration)
+			end
+		end
+		
+		it "can be cancelled when executed in a worker pool" do
+			result = nil
+			elapsed = nil
+			error = nil
+			
+			Thread.new do
+				Fiber.set_scheduler(scheduler)
+				
+				busy_fiber = Fiber.schedule do
+					start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+					result = IO::Event::WorkerPool.busy(duration: 2.0)
+				rescue Interrupt => error
+					# Ignore.
+				ensure
+					end_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+					elapsed = end_time - start_time
+				end
+				
+				Fiber.schedule do
+					sleep(0.5)
+					Fiber.scheduler.fiber_interrupt(busy_fiber, StandardError)
+				end
+			end.join
+			
+			expect(result[:cancelled]).to be == true
+			expect(elapsed).to be < 1.0
+			expect(error).to be_nil
 		end
 	end
 end

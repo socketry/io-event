@@ -2,9 +2,11 @@
 // Copyright, 2025, by Samuel Williams.
 
 #include "worker_pool.h"
+#include "worker_pool_test.h"
 #include "fiber.h"
 
 #include <ruby/thread.h>
+#include <ruby/fiber/scheduler.h>
 
 #include <pthread.h>
 #include <stdbool.h>
@@ -66,33 +68,17 @@ static void worker_pool_free(void *ptr) {
 	struct IO_Event_WorkerPool *pool = (struct IO_Event_WorkerPool *)ptr;
 	
 	if (pool) {
-		// Signal shutdown
-		pthread_mutex_lock(&pool->mutex);
-		pool->shutdown = true;
-		pthread_cond_broadcast(&pool->work_available);
-		pthread_mutex_unlock(&pool->mutex);
-		
-		// Wait for all workers to finish
-		struct IO_Event_WorkerPool_Worker *thread = pool->workers;
-		while (thread) {
-			rb_funcall(thread->thread, rb_intern("join"), 0);
-			struct IO_Event_WorkerPool_Worker *next = thread->next;
-			free(thread);
-			thread = next;
+		// Signal shutdown to all workers
+		if (!pool->shutdown) {
+			pthread_mutex_lock(&pool->mutex);
+			pool->shutdown = true;
+			pthread_cond_broadcast(&pool->work_available);
+			pthread_mutex_unlock(&pool->mutex);
 		}
 		
-		// Clean up work queue
-		struct IO_Event_WorkerPool_Work *work = pool->work_queue;
-		while (work) {
-			struct IO_Event_WorkerPool_Work *next = work->next;
-			free(work);
-			work = next;
-		}
-		
-		pthread_mutex_destroy(&pool->mutex);
-		pthread_cond_destroy(&pool->work_available);
-		
-		free(pool);
+		// Note: We don't free worker structures or wait for threads during GC
+		// as this can cause deadlocks. The Ruby GC will handle the thread objects.
+		// Workers will see the shutdown flag and exit cleanly.
 	}
 }
 
@@ -405,4 +391,7 @@ void Init_IO_Event_WorkerPool(VALUE IO_Event) {
 	rb_define_method(IO_Event_WorkerPool, "call", worker_pool_call, 1);
 	
 	rb_define_method(IO_Event_WorkerPool, "statistics", worker_pool_statistics, 0);
+	
+	// Initialize test functions
+	Init_IO_Event_WorkerPool_Test(IO_Event_WorkerPool);
 }
