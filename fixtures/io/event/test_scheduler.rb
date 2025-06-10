@@ -30,9 +30,9 @@ module IO::Event
 	# end.resume
 	# ```
 	class TestScheduler
-		def initialize(selector: nil, worker_pool: nil, max_threads: 2)
+		def initialize(selector: nil, worker_pool: nil, maximum_worker_count: nil)
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
-			@worker_pool = worker_pool || WorkerPool.new(maximum_worker_count: max_threads)
+			@worker_pool = worker_pool || WorkerPool.new(maximum_worker_count: maximum_worker_count)
 			@timers = ::IO::Event::Timers.new
 
 			# Track the number of fibers that are blocked.

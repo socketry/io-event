@@ -246,7 +246,7 @@ static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
 	if (!NIL_P(rb_maximum_worker_count)) {
 		maximum_worker_count = NUM2SIZET(rb_maximum_worker_count);
 		if (maximum_worker_count == 0) {
-			rb_raise(rb_eArgError, "max_threads must be greater than 0!");
+			rb_raise(rb_eArgError, "maximum_worker_count must be greater than 0!");
 		}
 	}
 	
