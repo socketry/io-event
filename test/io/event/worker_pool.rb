@@ -10,7 +10,7 @@ return unless defined?(IO::Event::WorkerPool)
 
 describe IO::Event::WorkerPool do		
 	with "an instance" do
-		let(:worker_pool) {subject.new(max_threads: 2)}
+		let(:worker_pool) {subject.new}
 		
 		it "can create a worker pool" do
 			expect(worker_pool).to be_a(IO::Event::WorkerPool)
@@ -24,7 +24,7 @@ describe IO::Event::WorkerPool do
 			expect(statistics).to be_a(Hash)
 			expect(statistics).to have_keys(
 				current_worker_count: be_a(Integer),
-				maximum_worker_count: be == 2,
+				maximum_worker_count: be == 1,
 				current_queue_size: be == 0,
 				shutdown: be == false
 			)
@@ -32,7 +32,7 @@ describe IO::Event::WorkerPool do
 	end
 	
 	with "TestScheduler integration" do
-		let(:scheduler) {IO::Event::TestScheduler.new(max_threads: 1)}
+		let(:scheduler) {IO::Event::TestScheduler.new}
 		
 		it "can create a test scheduler" do
 			expect(scheduler).to be_a(IO::Event::TestScheduler)
@@ -71,7 +71,7 @@ describe IO::Event::WorkerPool do
 	end
 	
 	with "cancellable busy operation" do
-		let(:scheduler) {IO::Event::TestScheduler.new(max_threads: 1)}
+		let(:scheduler) {IO::Event::TestScheduler.new}
 
 		it "can perform a busy operation that completes normally" do
 			start_time = Time.now

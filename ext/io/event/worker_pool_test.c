@@ -14,6 +14,8 @@
 #include <errno.h>
 #include <time.h>
 
+static ID id_duration;
+
 struct BusyOperationData {
   int read_fd;
   int write_fd;
@@ -161,22 +163,23 @@ static VALUE busy_operation_rescue(VALUE data_value, VALUE exception) {
 // Ruby method: IO::Event::WorkerPool.busy(duration: 1.0)
 // This creates a cancellable blocking operation for testing
 static VALUE worker_pool_test_busy(int argc, VALUE *argv, VALUE self) {
-	VALUE options = Qnil;
 	double duration = 1.0;  // Default 1 second
 	
-	// Parse arguments
-	if (argc == 1) {
-		options = argv[0];
-		if (RB_TYPE_P(options, T_HASH)) {
-			VALUE duration_value = rb_hash_aref(options, ID2SYM(rb_intern("duration")));
-			if (!NIL_P(duration_value)) {
-				duration = NUM2DBL(duration_value);
-			}
-		} else {
-			duration = NUM2DBL(options);
-		}
-	} else if (argc > 1) {
-		rb_raise(rb_eArgError, "wrong number of arguments (given %d, expected 0..1)", argc);
+	// Extract keyword arguments
+	VALUE kwargs = Qnil;
+	VALUE rb_duration = Qnil;
+	
+	rb_scan_args(argc, argv, "0:", &kwargs);
+	
+	if (!NIL_P(kwargs)) {
+		VALUE kwvals[1];
+		ID kwkeys[1] = {id_duration};
+		rb_get_kwargs(kwargs, kwkeys, 0, 1, kwvals);
+		rb_duration = kwvals[0];
+	}
+	
+	if (!NIL_P(rb_duration)) {
+		duration = NUM2DBL(rb_duration);
 	}
 	
 	// Create pipe for cancellation
@@ -234,6 +237,9 @@ static VALUE worker_pool_test_busy(int argc, VALUE *argv, VALUE self) {
 
 // Initialize the test functions
 void Init_IO_Event_WorkerPool_Test(VALUE IO_Event_WorkerPool) {
+	// Initialize symbols
+	id_duration = rb_intern("duration");
+	
 	// Add test methods to IO::Event::WorkerPool class
 	rb_define_singleton_method(IO_Event_WorkerPool, "busy", worker_pool_test_busy, -1);
 } 

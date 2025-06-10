@@ -18,7 +18,7 @@ module IO::Event
 	# 
 	# # Or provide custom selector and/or worker pool
 	# selector = IO::Event::Selector.new(Fiber.current)
-	# worker_pool = IO::Event::WorkerPool.new(max_threads: 4)
+	# worker_pool = IO::Event::WorkerPool.new(maximum_worker_count: 4)
 	# scheduler = IO::Event::TestScheduler.new(selector: selector, worker_pool: worker_pool)
 	# 
 	# Fiber.set_scheduler(scheduler)
@@ -32,7 +32,7 @@ module IO::Event
 	class TestScheduler
 		def initialize(selector: nil, worker_pool: nil, max_threads: 2)
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
-			@worker_pool = worker_pool || WorkerPool.new(max_threads: max_threads)
+			@worker_pool = worker_pool || WorkerPool.new(maximum_worker_count: max_threads)
 			@timers = ::IO::Event::Timers.new
 
 			# Track the number of fibers that are blocked.

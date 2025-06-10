@@ -18,8 +18,8 @@ enum {
 	DEBUG = 0,
 };
 
-// Forward declarations
 static VALUE IO_Event_WorkerPool;
+static ID id_maximum_worker_count;
 
 // Thread pool structure
 struct IO_Event_WorkerPool_Worker {
@@ -228,20 +228,19 @@ static int create_worker_thread(struct IO_Event_WorkerPool *pool) {
 
 // Ruby constructor for WorkerPool
 static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
-	VALUE rb_maximum_worker_count = Qnil;
-	size_t maximum_worker_count = 4; // Default
+	size_t maximum_worker_count = 1; // Default
 	
-	// Handle keyword arguments
-	if (argc == 1 && RB_TYPE_P(argv[0], T_HASH)) {
-		VALUE hash = argv[0];
-		VALUE max_threads_key = ID2SYM(rb_intern("max_threads"));
-		if (rb_hash_lookup(hash, max_threads_key) != Qnil) {
-			rb_maximum_worker_count = rb_hash_aref(hash, max_threads_key);
-		}
-	} else if (argc == 1) {
-		rb_maximum_worker_count = argv[0];
-	} else if (argc > 1) {
-		rb_raise(rb_eArgError, "wrong number of arguments (given %d, expected 0..1)!", argc);
+	// Extract keyword arguments
+	VALUE kwargs = Qnil;
+	VALUE rb_maximum_worker_count = Qnil;
+	
+	rb_scan_args(argc, argv, "0:", &kwargs);
+	
+	if (!NIL_P(kwargs)) {
+		VALUE kwvals[1];
+		ID kwkeys[1] = {id_maximum_worker_count};
+		rb_get_kwargs(kwargs, kwkeys, 0, 1, kwvals);
+		rb_maximum_worker_count = kwvals[0];
 	}
 	
 	if (!NIL_P(rb_maximum_worker_count)) {
@@ -403,6 +402,9 @@ static VALUE worker_pool_statistics(VALUE self) {
 }
 
 void Init_IO_Event_WorkerPool(VALUE IO_Event) {
+	// Initialize symbols
+	id_maximum_worker_count = rb_intern("maximum_worker_count");
+	
 	IO_Event_WorkerPool = rb_define_class_under(IO_Event, "WorkerPool", rb_cObject);
 	rb_define_alloc_func(IO_Event_WorkerPool, worker_pool_allocate);
 
