@@ -62,7 +62,7 @@ static void busy_data_release(struct BusyOperationData* data) {
 // The actual blocking operation that can be cancelled
 static void* busy_blocking_operation(void *data) {
 	struct BusyOperationData *busy_data = (struct BusyOperationData*)data;
-	
+
 	// Retain reference while we're using it
 	busy_data_retain(busy_data);
 	
@@ -82,7 +82,7 @@ static void* busy_blocking_operation(void *data) {
 	// 2. The timeout expires
 	// 3. An error occurs
 	int result = select(busy_data->read_fd + 1, &read_fds, NULL, NULL, &timeout);
-	
+
 	void* return_value;
 	if (result > 0 && FD_ISSET(busy_data->read_fd, &read_fds)) {
 		// Pipe became readable - we were cancelled
@@ -110,12 +110,12 @@ static void busy_unblock_function(void *data) {
 	// Retain reference while we're using it
 	busy_data_retain(busy_data);
 	
+	busy_data->cancelled = 1;
+
 	// Write a byte to the pipe to wake up the select()
 	char wake_byte = 1;
 	write(busy_data->write_fd, &wake_byte, 1);
-	
-	busy_data->cancelled = 1;
-	
+
 	// Release reference
 	busy_data_release(busy_data);
 }

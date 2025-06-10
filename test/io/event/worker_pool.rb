@@ -39,7 +39,7 @@ describe IO::Event::WorkerPool do
 			expect(scheduler.worker_pool).to be_a(IO::Event::WorkerPool)
 		end
 		
-		it "intercepts IO::Buffer.copy operations larger than 1MiB" do
+		it "interrupts IO::Buffer.copy operations larger than 1MiB" do
 			skip "IO::Buffer not available" unless defined?(IO::Buffer)
 			
 			# Create buffers larger than 1MiB to trigger GVL release
@@ -116,6 +116,7 @@ describe IO::Event::WorkerPool do
 		end
 				
 		it "can be cancelled when executed in a worker pool" do
+			# puts Process.pid; $stdin.gets
 			result = nil
 			elapsed = nil
 			error = nil

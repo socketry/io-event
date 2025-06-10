@@ -14,6 +14,10 @@
 #include <errno.h>
 #include <string.h>
 
+enum {
+	DEBUG = 0,
+};
+
 // Forward declarations
 static VALUE IO_Event_WorkerPool;
 
@@ -281,6 +285,15 @@ static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
 	return self;
 }
 
+static VALUE worker_pool_work_begin(VALUE _work) {
+	struct IO_Event_WorkerPool_Work *work = (void*)_work;
+
+	if (DEBUG) fprintf(stderr, "worker_pool_work_begin:rb_fiber_scheduler_block work=%p\n", work);
+	rb_fiber_scheduler_block(work->scheduler, work->blocker, Qnil);
+
+	return Qnil;
+}
+
 // Ruby method to submit work and wait for completion
 static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	struct IO_Event_WorkerPool *pool;
@@ -308,34 +321,40 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	}
 	
 	// Create work item
-	struct IO_Event_WorkerPool_Work *work = malloc(sizeof(struct IO_Event_WorkerPool_Work));
-	if (!work) {
-		rb_raise(rb_eNoMemError, "Failed to allocate work item!");
-	}
-	
-	work->blocking_operation = blocking_operation;
-	work->completed = false;
-	work->scheduler = scheduler;
-	work->blocker = self;
-	work->fiber = fiber;
-	work->next = NULL;
-	
+	struct IO_Event_WorkerPool_Work work = {
+		.blocking_operation = blocking_operation,
+		.completed = false,
+		.scheduler = scheduler,
+		.blocker = self,
+		.fiber = fiber,
+		.next = NULL
+	};
+		
 	// Enqueue work:
 	pthread_mutex_lock(&pool->mutex);
-	enqueue_work(pool, work);
+	enqueue_work(pool, &work);
 	pthread_cond_signal(&pool->work_available);
 	pthread_mutex_unlock(&pool->mutex);
 	
-	// Block the current fiber until work is completed
+	// Block the current fiber until work is completed:
+	int state;
 	while (true) {
-		rb_fiber_scheduler_block(scheduler, work->blocker, Qnil);
-		
-		if (work->completed) {
+		rb_protect(worker_pool_work_begin, (VALUE)&work, &state);
+
+		if (work.completed) {
 			break;
+		} else {
+			if (DEBUG) fprintf(stderr, "worker_pool_call:rb_fiber_scheduler_blocking_operation_cancel\n");
+			rb_fiber_scheduler_blocking_operation_cancel(blocking_operation);
+			// The work was not completed, we need to wait for it to be completed.
 		}
 	}
 	
-	return Qtrue;
+	if (state) {
+		rb_jump_tag(state);
+	} else {
+		return Qtrue;
+	}
 }
 
 static VALUE worker_pool_allocate(VALUE klass) {
