@@ -116,7 +116,6 @@ describe IO::Event::WorkerPool do
 		end
 				
 		it "can be cancelled when executed in a worker pool" do
-			# puts Process.pid; $stdin.gets
 			result = nil
 			elapsed = nil
 			error = nil
