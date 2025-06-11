@@ -54,7 +54,7 @@ module IO::Event
 		# Required fiber scheduler hooks
 		def close
 			@selector&.close
-			# WorkerPool doesn't have a close method, just clear the reference
+			@worker_pool&.close
 			@worker_pool = nil
 		end
 		

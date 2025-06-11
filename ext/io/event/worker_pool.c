@@ -366,6 +366,51 @@ static VALUE worker_pool_allocate(VALUE klass) {
 	return self;
 }
 
+// Ruby method to close the worker pool
+static VALUE worker_pool_close(VALUE self) {
+	struct IO_Event_WorkerPool *pool;
+	TypedData_Get_Struct(self, struct IO_Event_WorkerPool, &IO_Event_WorkerPool_type, pool);
+	
+	if (!pool) {
+		rb_raise(rb_eRuntimeError, "WorkerPool not initialized!");
+	}
+	
+	if (pool->shutdown) {
+		return Qnil; // Already closed
+	}
+	
+	// Signal shutdown to all workers
+	pthread_mutex_lock(&pool->mutex);
+	pool->shutdown = true;
+	pthread_cond_broadcast(&pool->work_available);
+	pthread_mutex_unlock(&pool->mutex);
+	
+	// Wait for all worker threads to finish
+	struct IO_Event_WorkerPool_Worker *worker = pool->workers;
+	while (worker) {
+		if (!NIL_P(worker->thread)) {
+			rb_funcall(worker->thread, rb_intern("join"), 0);
+		}
+		worker = worker->next;
+	}
+	
+	// Clean up worker structures
+	worker = pool->workers;
+	while (worker) {
+		struct IO_Event_WorkerPool_Worker *next = worker->next;
+		free(worker);
+		worker = next;
+	}
+	pool->workers = NULL;
+	pool->current_worker_count = 0;
+	
+	// Clean up mutex and condition variable
+	pthread_mutex_destroy(&pool->mutex);
+	pthread_cond_destroy(&pool->work_available);
+	
+	return Qnil;
+}
+
 // Test helper: get pool statistics for debugging/testing
 static VALUE worker_pool_statistics(VALUE self) {
 	struct IO_Event_WorkerPool *pool;
@@ -410,6 +455,7 @@ void Init_IO_Event_WorkerPool(VALUE IO_Event) {
 
 	rb_define_method(IO_Event_WorkerPool, "initialize", worker_pool_initialize, -1);
 	rb_define_method(IO_Event_WorkerPool, "call", worker_pool_call, 1);
+	rb_define_method(IO_Event_WorkerPool, "close", worker_pool_close, 0);
 	
 	rb_define_method(IO_Event_WorkerPool, "statistics", worker_pool_statistics, 0);
 	

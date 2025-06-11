@@ -12,6 +12,10 @@ describe IO::Event::WorkerPool do
 	with "an instance" do
 		let(:worker_pool) {subject.new}
 		
+		after do
+			worker_pool&.close
+		end
+		
 		it "can create a worker pool" do
 			expect(worker_pool).to be_a(IO::Event::WorkerPool)
 		end
@@ -28,6 +32,32 @@ describe IO::Event::WorkerPool do
 				current_queue_size: be == 0,
 				shutdown: be == false
 			)
+		end
+		
+		it "can close the worker pool" do
+			pool = worker_pool
+			
+			# Check that it's not shut down initially
+			expect(pool.statistics[:shutdown]).to be == false
+			
+			# Close the pool
+			result = pool.close
+			expect(result).to be_nil
+			
+			# Check that it's now shut down
+			expect(pool.statistics[:shutdown]).to be == true
+			expect(pool.statistics[:current_worker_count]).to be == 0
+		end
+		
+		it "can close the worker pool multiple times safely" do
+			pool = worker_pool
+			
+			# Close the pool twice
+			pool.close
+			pool.close
+			
+			# Should still be shut down
+			expect(pool.statistics[:shutdown]).to be == true
 		end
 	end
 	
