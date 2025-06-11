@@ -35,7 +35,7 @@ VALUE IO_Event_Fiber_raise(VALUE fiber, int argc, VALUE *argv) {
 #ifndef HAVE_RB_FIBER_CURRENT
 static ID id_current;
 
-static VALUE IO_Event_Fiber_current(void) {
+VALUE IO_Event_Fiber_current(void) {
 	return rb_funcall(rb_cFiber, id_current, 0);
 }
 #endif

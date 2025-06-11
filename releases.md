@@ -1,5 +1,31 @@
 # Releases
 
+## Unreleased
+
+### Introduce `IO::Event::WorkerPool` for off-loading blocking operations.
+
+The {ruby IO::Event::WorkerPool} provides a mechanism for executing blocking operations on separate OS threads while properly integrating with Ruby's fiber scheduler and GVL (Global VM Lock) management. This enables true parallelism for CPU-intensive or blocking operations that would otherwise block the event loop.
+
+```ruby
+# Fiber scheduler integration via blocking_operation_wait hook
+class MyScheduler
+	def initialize
+		@worker_pool = IO::Event::WorkerPool.new
+	end
+
+  def blocking_operation_wait(operation)
+    @worker_pool.call(operation)
+  end
+end
+
+# Usage with automatic offloading
+Fiber.set_scheduler(MyScheduler.new)
+# Automatically offload `rb_nogvl(..., RB_NOGVL_OFFLOAD_SAFE)` to a background thread:
+result = some_blocking_operation()
+```
+
+The implementation uses one or more background threads and a list of pending blocking operations. Those operations either execute through to completion or may be cancelled, which executes the "unblock function" provided to `rb_nogvl`.
+
 ## v1.10.2
 
   - Improved consistency of handling closed IO when invoking `#select`.

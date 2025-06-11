@@ -58,6 +58,16 @@ have_func("epoll_pwait2")
 
 have_header("ruby/io/buffer.h")
 
+# Feature detection for blocking operation support
+if have_func("rb_fiber_scheduler_blocking_operation_extract")
+	# Feature detection for pthread support (needed for WorkerPool)
+	if have_header("pthread.h")
+		append_cflags(["-DHAVE_IO_EVENT_WORKER_POOL"])
+		$srcs << "io/event/worker_pool.c"
+		$srcs << "io/event/worker_pool_test.c"
+	end
+end
+
 if ENV.key?("RUBY_SANITIZE")
 	$stderr.puts "Enabling sanitizers..."
 
