@@ -1,12 +1,12 @@
 # Releases
 
-## Unreleased
+## v1.11.0
 
 ### Introduce `IO::Event::WorkerPool` for off-loading blocking operations.
 
 The {ruby IO::Event::WorkerPool} provides a mechanism for executing blocking operations on separate OS threads while properly integrating with Ruby's fiber scheduler and GVL (Global VM Lock) management. This enables true parallelism for CPU-intensive or blocking operations that would otherwise block the event loop.
 
-```ruby
+``` ruby
 # Fiber scheduler integration via blocking_operation_wait hook
 class MyScheduler
 	def initialize

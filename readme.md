@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.11.0
+
+  - [Introduce `IO::Event::WorkerPool` for off-loading blocking operations.](https://socketry.github.io/io-event/releases/index#introduce-io::event::workerpool-for-off-loading-blocking-operations.)
+
 ### v1.10.2
 
   - Improved consistency of handling closed IO when invoking `#select`.
