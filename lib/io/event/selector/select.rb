@@ -17,6 +17,9 @@ module IO::Event
 				
 				@waiting = Hash.new.compare_by_identity
 				
+				# Flag indicating whether the selector is currently blocked in a system call.
+				# Set to true when blocked in ::IO.select, false otherwise.
+				# Used by wakeup() to determine if an interrupt signal is needed.
 				@blocked = false
 				
 				@ready = Queue.new

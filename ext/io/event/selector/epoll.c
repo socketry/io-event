@@ -38,6 +38,10 @@ struct IO_Event_Selector_EPoll
 {
 	struct IO_Event_Selector backend;
 	int descriptor;
+	
+	// Flag indicating whether the selector is currently blocked in a system call.
+	// Set to 1 when blocked in epoll_wait() without GVL, 0 otherwise.
+	// Used by wakeup() to determine if an interrupt signal is needed.
 	int blocked;
 	
 	struct timespec idle_duration;

@@ -30,6 +30,10 @@ struct IO_Event_Selector_URing
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
 	size_t pending;
+	
+	// Flag indicating whether the selector is currently blocked in a system call.
+	// Set to 1 when blocked in io_uring_wait_cqe_timeout() without GVL, 0 otherwise.
+	// Used by wakeup() to determine if an interrupt signal is needed.
 	int blocked;
 	
 	struct timespec idle_duration;
