@@ -1,5 +1,13 @@
 # Releases
 
+## Unreleased
+
+  - Fix Windows build.
+
+## v1.11.1
+
+  - Fix `read_nonblock` when using the `URing` selector, which was not handling zero-length reads correctly. This allows reading available data without blocking.
+
 ## v1.11.0
 
 ### Introduce `IO::Event::WorkerPool` for off-loading blocking operations.
