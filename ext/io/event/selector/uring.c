@@ -722,7 +722,7 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 		int error = errno;
 		
 		IO_Event_Selector_nonblock_restore(descriptor, state);
-		return rb_fiber_scheduler_io_result(result, errno);
+		return rb_fiber_scheduler_io_result(result, error);
 	}
 	
 	while (maximum_size) {
