@@ -707,6 +707,20 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	off_t from = io_seekable(descriptor);
 	
 	size_t maximum_size = size - offset;
+	
+	// Are we performing a non-blocking read?
+	if (!length) {
+		// If the (maximum) length is zero, that indicates we just want to read whatever is available without blocking.
+		// If we schedule this read into the URing, it will block until data is available, rather than returning immediately.
+		int state = IO_Event_Selector_nonblock_set(descriptor);
+		
+		int result = read(descriptor, (char*)base+offset, maximum_size);
+		int error = errno;
+		
+		IO_Event_Selector_nonblock_restore(descriptor, state);
+		return rb_fiber_scheduler_io_result(result, errno);
+	}
+	
 	while (maximum_size) {
 		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
 		
@@ -1093,7 +1107,7 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		}
 	}
 	
-	if (DEBUG && completed > 0) fprintf(stderr, "select_process_completions(completed=%d)\n", completed);
+	if (DEBUG && completed > 0) fprintf(stderr, "select_process_completions: completed=%d\n", completed);
 	
 	return completed;
 }
