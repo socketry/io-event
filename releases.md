@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.11.2
 
   - Fix Windows build.
 

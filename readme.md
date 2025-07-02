@@ -18,6 +18,14 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.11.2
+
+  - Fix Windows build.
+
+### v1.11.1
+
+  - Fix `read_nonblock` when using the `URing` selector, which was not handling zero-length reads correctly. This allows reading available data without blocking.
+
 ### v1.11.0
 
   - [Introduce `IO::Event::WorkerPool` for off-loading blocking operations.](https://socketry.github.io/io-event/releases/index#introduce-io::event::workerpool-for-off-loading-blocking-operations.)
