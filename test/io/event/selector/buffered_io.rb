@@ -77,6 +77,46 @@ BufferedIO = Sus::Shared("buffered io") do
 			writer.transfer
 			selector.select(0)
 		end
+		
+		it "can perform non-blocking read" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			buffer = IO::Buffer.new(64)
+			result = nil
+			
+			output.puts "Hello World\n"
+			output.close
+			
+			reader = Fiber.new do
+				result = selector.io_read(Fiber.current, input, buffer, 0)
+			end
+			
+			reader.transfer
+			selector.select(0)
+			
+			expect(buffer.get_string(0, 12)).to be == "Hello World\n"
+		end
+		
+		# Whether the given error code indicates that the operation should be retried.
+		def be_again?
+			(be == -Errno::EAGAIN::Errno).or(be == -Errno::EWOULDBLOCK::Errno)
+		end
+		
+		it "can perform non-blocking read with empty input" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			buffer = IO::Buffer.new(64)
+			result = nil
+			
+			reader = Fiber.new do
+				result = selector.io_read(Fiber.current, input, buffer, 0)
+			end
+			
+			reader.transfer
+			selector.select(0)
+			
+			expect(result).to be_again?
+		end
 	end
 end
 
