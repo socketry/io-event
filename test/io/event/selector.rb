@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2024, by Samuel Williams.
+# Copyright, 2021-2025, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
 require "io/event"
@@ -350,7 +350,6 @@ Selector = Sus::Shared("a selector") do
 			]
 		end
 		
-		
 		it "can have two fibers reading from the same io" do
 			fiber1 = Fiber.new do
 				events << :wait_readable1
@@ -458,7 +457,7 @@ Selector = Sus::Shared("a selector") do
 			expect(events).to be == [
 				:transfer, :wait_readable, :close_io, :select
 			]
-
+			
 			# io_uring will raise an EBADF error if the IO is closed while waiting.
 			# But other selectors are not capable of detecting this.
 			# expect(error).to be_nil
@@ -476,7 +475,7 @@ Selector = Sus::Shared("a selector") do
 		
 		it "can read a single message" do
 			return unless selector.respond_to?(:io_read)
-
+			
 			fiber = Fiber.new do
 				events << :io_read
 				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
@@ -703,7 +702,7 @@ IO::Event::Selector.constants.each do |name|
 				selectors.each(&:close)
 			end
 		end
-
+		
 		with "an instance" do
 			before do
 				@loop = Fiber.current

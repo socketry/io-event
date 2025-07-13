@@ -46,38 +46,39 @@ describe IO::Event::PriorityHeap do
 		expect(priority_heap.size).to be(:zero?)
 		expect(result.sort).to be == result
 	end
-
+	
 	with "maintaining the heap invariant" do
 		it "for empty heaps" do
 			expect(priority_heap).to be(:valid?)
 		end
-
+		
 		it "for heap of size 1" do
 			priority_heap.push(123)
 			expect(priority_heap).to be(:valid?)
 		end
+		
 		# Exhaustive testing of all permutations of [1..6]
 		it "for all permutations of size 6" do
-			[1,2,3,4,5,6].permutation do |arr|
+			[1,2,3,4,5,6].permutation do |permutation|
 				priority_heap.clear!
-				arr.each { |e| priority_heap.push(e) }
+				permutation.each {|element| priority_heap.push(element)}
 				expect(priority_heap).to be(:valid?)
 			end
 		end
-
+		
 		# A few examples with more elements (but not ALL permutations)
 		it "for larger amounts of values" do
 			5.times do
 				priority_heap.clear!
-				(1..1000).to_a.shuffle.each { |e| priority_heap.push(e) }
+				(1..1000).to_a.shuffle.each {|element| priority_heap.push(element)}
 				expect(priority_heap).to be(:valid?)
 			end
 		end
-
+		
 		# What if we insert several of the same item along with others?
 		it "with several elements of the same value" do
 			test_values = (1..10).to_a + [4] * 5
-			test_values.each { |e| priority_heap.push(e) }
+			test_values.each {|element| priority_heap.push(element)}
 			expect(priority_heap).to be(:valid?)
 		end
 	end

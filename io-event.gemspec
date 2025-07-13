@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
 	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
-	spec.authors = ["Samuel Williams", "Math Ieu", "Wander Hillen", "Jean Boussier", "Benoit Daloze", "Bruno Sutic", "Alex Matchneer", "Anthony Ross", "Delton Ding", "Pavel Rosický", "Shizuo Fujita", "Stanislav (Stas) Katkov"]
+	spec.authors = ["Samuel Williams", "Math Ieu", "Wander Hillen", "Jean Boussier", "Benoit Daloze", "Bruno Sutic", "Shizuo Fujita", "Alex Matchneer", "Anthony Ross", "Delton Ding", "Pavel Rosický", "Stanislav (Stas) Katkov"]
 	spec.license = "MIT"
 	
 	spec.cert_chain  = ["release.cert"]
@@ -20,10 +20,10 @@ Gem::Specification.new do |spec|
 		"source_code_uri" => "https://github.com/socketry/io-event.git",
 	}
 	
-	spec.files = Dir["ext/extconf.rb", "ext/io/**/*.{c,h}", "{lib}/**/*", "*.md", base: __dir__]
+	spec.files = Dir["{ext,lib}/**/*", "*.md", base: __dir__]
 	spec.require_paths = ["lib"]
 	
 	spec.extensions = ["ext/extconf.rb"]
 	
-	spec.required_ruby_version = ">= 3.1"
+	spec.required_ruby_version = ">= 3.2"
 end

@@ -9,7 +9,7 @@ Copyright, 2022, by Bruno Sutic.
 Copyright, 2023, by Math Ieu.  
 Copyright, 2024, by Pavel Rosický.  
 Copyright, 2024, by Anthony Ross.  
-Copyright, 2024, by Shizuo Fujita.  
+Copyright, 2024-2025, by Shizuo Fujita.  
 Copyright, 2024, by Jean Boussier.  
 Copyright, 2025, by Stanislav (Stas) Katkov.  
 

@@ -93,7 +93,7 @@ describe IO::Event::WorkerPool do
 			
 			# Confirm that the copy worked:
 			expect(destination.get_string(0, 10)).to be == "AAAAAAAAAA"
-
+			
 			expect(worker_pool.statistics[:call_count]).to be > 0
 			expect(worker_pool.statistics[:completed_count]).to be > 0
 			inform worker_pool.statistics
