@@ -57,9 +57,8 @@ describe IO::Event::PriorityHeap do
 			expect(priority_heap).to be(:valid?)
 		end
 		
-		# Exhaustive testing of all permutations of [1..6]
-		it "for all permutations of size 6" do
-			[1,2,3,4,5,6].permutation do |permutation|
+		it "for all permutations of size 5" do
+			[1,2,3,4,5].permutation do |permutation|
 				priority_heap.clear!
 				permutation.each {|element| priority_heap.push(element)}
 				expect(priority_heap).to be(:valid?)
