@@ -196,7 +196,9 @@ module IO::Event
 					
 					Selector.nonblock(io) do
 						while true
+							$stderr.puts "Reading from IO: #{io}, length: #{length}, offset: #{offset}"
 							result = Fiber.blocking{buffer.read(io, 0, offset)}
+							$stderr.puts "Read result: #{result}"
 							
 							if result < 0
 								if length > 0 and again?(result)
