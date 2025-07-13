@@ -395,6 +395,12 @@ module IO::Event
 				end
 			end
 			
+			# Wait for a process to change state.
+			#
+			# @parameter fiber [Fiber] The fiber to resume after waiting.
+			# @parameter pid [Integer] The process ID to wait for.
+			# @parameter flags [Integer] Flags to pass to Process::Status.wait.
+			# @returns [Process::Status] The status of the waited process.
 			def process_wait(fiber, pid, flags)
 				Thread.new do
 					Process::Status.wait(pid, flags)
@@ -414,6 +420,10 @@ module IO::Event
 				end
 			end
 			
+			# Wait for IO events or a timeout.
+			#
+			# @parameter duration [Numeric | Nil] The maximum time to wait, or nil for no timeout.
+			# @returns [Integer] The number of ready IO objects.
 			def select(duration = nil)
 				if pop_ready
 					# If we have popped items from the ready list, they may influence the duration calculation, so we don't delay the event loop:
