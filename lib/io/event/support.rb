@@ -14,15 +14,6 @@ class IO
 				IO.const_defined?(:Buffer)
 			end
 			
-			# The basic fiber scheduler was introduced along side the IO::Buffer class.
-			#
-			# @returns [Boolean] Whether the IO::Buffer class is available.
-			#
-			# To be removed on 31 Mar 2025.
-			def self.fiber_scheduler_v1?
-				IO.const_defined?(:Buffer)
-			end
-			
 			# More advanced read/write methods and blocking controls were introduced in Ruby 3.2.
 			#
 			# To be removed on 31 Mar 2026.
