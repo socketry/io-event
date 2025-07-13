@@ -199,7 +199,7 @@ module IO::Event
 							result = Fiber.blocking{buffer.read(io, 0, offset)}
 							
 							if result < 0
-								if again?(result)
+								if length > 0 and again?(result)
 									self.io_wait(fiber, io, IO::READABLE)
 								else
 									return result
@@ -229,7 +229,7 @@ module IO::Event
 							result = Fiber.blocking{buffer.write(io, 0, offset)}
 							
 							if result < 0
-								if again?(result)
+								if length > 0 and again?(result)
 									self.io_wait(fiber, io, IO::READABLE)
 								else
 									return result
