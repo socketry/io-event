@@ -8,7 +8,7 @@ require "io/event/test_scheduler"
 
 return unless defined?(IO::Event::WorkerPool)
 
-describe IO::Event::WorkerPool do		
+describe IO::Event::WorkerPool do
 	with "an instance" do
 		let(:worker_pool) {subject.new}
 		
@@ -61,7 +61,7 @@ describe IO::Event::WorkerPool do
 		end
 	end
 	
-	with "TestScheduler integration" do
+	with IO::Event::TestScheduler do
 		let(:scheduler) {IO::Event::TestScheduler.new}
 		
 		it "can create a test scheduler" do
@@ -102,7 +102,7 @@ describe IO::Event::WorkerPool do
 	
 	with "cancellable busy operation" do
 		let(:scheduler) {IO::Event::TestScheduler.new}
-
+		
 		it "can perform a busy operation that completes normally" do
 			start_time = Time.now
 			result = IO::Event::WorkerPool.busy(duration: 0.1)
@@ -144,7 +144,7 @@ describe IO::Event::WorkerPool do
 			# The operation should have been interrupted before completion
 			expect(completed).to be == false
 		end
-				
+		
 		it "can be cancelled when executed in a worker pool" do
 			result = nil
 			elapsed = nil
@@ -172,6 +172,28 @@ describe IO::Event::WorkerPool do
 			expect(result[:cancelled]).to be == true
 			expect(elapsed).to be < 1.0
 			expect(error).to be_nil
+		end
+		
+		it "can be cancelled before even starting" do
+			result = nil
+			
+			Thread.new do
+				Fiber.set_scheduler(scheduler)
+				
+				busy_fiber = Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: 2.0)
+				end
+				
+				Fiber.schedule do
+					Fiber.scheduler.fiber_interrupt(busy_fiber, StandardError)
+				end
+			end.join
+			
+			expect(result).to have_keys(
+				cancelled: be == true,
+				result: be == :exception,
+				exception: be_a(StandardError)
+			)
 		end
 	end
 end

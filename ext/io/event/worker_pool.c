@@ -336,18 +336,31 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	pthread_mutex_unlock(&pool->mutex);
 	
 	// Block the current fiber until work is completed:
-	int state;
+	int state = 0;
 	while (true) {
-		rb_protect(worker_pool_work_begin, (VALUE)&work, &state);
-
+		int current_state = 0;
+		rb_protect(worker_pool_work_begin, (VALUE)&work, &current_state);
+		if (DEBUG) fprintf(stderr, "-- worker_pool_call:work completed=%d, current_state=%d, state=%d\n", work.completed, current_state, state);
+		
+		// Store the first exception state:
+		if (!state) {
+			state = current_state;
+		}
+		
+		// If the work is still in the queue, we must wait for a worker to complete it (even if cancelled):
 		if (work.completed) {
+			// The work was completed, we can exit the loop:
 			break;
 		} else {
 			if (DEBUG) fprintf(stderr, "worker_pool_call:rb_fiber_scheduler_blocking_operation_cancel\n");
+			// Ensure the blocking operation is cancelled:
 			rb_fiber_scheduler_blocking_operation_cancel(blocking_operation);
-			// The work was not completed, we need to wait for it to be completed.
+			
+			// The work was not completed, we need to wait for it to be completed, so we go around the loop again.
 		}
 	}
+	
+	if (DEBUG) fprintf(stderr, "<- worker_pool_call:work completed=%d, state=%d\n", work.completed, state);
 	
 	if (state) {
 		rb_jump_tag(state);
