@@ -29,10 +29,7 @@ VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags)
 int IO_Event_Selector_nonblock_set(int file_descriptor)
 {
 #ifdef _WIN32
-	u_long nonblock = 1;
-	ioctlsocket(file_descriptor, FIONBIO, &nonblock);
-	// Windows does not provide any way to know this, so we always restore it back to unset:
-	return 0;
+	rb_w32_set_nonblock(file_descriptor);
 #else
 	// Get the current mode:
 	int flags = fcntl(file_descriptor, F_GETFL, 0);
@@ -50,8 +47,6 @@ void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags)
 {
 #ifdef _WIN32
 	// Yolo...
-	u_long nonblock = flags;
-	ioctlsocket(file_descriptor, FIONBIO, &nonblock);
 #else
 	// The flags didn't have O_NONBLOCK set, so it would have been set, so we need to restore it:
 	if (!(flags & O_NONBLOCK)) {
