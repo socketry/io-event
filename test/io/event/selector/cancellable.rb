@@ -33,6 +33,7 @@ Cancellable = Sus::Shared("cancellable") do
 			reader.transfer
 			
 			while reader.alive?
+				$stderr.puts "Sending interrupt to fiber: #{reader}", reader.backtrace
 				reader.raise(Interrupt)
 				selector.select(0)
 			end
