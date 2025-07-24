@@ -116,9 +116,9 @@ module IO::Event
 			#
 			# @parameter fiber [Fiber] The fiber to raise the exception on.
 			# @parameter arguments [Array] The arguments to use when raising the exception.
-			def raise(fiber, *arguments)
+			def raise(fiber, *arguments, **options)
 				log("Raising exception on fiber #{fiber.inspect} with #{arguments.inspect}")
-				@selector.raise(fiber, *arguments)
+				@selector.raise(fiber, *arguments, **options)
 			end
 			
 			# Check if the selector is ready.

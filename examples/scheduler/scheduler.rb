@@ -58,8 +58,8 @@ class IO
 				@selector.push(fiber)
 			end
 			
-			def raise(*arguments)
-				@selector.raise(*arguments)
+			def raise(*arguments, **options)
+				@selector.raise(*arguments, **options)
 			end
 			
 			def resume(fiber, *arguments)
