@@ -98,11 +98,11 @@ module IO::Event
 			end
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
-			def raise(fiber, *arguments)
+			def raise(fiber, *arguments, **options)
 				optional = Optional.new(Fiber.current)
 				@ready.push(optional)
 				
-				fiber.raise(*arguments)
+				fiber.raise(*arguments, **options)
 			ensure
 				optional.nullify
 			end
