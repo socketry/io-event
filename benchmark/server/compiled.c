@@ -3,6 +3,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -23,7 +24,11 @@ int main (int argc, char *argv[]) {
 	
 	server.sin_family = AF_INET;
 	server.sin_port = htons(port);
-	server.sin_addr.s_addr = htonl(INADDR_ANY);
+	// server.sin_addr.s_addr = htonl(INADDR_ANY);
+	if (inet_pton(AF_INET, "127.0.0.1", &server.sin_addr) <= 0) {
+		perror("inet_pton");
+		exit(EXIT_FAILURE);
+	}
 	
 	int opt_val = 1;
 	setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt_val, sizeof opt_val);
@@ -45,7 +50,8 @@ int main (int argc, char *argv[]) {
 		
 		if (client_fd < 0) on_error("Could not establish new connection\n");
 		
-		recv(client_fd, buf, BUFFER_SIZE, 0);
+		// Removing this line entirely gives us the best performance, but obviously we are just blasting out a response without considering the request. Setting it to MSG_DONTWAIT gives us the second best performance, but we are still reading the request but probably not all of it.
+		recv(client_fd, buf, BUFFER_SIZE, MSG_DONTWAIT);
 		send(client_fd, response, response_size, 0);
 		
 		close(client_fd);
