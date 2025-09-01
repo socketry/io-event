@@ -2,7 +2,7 @@
 
 # Released under the MIT License.
 # Copyright, 2021, by Wander Hillen.
-# Copyright, 2021-2024, by Samuel Williams.
+# Copyright, 2021-2025, by Samuel Williams.
 
 class IO
 	module Event
@@ -27,7 +27,7 @@ class IO
 			def size
 				@contents.size
 			end
-
+			
 			# @returns [Boolean] true if the heap is empty, false otherwise.
 			def empty?
 				@contents.empty?

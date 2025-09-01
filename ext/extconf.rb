@@ -19,7 +19,7 @@ append_cflags(["-Wall", "-Wno-unknown-pragmas", "-std=c99"])
 
 if ENV.key?("RUBY_DEBUG")
 	$stderr.puts "Enabling debug mode..."
-
+	
 	append_cflags(["-DRUBY_DEBUG", "-O0"])
 end
 
@@ -33,7 +33,7 @@ have_func("&rb_fiber_transfer")
 if have_library("uring") and have_header("liburing.h")
 	# We might want to consider using this in the future:
 	# have_func("io_uring_submit_and_wait_timeout", "liburing.h")
-
+	
 	$srcs << "io/event/selector/uring.c"
 end
 
@@ -70,7 +70,7 @@ end
 
 if ENV.key?("RUBY_SANITIZE")
 	$stderr.puts "Enabling sanitizers..."
-
+	
 	# Add address and undefined behaviour sanitizers:
 	append_cflags(["-fsanitize=address", "-fsanitize=undefined", "-fno-omit-frame-pointer"])
 	$LDFLAGS << " -fsanitize=address -fsanitize=undefined"

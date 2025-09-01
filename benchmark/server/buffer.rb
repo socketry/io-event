@@ -20,7 +20,7 @@ RESPONSE_SIZE = RESPONSE.set_string(RESPONSE_STRING)
 
 Fiber.schedule do
 	server = TCPServer.new("localhost", port)
-
+	
 	loop do
 		peer, address = server.accept
 		

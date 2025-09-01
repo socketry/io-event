@@ -34,7 +34,7 @@ module IO::Event
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
 			@worker_pool = worker_pool || WorkerPool.new(maximum_worker_count: maximum_worker_count)
 			@timers = ::IO::Event::Timers.new
-
+			
 			# Track the number of fibers that are blocked.
 			@blocked = 0
 		end
@@ -44,7 +44,7 @@ module IO::Event
 		
 		# @attribute [IO::Event::Selector] The I/O event selector used for managing fiber scheduling.
 		attr_reader :selector
-
+		
 		# Required fiber scheduler hook - delegates to WorkerPool
 		def blocking_operation_wait(operation)
 			# Submit the operation to the worker pool and wait for completion
@@ -85,22 +85,22 @@ module IO::Event
 				selector.wakeup
 			end
 		end
-
+		
 		class FiberInterrupt
 			def initialize(fiber, exception)
 				@fiber = fiber
 				@exception = exception
 			end
-
+			
 			def alive?
 				@fiber.alive?
 			end
-
+			
 			def transfer
 				@fiber.raise(@exception)
 			end
 		end
-
+		
 		def fiber_interrupt(fiber, exception)
 			unblock(nil, FiberInterrupt.new(fiber, exception))
 		end
@@ -139,7 +139,7 @@ module IO::Event
 				@timers.fire
 			end
 		end
-
+		
 		def scheduler_close(error = $!)
 			self.run
 		ensure

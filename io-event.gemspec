@@ -20,7 +20,7 @@ Gem::Specification.new do |spec|
 		"source_code_uri" => "https://github.com/socketry/io-event.git",
 	}
 	
-	spec.files = Dir["{ext,lib}/**/*", "*.md", base: __dir__]
+	spec.files = Dir["{context,ext,lib}/**/*", "*.md", base: __dir__]
 	spec.require_paths = ["lib"]
 	
 	spec.extensions = ["ext/extconf.rb"]

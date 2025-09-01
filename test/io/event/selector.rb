@@ -496,7 +496,7 @@ Selector = Sus::Shared("a selector") do
 		
 		it "can handle partial reads" do
 			return unless selector.respond_to?(:io_read)
-
+			
 			fiber = Fiber.new do
 				events << :io_read
 				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)

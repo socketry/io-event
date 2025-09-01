@@ -363,7 +363,7 @@ module IO::Event
 								priority << io
 							end
 						end
-
+						
 						false
 					end
 				end

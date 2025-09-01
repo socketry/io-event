@@ -39,7 +39,7 @@ class Scheduler
 	ensure
 		@waiting -= 1
 	end
-
+	
 	def io_close(io)
 		@selector.io_close(io)
 	end
@@ -77,7 +77,7 @@ class DirectScheduler < Scheduler
 	ensure
 		@waiting -= 1
 	end
-
+	
 	def io_write(io, buffer, length)
 		fiber = Fiber.current
 		@waiting += 1
