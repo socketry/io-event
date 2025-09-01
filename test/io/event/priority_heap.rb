@@ -20,6 +20,10 @@ describe IO::Event::PriorityHeap do
 		it "should report its size as zero" do
 			expect(priority_heap.size).to be(:zero?)
 		end
+		
+		it "should report as empty" do
+			expect(priority_heap).to be(:empty?)
+		end
 	end
 	
 	it "returns the same element after inserting a single element" do
@@ -27,6 +31,25 @@ describe IO::Event::PriorityHeap do
 		expect(priority_heap.size).to be == 1
 		expect(priority_heap.pop).to be == 1
 		expect(priority_heap.size).to be(:zero?)
+	end
+	
+	with "#empty?" do
+		it "should return false when heap contains elements" do
+			priority_heap.push(1)
+			expect(priority_heap).not.to be(:empty?)
+		end
+		
+		it "should return true after popping all elements" do
+			priority_heap.push(1)
+			priority_heap.push(2)
+			expect(priority_heap).not.to be(:empty?)
+			
+			priority_heap.pop
+			expect(priority_heap).not.to be(:empty?)
+			
+			priority_heap.pop
+			expect(priority_heap).to be(:empty?)
+		end
 	end
 	
 	it "should return inserted elements in ascending order no matter the insertion order" do

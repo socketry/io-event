@@ -27,6 +27,11 @@ class IO
 			def size
 				@contents.size
 			end
+
+			# @returns [Boolean] true if the heap is empty, false otherwise.
+			def empty?
+				@contents.empty?
+			end
 			
 			# Removes and returns the smallest element in the heap, or nil if the heap is empty.
 			#
