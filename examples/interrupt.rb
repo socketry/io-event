@@ -23,7 +23,7 @@ th.wakeup
 th.join
 
 # 
-# c = Thread.new { Thread.stop; puts "hey!" }
+# c = Thread.new {Thread.stop; puts "hey!"}
 # sleep 0.1 while c.status!='sleep'
 # c.wakeup
 # c.join

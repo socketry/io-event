@@ -8,7 +8,7 @@
 #include <string.h>
 
 #define BUFFER_SIZE 1024
-#define on_error(...) { fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1); }
+#define on_error(...) {fprintf(stderr, __VA_ARGS__); fflush(stderr); exit(1);}
 
 int main (int argc, char *argv[]) {
 	if (argc < 2) on_error("Usage: %s [port]\n", argv[0]);
