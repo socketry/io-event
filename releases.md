@@ -1,5 +1,34 @@
 # Releases
 
+## Unreleased
+
+### Enhanced `IO::Event::PriorityHeap` with deletion and bulk insertion methods
+
+The {ruby IO::Event::PriorityHeap} now supports efficient element removal and bulk insertion:
+
+- **`delete(element)`**: Remove a specific element from the heap in O(n) time
+- **`delete_if(&block)`**: Remove elements matching a condition with O(n) amortized bulk deletion
+- **`concat(elements)`**: Add multiple elements efficiently in O(n) time
+
+``` ruby
+heap = IO::Event::PriorityHeap.new
+
+# Efficient bulk insertion - O(n) instead of O(n log n)
+heap.concat([5, 2, 8, 1, 9, 3])
+
+# Remove specific element
+removed = heap.delete(5)  # Returns 5, heap maintains order
+
+# Bulk removal with condition
+count = heap.delete_if { |x| x.even? }  # Removes 2, 8 efficiently
+```
+
+The `delete_if` and `concat` methods are particularly efficient for bulk operations, using bottom-up heapification to maintain the heap property in O(n) time. This provides significant performance improvements:
+- **Bulk insertion**: O(n log n) → O(n) for adding multiple elements
+- **Bulk deletion**: O(k×n) → O(n) for removing k elements
+
+Both methods maintain the heap invariant and include comprehensive test coverage with edge case validation.
+
 ## v1.11.2
 
   - Fix Windows build.

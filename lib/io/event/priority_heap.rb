@@ -79,18 +79,111 @@ class IO
 				return self
 			end
 			
+			# Add multiple elements to the heap efficiently in O(n) time.
+			# This is more efficient than calling push multiple times (O(n log n)).
+			#
+			# @parameter elements [Array] The elements to add to the heap.
+			# @returns [self] Returns self for method chaining.
+			def concat(elements)
+				return self if elements.empty?
+				
+				# Add all elements to the array without maintaining heap property - O(n)
+				@contents.concat(elements)
+				
+				# Rebuild the heap property for the entire array - O(n)
+				heapify!
+				
+				return self
+			end
+			
 			# Empties out the heap, discarding all elements
 			def clear!
 				@contents = []
 			end
 			
+			# Remove a specific element from the heap.
+			#
+			# O(n) where n is the number of elements in the heap.
+			#
+			# @parameter element [Object] The element to remove.
+			# @returns [Object | Nil] The removed element, or nil if not found.
+			def delete(element)
+				# Find the index of the element - O(n) linear search
+				index = @contents.index(element)
+				return nil unless index
+				
+				# If it's the last element, just remove it
+				if index == @contents.size - 1
+					return @contents.pop
+				end
+				
+				# Store the value we're removing
+				removed_value = @contents[index]
+				
+				# Replace with the last element
+				last = @contents.pop
+				@contents[index] = last
+				
+				# Restore heap property - might need to bubble up or down
+				if index > 0 && @contents[index] < @contents[(index - 1) / 2]
+					# New element is smaller than parent, bubble up
+					bubble_up(index)
+				else
+					# New element might be larger than children, bubble down
+					bubble_down(index)
+				end
+				
+				# validate!
+				
+				return removed_value
+			end
+			
+			# Remove elements matching the given block condition by rebuilding the heap.
+			#
+			# This is more efficient than multiple delete operations when removing many elements.
+			#
+			# O(n) where n is the number of elements in the heap.
+			#
+			# @yields [Object] Each element in the heap for testing
+			# @returns [Integer] The number of elements removed
+			def delete_if
+				return enum_for(:delete_if) unless block_given?
+				
+				original_size = @contents.size
+				
+				# Filter out elements that match the condition - O(n)
+				@contents.reject! {|element| yield(element)}
+				
+				# If we removed elements, rebuild the heap - O(n)
+				if @contents.size < original_size
+					heapify!
+				end
+				
+				# Return number of elements removed
+				original_size - @contents.size
+			end
+			
 			# Validate the heap invariant. Every element except the root must not be smaller than its parent element. Note that it MAY be equal.
 			def valid?
-				# Notice we skip index 0 on purpose, because it has no parent
+				# Notice we skip index 0 on purpose, because it has no parent:
 				(1..(@contents.size - 1)).all? {|index| @contents[index] >= @contents[(index - 1) / 2]}
 			end
 			
 			private
+			
+			# Rebuild the heap property from an arbitrary array in O(n) time.
+			# Uses bottom-up heapify algorithm starting from the last non-leaf node.
+			def heapify!
+				return if @contents.size <= 1
+				
+				# Start from the last non-leaf node and work backwards to root:
+				last_non_leaf_index = (@contents.size / 2) - 1
+				last_non_leaf_index.downto(0) do |index|
+					bubble_down(index)
+				end
+				
+				# validate!
+			end
 			
 			# Left here for reference, but unused.
 			# def swap(i, j)
