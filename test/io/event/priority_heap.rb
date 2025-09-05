@@ -416,4 +416,161 @@ describe IO::Event::PriorityHeap do
 			expect(remaining.sort).to be == remaining
 		end
 	end
+	
+	with "#concat" do
+		it "should return self when concatenating empty array" do
+			elements = [1, 2, 3]
+			elements.each {|e| priority_heap.push(e)}
+			
+			result = priority_heap.concat([])
+			expect(result).to be == priority_heap
+			expect(priority_heap.size).to be == 3
+			expect(priority_heap).to be(:valid?)
+		end
+		
+		it "should efficiently add multiple elements to empty heap" do
+			elements = [5, 2, 8, 1, 9, 3]
+			
+			result = priority_heap.concat(elements)
+			expect(result).to be == priority_heap  # Returns self
+			expect(priority_heap.size).to be == 6
+			expect(priority_heap).to be(:valid?)
+			
+			# Should extract in sorted order
+			sorted_result = []
+			while !priority_heap.empty?
+				sorted_result << priority_heap.pop
+			end
+			expect(sorted_result).to be == elements.sort
+		end
+		
+		it "should add elements to existing heap and maintain order" do
+			# Start with some elements
+			initial = [10, 15, 20]
+			initial.each {|e| priority_heap.push(e)}
+			
+			# Add more elements in bulk
+			additional = [5, 12, 25, 8]
+			priority_heap.concat(additional)
+			
+			expect(priority_heap.size).to be == 7
+			expect(priority_heap).to be(:valid?)
+			
+			# Should extract all in sorted order
+			all_elements = initial + additional
+			sorted_result = []
+			while !priority_heap.empty?
+				sorted_result << priority_heap.pop
+			end
+			expect(sorted_result).to be == all_elements.sort
+		end
+		
+		it "should handle duplicate elements correctly" do
+			priority_heap.concat([5, 3, 5, 1, 5])
+			
+			expect(priority_heap.size).to be == 5
+			expect(priority_heap).to be(:valid?)
+			
+			# Should have three 5s
+			result = []
+			while !priority_heap.empty?
+				result << priority_heap.pop
+			end
+			expect(result.count(5)).to be == 3
+			expect(result).to be == [1, 3, 5, 5, 5]
+		end
+		
+		it "should be more efficient than multiple push operations" do
+			# Large dataset to demonstrate efficiency
+			elements = (1..1000).to_a.shuffle
+			
+			# Test concat performance
+			heap1 = subject.new
+			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			heap1.concat(elements)
+			concat_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
+			
+			# Test individual push performance
+			heap2 = subject.new
+			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			elements.each {|e| heap2.push(e)}
+			push_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
+			
+			# Both should produce same result
+			expect(heap1.size).to be == heap2.size
+			expect(heap1).to be(:valid?)
+			expect(heap2).to be(:valid?)
+			
+			# Verify both heaps contain same elements
+			result1 = []
+			while !heap1.empty?
+				result1 << heap1.pop
+			end
+			
+			result2 = []
+			while !heap2.empty?
+				result2 << heap2.pop
+			end
+			
+			expect(result1).to be == result2
+			expect(result1).to be == (1..1000).to_a
+		end
+		
+		it "should handle single element concat" do
+			priority_heap.concat([42])
+			
+			expect(priority_heap.size).to be == 1
+			expect(priority_heap.peek).to be == 42
+			expect(priority_heap.pop).to be == 42
+			expect(priority_heap).to be(:empty?)
+		end
+		
+		it "should handle incomparable mixed data types" do
+			# Mix strings and numbers (not comparable)
+			elements = [3, "apple", 1, "zebra", 5]
+			
+			# This should raise an exception when trying to compare incomparable types
+			expect do
+				priority_heap.concat(elements)
+				# Force comparison by trying to extract elements
+				priority_heap.pop
+			end.to raise_exception
+		end
+		
+		it "should maintain heap property after large bulk inserts" do
+			# Multiple rounds of concat to stress test
+			(1..10).each do |round|
+				elements = ((round-1)*100 + 1..round*100).to_a.shuffle
+				priority_heap.concat(elements)
+				expect(priority_heap).to be(:valid?)
+			end
+			
+			expect(priority_heap.size).to be == 1000
+			
+			# Should extract in perfect sorted order
+			result = []
+			while !priority_heap.empty?
+				result << priority_heap.pop
+			end
+			expect(result).to be == (1..1000).to_a
+		end
+		
+		it "should support method chaining" do
+			result = priority_heap
+				.concat([10, 5])
+				.concat([15, 1])
+				.concat([8])
+			
+			expect(result).to be == priority_heap
+			expect(priority_heap.size).to be == 5
+			expect(priority_heap).to be(:valid?)
+			
+			# Verify all elements are there
+			sorted = []
+			while !priority_heap.empty?
+				sorted << priority_heap.pop
+			end
+			expect(sorted).to be == [1, 5, 8, 10, 15]
+		end
+	end
 end

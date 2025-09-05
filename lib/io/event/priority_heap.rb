@@ -79,6 +79,23 @@ class IO
 				return self
 			end
 			
+			# Add multiple elements to the heap efficiently in O(n) time.
+			# This is more efficient than calling push multiple times (O(n log n)).
+			#
+			# @parameter elements [Array] The elements to add to the heap.
+			# @returns [self] Returns self for method chaining.
+			def concat(elements)
+				return self if elements.empty?
+				
+				# Add all elements to the array without maintaining heap property - O(n)
+				@contents.concat(elements)
+				
+				# Rebuild the heap property for the entire array - O(n)
+				heapify!
+				
+				return self
+			end
+			
 			# Empties out the heap, discarding all elements
 			def clear!
 				@contents = []
