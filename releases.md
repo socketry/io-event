@@ -1,6 +1,6 @@
 # Releases
 
-## v1.12.0
+## Unreleased
 
 ### Enhanced `IO::Event::PriorityHeap` with deletion methods
 
