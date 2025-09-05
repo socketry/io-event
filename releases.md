@@ -1,5 +1,31 @@
 # Releases
 
+## v1.12.0
+
+### Enhanced `IO::Event::PriorityHeap` with deletion methods
+
+The {ruby IO::Event::PriorityHeap} now supports efficient element removal with two new methods:
+
+- **`delete(element)`**: Remove a specific element from the heap in O(n) time
+- **`delete_if(&block)`**: Remove elements matching a condition with O(n) amortized bulk deletion
+
+``` ruby
+heap = IO::Event::PriorityHeap.new
+
+# Add elements
+[5, 2, 8, 1, 9, 3].each { |x| heap.push(x) }
+
+# Remove specific element
+removed = heap.delete(5)  # Returns 5, heap maintains order
+
+# Bulk removal with condition
+count = heap.delete_if { |x| x.even? }  # Removes 2, 8 efficiently
+```
+
+The `delete_if` method is particularly efficient for bulk operations, using bottom-up heapification to maintain the heap property in O(n) time regardless of how many elements are removed. This provides significant performance improvements over multiple individual deletions (O(k×n) → O(n) for k deletions).
+
+Both methods maintain the heap invariant and include comprehensive test coverage with edge case validation.
+
 ## v1.11.2
 
   - Fix Windows build.
