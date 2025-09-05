@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.14.0
+
+  - [Enhanced `IO::Event::PriorityHeap` with deletion and bulk insertion methods](https://socketry.github.io/io-event/releases/index#enhanced-io::event::priorityheap-with-deletion-and-bulk-insertion-methods)
+
 ### v1.11.2
 
   - Fix Windows build.
