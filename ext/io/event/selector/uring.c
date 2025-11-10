@@ -1101,13 +1101,19 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		}
 		
 		io_uring_cq_advance(ring, 1);
-		// This marks the waiting operation as "complete":
-		IO_Event_Selector_URing_Completion_release(selector, completion);
 		
+		VALUE fiber = 0;
 		if (waiting && waiting->fiber) {
 			assert(waiting->result != -ECANCELED);
 			
-			IO_Event_Selector_loop_resume(&selector->backend, waiting->fiber, 0, NULL);
+			fiber = waiting->fiber;
+		}
+
+		// This marks the waiting operation as "complete":
+		IO_Event_Selector_URing_Completion_release(selector, completion);
+		
+		if (fiber) {
+			IO_Event_Selector_loop_resume(&selector->backend, fiber, 0, NULL);
 		}
 	}
 	
