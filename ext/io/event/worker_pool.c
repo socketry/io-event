@@ -213,17 +213,19 @@ static VALUE worker_thread_func(void *_worker) {
 
 // Create a new worker thread
 static int create_worker_thread(VALUE self, struct IO_Event_WorkerPool *pool) {
-if (pool->current_worker_count >= pool->maximum_worker_count) {
-return -1;
-}
+	if (pool->current_worker_count >= pool->maximum_worker_count) {
+		return -1;
+	}
 
 	struct IO_Event_WorkerPool_Worker *worker = malloc(sizeof(struct IO_Event_WorkerPool_Worker));
-if (!worker) {
-return -1;
-}
-@@ -214,7 +227,7 @@ static int create_worker_thread(struct IO_Event_WorkerPool *pool) {
-worker->current_blocking_operation = NULL;
-worker->next = pool->workers;
+	if (!worker) {
+		return -1;
+	}
+
+	worker->pool = pool;
+	worker->interrupted = false;
+	worker->current_blocking_operation = NULL;
+	worker->next = pool->workers;
 
 	RB_OBJ_WRITE(self, &worker->thread, rb_thread_create(worker_thread_func, worker));
 	if (NIL_P(worker->thread)) {
