@@ -212,7 +212,7 @@ static VALUE worker_thread_func(void *_worker) {
 }
 
 // Create a new worker thread
-static int create_worker_thread(VALUE poolval, struct IO_Event_WorkerPool *pool) {
+static int create_worker_thread(VALUE self, struct IO_Event_WorkerPool *pool) {
 	if (pool->current_worker_count >= pool->maximum_worker_count) {
 		return -1;
 	}
@@ -227,7 +227,7 @@ static int create_worker_thread(VALUE poolval, struct IO_Event_WorkerPool *pool)
 	worker->current_blocking_operation = NULL;
 	worker->next = pool->workers;
 	
-	RB_OBJ_WRITE(poolval, &worker->thread, rb_thread_create(worker_thread_func, worker));
+	RB_OBJ_WRITE(self, &worker->thread, rb_thread_create(worker_thread_func, worker));
 	if (NIL_P(worker->thread)) {
 		free(worker);
 		return -1;
