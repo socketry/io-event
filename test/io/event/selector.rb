@@ -645,6 +645,34 @@ Selector = Sus::Shared("a selector") do
 			expect(result1).to be(:success?)
 			expect(result2).to be(:success?)
 		end
+		
+		it "can wait for any child process" do
+			skip("This test works only on URing selector") if !selector.is_a?(IO::Event::Selector::URing)
+			
+			result1 = result2 = nil
+			pids = []
+			
+			fiber = Fiber.new do
+				pid1 = Process.spawn("sleep 0")
+				pid2 = Process.spawn("sleep 0")
+				pids << pid1 << pid2
+				
+				result1 = selector.process_wait(Fiber.current, -1, 0)
+				result2 = selector.process_wait(Fiber.current, -1, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result1).to be(:success?)
+			expect(result2).to be(:success?)
+			
+			result_pids = [result1, result2].map(&:pid).sort
+			expect(result_pids).to be == pids.sort
+		end
 	end
 	
 	with "#resume" do
