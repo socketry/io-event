@@ -38,7 +38,7 @@ ProcessIO = Sus::Shared("process io") do
 		
 		expect(result.success?).to be == true
 	end
-
+	
 	it "can wait for a process which has terminated already" do
 		result = nil
 		
