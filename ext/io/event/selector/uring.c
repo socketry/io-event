@@ -988,6 +988,10 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 		io_uring_prep_close(sqe, descriptor);
 		io_uring_sqe_set_data(sqe, NULL);
 		io_uring_submit_now(selector);
+		
+		// It would be nice to explore not flushing immediately, but instead deferring to the next select cycle.
+		// The problem with this approach is that if the user expects the file descriptor to be closed immediately, (e.g. before fork), it may not be closed in time.
+		// io_uring_submit_pending(selector);
 	} else {
 		close(descriptor);
 	}
