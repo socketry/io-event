@@ -7,6 +7,7 @@ require "io/event"
 require "io/event/test_scheduler"
 
 require "socket"
+require "io/nonblock"
 
 describe TCPSocket do
 	let(:scheduler) {IO::Event::TestScheduler.new}
@@ -19,7 +20,9 @@ describe TCPSocket do
 		port = server_socket.addr[1]
 		
 		client = TCPSocket.new("localhost", port)
+		client.nonblock = true
 		server = server_socket.accept
+		server.nonblock = true
 		
 		Fiber.set_scheduler(scheduler)
 		
