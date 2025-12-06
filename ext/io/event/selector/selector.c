@@ -29,7 +29,7 @@ VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags)
 int IO_Event_Selector_nonblock_set(int file_descriptor)
 {
 #ifdef _WIN32
-	rb_w32_set_nonblock(file_descriptor);
+	return rb_w32_set_nonblock(file_descriptor);
 #else
 	// Get the current mode:
 	int flags = fcntl(file_descriptor, F_GETFL, 0);
