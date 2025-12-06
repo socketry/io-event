@@ -128,6 +128,12 @@ module IO::Event
 				@selector.ready?
 			end
 			
+			# Run the given blocking operation and wait for its completion.
+			def blocking_operation_wait(operation)
+				log("Waiting for blocking operation #{operation.inspect}")
+				@selector.blocking_operation_wait(operation)
+			end
+			
 			# Wait for the given process, forwarded to the underlying selector.
 			def process_wait(*arguments)
 				log("Waiting for process with #{arguments.inspect}")

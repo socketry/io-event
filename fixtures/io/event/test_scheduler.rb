@@ -32,7 +32,11 @@ module IO::Event
 	class TestScheduler
 		def initialize(selector: nil, worker_pool: nil, maximum_worker_count: nil)
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
-			@worker_pool = worker_pool || WorkerPool.new(maximum_worker_count: maximum_worker_count)
+			
+			if ::IO::Event.const_defined?(:WorkerPool)
+				@worker_pool = worker_pool || ::IO::Event::WorkerPool.new(maximum_worker_count: maximum_worker_count)
+			end
+			
 			@timers = ::IO::Event::Timers.new
 			
 			# Track the number of fibers that are blocked.
@@ -45,10 +49,15 @@ module IO::Event
 		# @attribute [IO::Event::Selector] The I/O event selector used for managing fiber scheduling.
 		attr_reader :selector
 		
-		# Required fiber scheduler hook - delegates to WorkerPool
-		def blocking_operation_wait(operation)
-			# Submit the operation to the worker pool and wait for completion
-			@worker_pool.call(operation)
+		if ::IO::Event.const_defined?(:WorkerPool)
+			# Optional fiber scheduler hook - delegates to WorkerPool:
+			def blocking_operation_wait(operation)
+				@blocked += 1
+				# Submit the operation to the worker pool and wait for completion
+				@worker_pool&.call(operation)
+			ensure
+				@blocked -= 1
+			end
 		end
 		
 		# Required fiber scheduler hooks
@@ -114,7 +123,12 @@ module IO::Event
 				end
 			end
 			
-			return @selector.io_wait(fiber, io, events)
+			begin
+				@blocked += 1
+				return @selector.io_wait(fiber, io, events)
+			ensure
+				@blocked -= 1
+			end
 		ensure
 			timer&.cancel!
 		end
