@@ -728,7 +728,7 @@ VALUE io_write_loop(VALUE _arguments) {
 			break;
 		} else if (length > 0 && IO_Event_try_again(errno)) {
 			if (DEBUG_IO_WRITE) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait(fd=%d, length=%zu)\n", arguments->descriptor, length);
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
+			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
 		} else {
 			if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
 			return rb_fiber_scheduler_io_result(-1, errno);
@@ -737,7 +737,7 @@ VALUE io_write_loop(VALUE _arguments) {
 		maximum_size = size - offset;
 	}
 	
-	if (DEBUG_IO_READ) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
+	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
 	return rb_fiber_scheduler_io_result(total, 0);
 };
 
