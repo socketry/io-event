@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.14.3
 
   - Fix several implementation bugs that could cause deadlocks on blocking writes.
 
