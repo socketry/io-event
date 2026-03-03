@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Fix several implementation bugs that could cause deadlocks on blocking writes.
+
 ## v1.14.0
 
 ### Enhanced `IO::Event::PriorityHeap` with deletion and bulk insertion methods

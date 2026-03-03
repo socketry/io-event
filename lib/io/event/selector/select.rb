@@ -230,7 +230,7 @@ module IO::Event
 							
 							if result < 0
 								if length > 0 and again?(result)
-									self.io_wait(fiber, io, IO::READABLE)
+									self.io_wait(fiber, io, IO::WRITABLE)
 								else
 									return result
 								end
@@ -287,7 +287,7 @@ module IO::Event
 							
 							if again?(result)
 								if length > 0
-									self.io_wait(fiber, io, IO::READABLE)
+									self.io_wait(fiber, io, IO::WRITABLE)
 								else
 									return result
 								end
