@@ -478,7 +478,7 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber = Fiber.new do
 				events << :io_read
-				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize, 0)
 				expect(buffer.get_string(0, offset)).to be == message
 			end
 			
@@ -499,7 +499,7 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber = Fiber.new do
 				events << :io_read
-				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize, 0)
 				expect(buffer.get_string(0, offset)).to be == message
 			end
 			
@@ -521,7 +521,7 @@ Selector = Sus::Shared("a selector") do
 			return unless selector.respond_to?(:io_read)
 			
 			fiber = Fiber.new do
-				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize)
+				offset = selector.io_read(Fiber.current, local, buffer, message.bytesize, 0)
 				expect(buffer.get_string(0, offset)).to be == message
 				sleep(0.001)
 			end
@@ -559,7 +559,7 @@ Selector = Sus::Shared("a selector") do
 			fiber = Fiber.new do
 				events << :io_write
 				buffer = IO::Buffer.for(message.dup)
-				result = selector.io_write(Fiber.current, local, buffer, buffer.size)
+				result = selector.io_write(Fiber.current, local, buffer, buffer.size, 0)
 				expect(result).to be == message.bytesize
 				local.close
 			end

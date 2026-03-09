@@ -25,7 +25,7 @@ Cancellable = Sus::Shared("cancellable") do
 				buffer = IO::Buffer.new(64)
 				
 				10.times do
-					expect{selector.io_read(Fiber.current, input, buffer, 1)}.to raise_exception(Interrupt)
+					expect{selector.io_read(Fiber.current, input, buffer, 1, 0)}.to raise_exception(Interrupt)
 				end
 			end
 			
@@ -44,7 +44,7 @@ Cancellable = Sus::Shared("cancellable") do
 				
 				10.times do
 					expect{selector.io_wait(Fiber.current, input, IO::READABLE)}.to raise_exception(Interrupt)
-					selector.io_read(Fiber.current, input, buffer, 1)
+					selector.io_read(Fiber.current, input, buffer, 1, 0)
 				end
 			end
 			
