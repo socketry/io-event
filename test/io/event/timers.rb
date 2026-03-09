@@ -70,7 +70,7 @@ describe IO::Event::Timers do
 	
 	it "should flush cancelled timers" do
 		10.times do
-			handle = timers.after(0.1) {}
+			handle = timers.after(0.1){}
 			handle.cancel!
 		end
 		
@@ -80,7 +80,7 @@ describe IO::Event::Timers do
 	with "#schedule" do
 		it "raises an error if given an invalid time" do
 			expect do
-				timers.after(Object.new) {}
+				timers.after(Object.new){}
 			end.to raise_exception(NoMethodError, message: be =~ /to_f/)
 		end
 		
@@ -103,15 +103,15 @@ describe IO::Event::Timers do
 		end
 		
 		it "should return nil if all timers are cancelled" do
-			handle = timers.after(0.1) {}
+			handle = timers.after(0.1){}
 			handle.cancel!
 			
 			expect(timers.wait_interval).to be_nil
 		end
 		
 		it "should return the time until the next timer" do
-			timers.after(0.1) {}
-			timers.after(0.2) {}
+			timers.after(0.1){}
+			timers.after(0.2){}
 			
 			expect(timers.wait_interval).to be_within(0.01).of(0.1)
 		end

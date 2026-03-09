@@ -56,10 +56,10 @@ class MyScheduler
 	def initialize
 		@worker_pool = IO::Event::WorkerPool.new
 	end
-
-  def blocking_operation_wait(operation)
-    @worker_pool.call(operation)
-  end
+	
+	def blocking_operation_wait(operation)
+		@worker_pool.call(operation)
+	end
 end
 
 # Usage with automatic offloading

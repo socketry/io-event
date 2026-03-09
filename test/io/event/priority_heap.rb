@@ -83,7 +83,7 @@ describe IO::Event::PriorityHeap do
 		it "for all permutations of size 5" do
 			[1,2,3,4,5].permutation do |permutation|
 				priority_heap.clear!
-				permutation.each {|element| priority_heap.push(element)}
+				permutation.each{|element| priority_heap.push(element)}
 				expect(priority_heap).to be(:valid?)
 			end
 		end
@@ -92,7 +92,7 @@ describe IO::Event::PriorityHeap do
 		it "for larger amounts of values" do
 			5.times do
 				priority_heap.clear!
-				(1..1000).to_a.shuffle.each {|element| priority_heap.push(element)}
+				(1..1000).to_a.shuffle.each{|element| priority_heap.push(element)}
 				expect(priority_heap).to be(:valid?)
 			end
 		end
@@ -100,7 +100,7 @@ describe IO::Event::PriorityHeap do
 		# What if we insert several of the same item along with others?
 		it "with several elements of the same value" do
 			test_values = (1..10).to_a + [4] * 5
-			test_values.each {|element| priority_heap.push(element)}
+			test_values.each{|element| priority_heap.push(element)}
 			expect(priority_heap).to be(:valid?)
 		end
 	end
@@ -129,7 +129,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should delete first element (root) and maintain heap property" do
 			elements = [5, 2, 8, 1, 9, 3]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Root should be the minimum (1)
 			expect(priority_heap.peek).to be == 1
@@ -145,7 +145,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should delete last element without affecting heap structure" do
 			elements = [5, 2, 8, 1, 9, 3]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			original_root = priority_heap.peek
 			
 			# Delete one element (not necessarily the last in array, but some element)
@@ -157,7 +157,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should delete middle elements and maintain heap property" do
 			elements = [10, 5, 15, 3, 7, 12, 18, 1, 4, 6, 8]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Delete some middle elements
 			expect(priority_heap.delete(7)).to be == 7
@@ -171,7 +171,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should handle deleting duplicate elements" do
 			elements = [5, 3, 5, 1, 5, 2]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Should delete only the first occurrence of 5
 			expect(priority_heap.delete(5)).to be == 5
@@ -188,7 +188,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should maintain heap property after multiple deletions" do
 			elements = (1..20).to_a.shuffle
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Delete several elements
 			to_delete = [5, 10, 15, 1, 20, 8]
@@ -212,7 +212,7 @@ describe IO::Event::PriorityHeap do
 		
 		it "should work correctly when deleting all elements one by one" do
 			elements = [4, 2, 6, 1, 3, 5, 7]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			elements.shuffle.each do |element|
 				expect(priority_heap.delete(element)).to be == element
@@ -225,7 +225,7 @@ describe IO::Event::PriorityHeap do
 		it "should handle complex deletion patterns" do
 			# Insert elements in random order
 			elements = (1..100).to_a.shuffle
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Delete every 3rd element (by value, not position)
 			deleted = []
@@ -251,34 +251,34 @@ describe IO::Event::PriorityHeap do
 	with "#delete_if" do
 		it "should return 0 when no elements match condition" do
 			elements = [1, 2, 3, 4, 5]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
-			removed_count = priority_heap.delete_if {|e| e > 10}
+			removed_count = priority_heap.delete_if{|e| e > 10}
 			expect(removed_count).to be == 0
 			expect(priority_heap.size).to be == 5
 			expect(priority_heap).to be(:valid?)
 		end
 		
 		it "should return 0 when heap is empty" do
-			removed_count = priority_heap.delete_if {|e| true}
+			removed_count = priority_heap.delete_if{|e| true}
 			expect(removed_count).to be == 0
 			expect(priority_heap).to be(:empty?)
 		end
 		
 		it "should remove all elements when condition always true" do
 			elements = [5, 2, 8, 1, 9, 3]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
-			removed_count = priority_heap.delete_if {|e| true}
+			removed_count = priority_heap.delete_if{|e| true}
 			expect(removed_count).to be == 6
 			expect(priority_heap).to be(:empty?)
 		end
 		
 		it "should remove even numbers and maintain heap property" do
 			elements = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
-			removed_count = priority_heap.delete_if {|e| e.even?}
+			removed_count = priority_heap.delete_if{|e| e.even?}
 			expect(removed_count).to be == 5  # 2, 4, 6, 8, 10
 			expect(priority_heap.size).to be == 5
 			expect(priority_heap).to be(:valid?)
@@ -293,10 +293,10 @@ describe IO::Event::PriorityHeap do
 		
 		it "should handle removing elements from specific ranges" do
 			elements = (1..20).to_a
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Remove elements between 5 and 15 (inclusive)
-			removed_count = priority_heap.delete_if {|e| e >= 5 && e <= 15}
+			removed_count = priority_heap.delete_if{|e| e >= 5 && e <= 15}
 			expect(removed_count).to be == 11  # 5,6,7,8,9,10,11,12,13,14,15
 			expect(priority_heap.size).to be == 9
 			expect(priority_heap).to be(:valid?)
@@ -312,10 +312,10 @@ describe IO::Event::PriorityHeap do
 		
 		it "should work with duplicate elements" do
 			elements = [5, 3, 5, 1, 5, 2, 5, 4]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Remove all 5s
-			removed_count = priority_heap.delete_if {|e| e == 5}
+			removed_count = priority_heap.delete_if{|e| e == 5}
 			expect(removed_count).to be == 4
 			expect(priority_heap.size).to be == 4
 			expect(priority_heap).to be(:valid?)
@@ -329,18 +329,18 @@ describe IO::Event::PriorityHeap do
 		
 		it "should return enumerator when no block given" do
 			elements = [1, 2, 3, 4, 5]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			enum = priority_heap.delete_if
 			expect(enum).to be_a(Enumerator)
 			
 			# Use the enumerator to delete even numbers
-			removed_count = enum.select {|e| e.even?}
+			removed_count = enum.select{|e| e.even?}
 			# Note: select doesn't actually delete, we need to call the enumerator differently
 			
 			# Better test: create enumerator and then call with condition
 			enum = priority_heap.delete_if
-			removed_count = enum.each {|e| e.even?}
+			removed_count = enum.each{|e| e.even?}
 			expect(removed_count).to be == 2
 			expect(priority_heap.size).to be == 3
 		end
@@ -348,14 +348,14 @@ describe IO::Event::PriorityHeap do
 		it "should be more efficient than multiple delete operations" do
 			# Large dataset to demonstrate efficiency
 			elements = (1..1000).to_a.shuffle
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Remove all multiples of 7 using delete_if
 			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-			removed_count = priority_heap.delete_if {|e| e % 7 == 0}
+			removed_count = priority_heap.delete_if{|e| e % 7 == 0}
 			delete_if_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
 			
-			expected_removed = (1..1000).count {|x| x % 7 == 0}  # Should be 142
+			expected_removed = (1..1000).count{|x| x % 7 == 0}  # Should be 142
 			expect(removed_count).to be == expected_removed
 			expect(priority_heap.size).to be == 1000 - expected_removed
 			expect(priority_heap).to be(:valid?)
@@ -366,20 +366,20 @@ describe IO::Event::PriorityHeap do
 				remaining << priority_heap.pop
 			end
 			
-			expected_remaining = (1..1000).reject {|x| x % 7 == 0}
+			expected_remaining = (1..1000).reject{|x| x % 7 == 0}
 			expect(remaining).to be == expected_remaining
 		end
 		
 		it "should handle complex conditions" do
 			elements = (1..50).to_a
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# Remove numbers that are prime (simple prime test for small numbers)
 			is_prime = lambda do |n|
 				return false if n < 2
 				return true if n == 2
 				return false if n.even?
-				(3..Math.sqrt(n)).step(2).none? {|i| n % i == 0}
+				(3..Math.sqrt(n)).step(2).none?{|i| n % i == 0}
 			end
 			
 			removed_count = priority_heap.delete_if(&is_prime)
@@ -394,18 +394,18 @@ describe IO::Event::PriorityHeap do
 		it "should maintain heap invariant after bulk deletions" do
 			# Multiple rounds of delete_if to stress test heap maintenance
 			elements = (1..100).to_a.shuffle
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			# First: remove multiples of 3
-			removed1 = priority_heap.delete_if {|e| e % 3 == 0}
+			removed1 = priority_heap.delete_if{|e| e % 3 == 0}
 			expect(priority_heap).to be(:valid?)
 			
 			# Second: remove multiples of 7 from remaining
-			removed2 = priority_heap.delete_if {|e| e % 7 == 0}
+			removed2 = priority_heap.delete_if{|e| e % 7 == 0}
 			expect(priority_heap).to be(:valid?)
 			
 			# Third: remove numbers greater than 80
-			removed3 = priority_heap.delete_if {|e| e > 80}
+			removed3 = priority_heap.delete_if{|e| e > 80}
 			expect(priority_heap).to be(:valid?)
 			
 			# Verify final result comes out in sorted order
@@ -420,7 +420,7 @@ describe IO::Event::PriorityHeap do
 	with "#concat" do
 		it "should return self when concatenating empty array" do
 			elements = [1, 2, 3]
-			elements.each {|e| priority_heap.push(e)}
+			elements.each{|e| priority_heap.push(e)}
 			
 			result = priority_heap.concat([])
 			expect(result).to be == priority_heap
@@ -447,7 +447,7 @@ describe IO::Event::PriorityHeap do
 		it "should add elements to existing heap and maintain order" do
 			# Start with some elements
 			initial = [10, 15, 20]
-			initial.each {|e| priority_heap.push(e)}
+			initial.each{|e| priority_heap.push(e)}
 			
 			# Add more elements in bulk
 			additional = [5, 12, 25, 8]
@@ -493,7 +493,7 @@ describe IO::Event::PriorityHeap do
 			# Test individual push performance
 			heap2 = subject.new
 			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-			elements.each {|e| heap2.push(e)}
+			elements.each{|e| heap2.push(e)}
 			push_time = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
 			
 			# Both should produce same result

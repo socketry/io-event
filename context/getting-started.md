@@ -22,8 +22,8 @@ $ bundle add io-event
 This example shows how to perform a blocking operation 
 
 ```ruby
-require 'fiber'
-require 'io/event'
+require "fiber"
+require "io/event"
 
 selector = IO::Event::Selector.new(Fiber.current)
 input, output = IO.pipe

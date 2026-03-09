@@ -1,7 +1,7 @@
 # MIT License
 
 Copyright, 2021, by Wander Hillen.  
-Copyright, 2021-2025, by Samuel Williams.  
+Copyright, 2021-2026, by Samuel Williams.  
 Copyright, 2021, by Delton Ding.  
 Copyright, 2021-2024, by Benoit Daloze.  
 Copyright, 2022, by Alex Matchneer.  
@@ -12,6 +12,8 @@ Copyright, 2024, by Anthony Ross.
 Copyright, 2024-2025, by Shizuo Fujita.  
 Copyright, 2024, by Jean Boussier.  
 Copyright, 2025, by Stanislav (Stas) Katkov.  
+Copyright, 2025, by Luke Gruber.  
+Copyright, 2026, by William T. Nelson.  
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

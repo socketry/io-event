@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
 # Released under the MIT License.
-# Copyright, 2021-2025, by Samuel Williams.
+# Copyright, 2021-2026, by Samuel Williams.
 # Copyright, 2023, by Math Ieu.
 
 require_relative "../interrupt"
-require_relative "../support"
 
 module IO::Event
 	module Selector
@@ -184,127 +183,64 @@ module IO::Event
 				errno == EAGAIN or errno == EWOULDBLOCK
 			end
 			
-			if Support.fiber_scheduler_v3?
-				# Ruby 3.3+, full IO::Buffer support.
+			# Read from the given IO to the buffer.
+			#
+			# @parameter length [Integer] The minimum number of bytes to read.
+			# @parameter offset [Integer] The offset into the buffer to read to.
+			def io_read(fiber, io, buffer, length, offset = 0)
+				total = 0
 				
-				# Read from the given IO to the buffer.
-				#
-				# @parameter length [Integer] The minimum number of bytes to read.
-				# @parameter offset [Integer] The offset into the buffer to read to.
-				def io_read(fiber, io, buffer, length, offset = 0)
-					total = 0
-					
-					Selector.nonblock(io) do
-						while true
-							result = Fiber.blocking{buffer.read(io, 0, offset)}
-							
-							if result < 0
-								if length > 0 and again?(result)
-									self.io_wait(fiber, io, IO::READABLE)
-								else
-									return result
-								end
-							elsif result == 0
-								break
+				Selector.nonblock(io) do
+					while true
+						result = Fiber.blocking{buffer.read(io, 0, offset)}
+						
+						if result < 0
+							if length > 0 and again?(result)
+								self.io_wait(fiber, io, IO::READABLE)
 							else
-								total += result
-								break if total >= length
-								offset += result
-							end
-						end
-					end
-					
-					return total
-				end
-				
-				# Write to the given IO from the buffer.
-				#
-				# @parameter length [Integer] The minimum number of bytes to write.
-				# @parameter offset [Integer] The offset into the buffer to write from.
-				def io_write(fiber, io, buffer, length, offset = 0)
-					total = 0
-					
-					Selector.nonblock(io) do
-						while true
-							result = Fiber.blocking{buffer.write(io, 0, offset)}
-							
-							if result < 0
-								if length > 0 and again?(result)
-									self.io_wait(fiber, io, IO::WRITABLE)
-								else
-									return result
-								end
-							elsif result == 0
-								break result
-							else
-								total += result
-								break if total >= length
-								offset += result
-							end
-						end
-					end
-					
-					return total
-				end
-			elsif Support.fiber_scheduler_v2?
-				# Ruby 3.2, most IO::Buffer support, but slightly clunky read/write methods.
-				def io_read(fiber, io, buffer, length, offset = 0)
-					total = 0
-					
-					Selector.nonblock(io) do
-						maximum_size = buffer.size - offset
-						while maximum_size > 0
-							result = Fiber.blocking{buffer.read(io, maximum_size, offset)}
-							
-							if again?(result)
-								if length > 0
-									self.io_wait(fiber, io, IO::READABLE)
-								else
-									return result
-								end
-							elsif result < 0
 								return result
-							else
-								total += result
-								offset += result
-								break if total >= length
 							end
-							
-							maximum_size = buffer.size - offset
+						elsif result == 0
+							break
+						else
+							total += result
+							break if total >= length
+							offset += result
 						end
 					end
-					
-					return total
 				end
 				
-				def io_write(fiber, io, buffer, length, offset = 0)
-					total = 0
-					
-					Selector.nonblock(io) do
-						maximum_size = buffer.size - offset
-						while maximum_size > 0
-							result = Fiber.blocking{buffer.write(io, maximum_size, offset)}
-							
-							if again?(result)
-								if length > 0
-									self.io_wait(fiber, io, IO::WRITABLE)
-								else
-									return result
-								end
-							elsif result < 0
-								return result
+				return total
+			end
+			
+			# Write to the given IO from the buffer.
+			#
+			# @parameter length [Integer] The minimum number of bytes to write.
+			# @parameter offset [Integer] The offset into the buffer to write from.
+			def io_write(fiber, io, buffer, length, offset = 0)
+				total = 0
+				
+				Selector.nonblock(io) do
+					while true
+						result = Fiber.blocking{buffer.write(io, 0, offset)}
+						
+						if result < 0
+							if length > 0 and again?(result)
+								self.io_wait(fiber, io, IO::WRITABLE)
 							else
-								total += result
-								offset += result
-								break if total >= length
+								return result
 							end
-							
-							maximum_size = buffer.size - offset
+						elsif result == 0
+							break result
+						else
+							total += result
+							break if total >= length
+							offset += result
 						end
 					end
-					
-					return total
 				end
+				
+				return total
 			end
 			
 			# Wait for a process to change state.

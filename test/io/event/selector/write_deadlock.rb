@@ -26,7 +26,7 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			# Fill buffer until we actually hit EAGAIN
 			begin
 				chunk = "X" * 1024  # 1KB chunks
-				100.times {local.write_nonblock(chunk)}  # Write up to 100KB
+				100.times{local.write_nonblock(chunk)}  # Write up to 100KB
 			rescue IO::WaitWritable
 				eagain_hit = true
 			end

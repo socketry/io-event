@@ -19,20 +19,15 @@ jobs:
           - windows
         
         ruby:
-          - "3.2"
-          - "3.2.6"
           - "3.3"
           - "3.4"
-          - "head"
+          - "4.0"
         
         experimental: [false]
         
         include:
           - os: ubuntu
             ruby: truffleruby
-            experimental: true
-          - os: ubuntu
-            ruby: truffleruby-head
             experimental: true
           - os: ubuntu
             ruby: jruby
@@ -42,7 +37,7 @@ jobs:
             experimental: true
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{matrix.ruby}}
@@ -54,4 +49,4 @@ jobs:
     
     - name: Run tests
       timeout-minutes: 10
-      run: bundle exec bake build test
+      run: bundle exec bake test
