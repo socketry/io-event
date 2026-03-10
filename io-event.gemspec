@@ -7,7 +7,7 @@ Gem::Specification.new do |spec|
 	spec.version = IO::Event::VERSION
 	
 	spec.summary = "An event loop."
-	spec.authors = ["Samuel Williams", "Math Ieu", "Wander Hillen", "Jean Boussier", "Benoit Daloze", "Bruno Sutic", "Shizuo Fujita", "Alex Matchneer", "Anthony Ross", "Delton Ding", "Luke Gruber", "Pavel Rosický", "Stanislav (Stas) Katkov", "William T. Nelson"]
+	spec.authors = ["Samuel Williams", "Math Ieu", "Wander Hillen", "Jean Boussier", "Benoit Daloze", "Bruno Sutic", "Shizuo Fujita", "Alex Matchneer", "Anthony Ross", "Delton Ding", "Luke Gruber", "Pavel Rosický", "Stan Hu", "Stanislav (Stas) Katkov", "William T. Nelson"]
 	spec.license = "MIT"
 	
 	spec.cert_chain  = ["release.cert"]

@@ -21,12 +21,12 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
-				expect(selector.io_write(Fiber.current, output, buffer, 128)).to be == 128
+				expect(selector.io_write(Fiber.current, output, buffer, 128, 0)).to be == 128
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
-				expect(selector.io_read(Fiber.current, input, buffer, 1)).to be == 64
+				expect(selector.io_read(Fiber.current, input, buffer, 1, 0)).to be == 64
 			end
 			
 			reader.transfer
@@ -39,7 +39,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
 			buffer = IO::Buffer.new(1).slice(0, 0)
-			expect(selector.io_write(Fiber.current, output, buffer, 0)).to be == 0
+			expect(selector.io_write(Fiber.current, output, buffer, 0, 0)).to be == 0
 		end
 		
 		it "can read and write at the specified offset" do
@@ -70,7 +70,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(64)
-				result = selector.io_write(Fiber.current, input, buffer, 64)
+				result = selector.io_write(Fiber.current, input, buffer, 64, 0)
 				expect(result).to be < 0
 			end
 			
@@ -88,7 +88,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			output.close
 			
 			reader = Fiber.new do
-				result = selector.io_read(Fiber.current, input, buffer, 0)
+				result = selector.io_read(Fiber.current, input, buffer, 0, 0)
 			end
 			
 			reader.transfer
@@ -109,7 +109,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			result = nil
 			
 			reader = Fiber.new do
-				result = selector.io_read(Fiber.current, input, buffer, 0)
+				result = selector.io_read(Fiber.current, input, buffer, 0, 0)
 			end
 			
 			reader.transfer
