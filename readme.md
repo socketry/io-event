@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.14.4
+
+  - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.
+
 ### v1.14.3
 
   - Fix several implementation bugs that could cause deadlocks on blocking writes.
@@ -54,10 +58,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.8.0
 
   - Detecting fibers that are stalling the event loop.
-
-### v1.7.5
-
-  - Fix `process_wait` race condition on EPoll that could cause a hang.
 
 ## Contributing
 

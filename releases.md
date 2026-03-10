@@ -1,5 +1,9 @@
 # Releases
 
+## v1.14.4
+
+  - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.
+
 ## v1.14.3
 
   - Fix several implementation bugs that could cause deadlocks on blocking writes.
