@@ -424,13 +424,33 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 
 #pragma mark - Process.wait
 
+#if defined(HAVE_IO_URING_PREP_WAITID) && defined(HAVE__RB_PROCESS_STATUS_NEW)
+#define USE_WAITID
+
+inline idtype_t waitid_type(int pid) {
+	switch (pid) {
+		case -1:
+			return P_ALL;
+		case 0:
+			return P_PGID;
+		default:
+			return P_PID;
+	}
+}
+#endif
+
 struct process_wait_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
 	
 	pid_t pid;
 	int flags;
+
+	#ifdef USE_WAITID
+	siginfo_t infop;
+	#else
 	int descriptor;
+	#endif
 };
 
 static
@@ -439,18 +459,29 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
+	#ifdef USE_WAITID
+	if (DEBUG) printf("waitid result: %d pid: %d status: %d\n", 
+		arguments->waiting->result,
+		arguments->infop.si_pid,
+		arguments->infop.si_status
+	);
+	return rb_process_status_new(arguments->infop.si_pid, arguments->infop.si_status, 0);
+	#else
 	if (arguments->waiting->result) {
 		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
+	#endif
 }
 
 static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
+	#ifndef USE_WAITID
 	close(arguments->descriptor);
+	#endif
 	
 	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
 	
@@ -464,11 +495,13 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
 	
+	#ifndef USE_WAITID
 	int descriptor = pidfd_open(pid, 0);
 	if (descriptor < 0) {
 		rb_syserr_fail(errno, "IO_Event_Selector_URing_process_wait:pidfd_open");
 	}
 	rb_update_max_fd(descriptor);
+	#endif
 	
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -483,12 +516,23 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.waiting = &waiting,
 		.pid = pid,
 		.flags = flags,
-		.descriptor = descriptor,
+		#ifdef USE_WAITID
+		.infop = { .si_pid = 0, .si_status = 0 }
+		#else
+		.descriptor = descriptor
+		#endif
 	};
 	
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
+
+	#ifdef USE_WAITID
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid(%p)\n", (void*)fiber);
+	if (DEBUG) printf("waitid pid: %d flags: %d\n", pid, flags);
+	io_uring_prep_waitid(sqe, waitid_type(pid), pid, &process_wait_arguments.infop, WEXITED, 0);
+	#else
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
+	#endif
 	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
 	
