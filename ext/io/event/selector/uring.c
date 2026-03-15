@@ -15,6 +15,11 @@
 
 #include <linux/version.h>
 
+#ifdef HAVE_SYS_SIGNALFD_H
+#include <sys/signalfd.h>
+#include <signal.h>
+#endif
+
 enum {
 	DEBUG = 0,
 	DEBUG_COMPLETION = 0,
@@ -457,27 +462,125 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
+#ifdef HAVE_SYS_SIGNALFD_H
+struct process_wait_signalfd_arguments {
+	struct IO_Event_Selector_URing *selector;
+	struct IO_Event_Selector_URing_Waiting waiting;
+	pid_t pid;
+	int flags;
+	int descriptor;
+	VALUE fiber;
+	sigset_t old_mask;
+};
+
+static
+VALUE process_wait_signalfd_transfer(VALUE _arguments) {
+	struct process_wait_signalfd_arguments *arguments = (struct process_wait_signalfd_arguments *)_arguments;
+
+	while (1) {
+		arguments->waiting = (struct IO_Event_Selector_URing_Waiting){.fiber = arguments->fiber};
+
+		struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(arguments->selector, &arguments->waiting);
+
+		struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
+		io_uring_prep_poll_add(sqe, arguments->descriptor, POLLIN|POLLHUP|POLLERR);
+		io_uring_sqe_set_data(sqe, completion);
+		io_uring_submit_pending(arguments->selector);
+
+		IO_Event_Selector_loop_yield(&arguments->selector->backend);
+
+		IO_Event_Selector_URing_Waiting_cancel(&arguments->waiting);
+
+		if (!arguments->waiting.result) return Qfalse;
+
+		// Drain the signalfd:
+		struct signalfd_siginfo info;
+		while (read(arguments->descriptor, &info, sizeof(info)) > 0) {}
+
+		// Check if our specific process exited:
+		VALUE status = IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
+		if (status != Qnil) return status;
+
+		// SIGCHLD was for a different child — loop and wait again.
+	}
+}
+
+static
+VALUE process_wait_signalfd_ensure(VALUE _arguments) {
+	struct process_wait_signalfd_arguments *arguments = (struct process_wait_signalfd_arguments *)_arguments;
+
+	close(arguments->descriptor);
+
+	IO_Event_Selector_URing_Waiting_cancel(&arguments->waiting);
+
+	pthread_sigmask(SIG_SETMASK, &arguments->old_mask, NULL);
+
+	return Qnil;
+}
+#endif
+
 VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
-	
+
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
-	
+
 	int descriptor = pidfd_open(pid, 0);
 	if (descriptor < 0) {
+#ifdef HAVE_SYS_SIGNALFD_H
+		if (errno == EPERM) {
+			// pidfd_open can fail with EPERM inside confined environments (e.g. snap).
+			// Fall back to signalfd with SIGCHLD:
+			sigset_t mask;
+			sigemptyset(&mask);
+			sigaddset(&mask, SIGCHLD);
+
+			sigset_t old_mask;
+			pthread_sigmask(SIG_BLOCK, &mask, &old_mask);
+
+			int signalfd_descriptor = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
+			if (signalfd_descriptor == -1) {
+				pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
+				rb_sys_fail("IO_Event_Selector_URing_process_wait:signalfd");
+			}
+			rb_update_max_fd(signalfd_descriptor);
+
+			// Check if the process has already exited:
+			VALUE status = IO_Event_Selector_process_status_wait(pid, flags);
+			if (status != Qnil) {
+				close(signalfd_descriptor);
+				pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
+				return status;
+			}
+
+			struct process_wait_signalfd_arguments signalfd_arguments = {
+				.selector = selector,
+				.waiting = {},
+				.pid = pid,
+				.flags = flags,
+				.descriptor = signalfd_descriptor,
+				.fiber = fiber,
+				.old_mask = old_mask,
+			};
+
+			RB_OBJ_WRITTEN(self, Qundef, fiber);
+
+			return rb_ensure(process_wait_signalfd_transfer, (VALUE)&signalfd_arguments, process_wait_signalfd_ensure, (VALUE)&signalfd_arguments);
+		}
+#endif
 		rb_syserr_fail(errno, "IO_Event_Selector_URing_process_wait:pidfd_open");
 	}
 	rb_update_max_fd(descriptor);
-	
+
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
 	};
-	
+
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
-	
+
 	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
-	
+
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
@@ -485,13 +588,13 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.flags = flags,
 		.descriptor = descriptor,
 	};
-	
+
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
 	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
-	
+
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
