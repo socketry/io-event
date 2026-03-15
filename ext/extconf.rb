@@ -7,7 +7,11 @@
 # Copyright, 2025, by Stanislav (Stas) Katkov.
 # Copyright, 2026, by Stan Hu.
 
-return if RUBY_DESCRIPTION =~ /jruby/
+# On JRuby, create a fake Makefile and exit:
+if RUBY_DESCRIPTION =~ /jruby/
+	File.write("Makefile", "all:\n\ninstall:\n\nclean:\n\n")
+	exit 0
+end
 
 require "mkmf"
 
