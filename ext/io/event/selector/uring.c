@@ -747,19 +747,6 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	return rb_fiber_scheduler_io_result(total, 0);
 }
 
-static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
-}
-
 VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
@@ -913,19 +900,6 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	}
 	
 	return rb_fiber_scheduler_io_result(total, 0);
-}
-
-static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_URing_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
 VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
@@ -1249,8 +1223,8 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
+	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 5);
+	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 5);
 	rb_define_method(IO_Event_Selector_URing, "io_pread", IO_Event_Selector_URing_io_pread, 6);
 	rb_define_method(IO_Event_Selector_URing, "io_pwrite", IO_Event_Selector_URing_io_pwrite, 6);
 #endif
