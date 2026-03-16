@@ -12,13 +12,9 @@
 #include <time.h>
 
 #include "pidfd.c"
+#include "process_wait_signalfd.c"
 
 #include <linux/version.h>
-
-#ifdef HAVE_SYS_SIGNALFD_H
-#include <sys/signalfd.h>
-#include <signal.h>
-#endif
 
 enum {
 	DEBUG = 0,
@@ -493,15 +489,8 @@ VALUE process_wait_signalfd_transfer(VALUE _arguments) {
 
 		if (!arguments->waiting.result) return Qfalse;
 
-		// Drain the signalfd:
-		struct signalfd_siginfo info;
-		while (read(arguments->descriptor, &info, sizeof(info)) > 0) {}
-
-		// Check if our specific process exited:
-		VALUE status = IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
+		VALUE status = process_wait_signalfd_check(arguments->descriptor, arguments->pid, arguments->flags);
 		if (status != Qnil) return status;
-
-		// SIGCHLD was for a different child — loop and wait again.
 	}
 }
 
@@ -509,11 +498,9 @@ static
 VALUE process_wait_signalfd_ensure(VALUE _arguments) {
 	struct process_wait_signalfd_arguments *arguments = (struct process_wait_signalfd_arguments *)_arguments;
 
-	close(arguments->descriptor);
-
 	IO_Event_Selector_URing_Waiting_cancel(&arguments->waiting);
 
-	pthread_sigmask(SIG_SETMASK, &arguments->old_mask, NULL);
+	process_wait_signalfd_close(arguments->descriptor, &arguments->old_mask);
 
 	return Qnil;
 }
@@ -532,27 +519,10 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		if (errno == EPERM) {
 			// pidfd_open can fail with EPERM inside confined environments (e.g. snap).
 			// Fall back to signalfd with SIGCHLD:
-			sigset_t mask;
-			sigemptyset(&mask);
-			sigaddset(&mask, SIGCHLD);
-
+			VALUE status;
 			sigset_t old_mask;
-			pthread_sigmask(SIG_BLOCK, &mask, &old_mask);
-
-			int signalfd_descriptor = signalfd(-1, &mask, SFD_CLOEXEC | SFD_NONBLOCK);
-			if (signalfd_descriptor == -1) {
-				pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
-				rb_sys_fail("IO_Event_Selector_URing_process_wait:signalfd");
-			}
-			rb_update_max_fd(signalfd_descriptor);
-
-			// Check if the process has already exited:
-			VALUE status = IO_Event_Selector_process_status_wait(pid, flags);
-			if (status != Qnil) {
-				close(signalfd_descriptor);
-				pthread_sigmask(SIG_SETMASK, &old_mask, NULL);
-				return status;
-			}
+			int signalfd_descriptor = process_wait_signalfd_open(pid, flags, &old_mask, &status);
+			if (signalfd_descriptor < 0) return status;
 
 			struct process_wait_signalfd_arguments signalfd_arguments = {
 				.selector = selector,
