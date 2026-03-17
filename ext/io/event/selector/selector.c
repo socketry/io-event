@@ -106,8 +106,19 @@ VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fib
 
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 {
-	// TODO Why is this assertion failing in async?
-	// RUBY_ASSERT(backend->loop != IO_Event_Fiber_current());
+	// Under normal operation, a user fiber yields back to the event loop fiber.
+	// However, in some cases (e.g. blocking IO called from within the scheduler
+	// fiber itself), the current fiber may already be the loop fiber. In that case,
+	// transferring to ourselves would be a no-op in Ruby, but it signals a misuse:
+	// the event loop fiber should never need to yield to itself, as nothing else
+	// would be running to resume it. We return immediately rather than self-transferring.
+	if (backend->loop == IO_Event_Fiber_current()) {
+		// Uncomment to investigate the callsite that triggers this condition:
+		// rb_warning("IO_Event_Selector_loop_yield: current fiber is the loop fiber");
+		// rb_funcall(rb_mKernel, rb_intern("puts"), 1, rb_funcall(rb_cThread, rb_intern("current"), 0));
+		return Qnil;
+	}
+
 	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
 }
 
