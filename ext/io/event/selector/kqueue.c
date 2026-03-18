@@ -799,130 +799,26 @@ static VALUE IO_Event_Selector_KQueue_io_write_compatible(int argc, VALUE *argv,
 	return IO_Event_Selector_KQueue_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
 
-struct io_pread_arguments {
-	VALUE self;
-	VALUE fiber;
-	VALUE io;
-
-	int flags;
-
-	int descriptor;
-	off_t from;
-
-	VALUE buffer;
-	size_t length;
-	size_t offset;
-};
-
-static
-VALUE io_pread_loop(VALUE _arguments) {
-	struct io_pread_arguments *arguments = (struct io_pread_arguments *)_arguments;
-
-	void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
-
-	size_t length = arguments->length;
-	size_t offset = arguments->offset;
-	off_t from = arguments->from;
-	size_t total = 0;
-
-	size_t maximum_size = size - offset;
-	while (maximum_size) {
-		ssize_t result = pread(arguments->descriptor, (char*)base+offset, maximum_size, from);
-
-		if (result > 0) {
-			total += result;
-			offset += result;
-			from += result;
-			if ((size_t)result >= length) break;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(errno)) {
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
-		} else {
-			return rb_fiber_scheduler_io_result(-1, errno);
-		}
-
-		maximum_size = size - offset;
-	}
-
-	return rb_fiber_scheduler_io_result(total, 0);
-}
-
-static
-VALUE io_pread_ensure(VALUE _arguments) {
-	struct io_pread_arguments *arguments = (struct io_pread_arguments *)_arguments;
-
-	IO_Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
-
-	return Qnil;
-}
-
 VALUE IO_Event_Selector_KQueue_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 
+	void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
+
 	off_t from = NUM2OFFT(_from);
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
-
-	struct io_pread_arguments io_pread_arguments = {
-		.self = self,
-		.fiber = fiber,
-		.io = io,
-
-		.flags = IO_Event_Selector_nonblock_set(descriptor),
-		.descriptor = descriptor,
-		.from = from,
-		.buffer = buffer,
-		.length = length,
-		.offset = offset,
-	};
+	size_t total = 0;
 
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
 
-	return rb_ensure(io_pread_loop, (VALUE)&io_pread_arguments, io_pread_ensure, (VALUE)&io_pread_arguments);
-}
-
-struct io_pwrite_arguments {
-	VALUE self;
-	VALUE fiber;
-	VALUE io;
-
-	int flags;
-
-	int descriptor;
-	off_t from;
-
-	VALUE buffer;
-	size_t length;
-	size_t offset;
-};
-
-static
-VALUE io_pwrite_loop(VALUE _arguments) {
-	struct io_pwrite_arguments *arguments = (struct io_pwrite_arguments *)_arguments;
-
-	const void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
-
-	size_t length = arguments->length;
-	size_t offset = arguments->offset;
-	off_t from = arguments->from;
-	size_t total = 0;
-
-	if (length > size) {
-		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
-	}
-
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		ssize_t result = pwrite(arguments->descriptor, (char*)base+offset, maximum_size, from);
+		ssize_t result = pread(descriptor, (char*)base+offset, maximum_size, from);
 
 		if (result > 0) {
 			total += result;
@@ -933,7 +829,7 @@ VALUE io_pwrite_loop(VALUE _arguments) {
 		} else if (result == 0) {
 			break;
 		} else if (length > 0 && IO_Event_try_again(errno)) {
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
+			IO_Event_Selector_KQueue_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
 		} else {
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
@@ -942,15 +838,6 @@ VALUE io_pwrite_loop(VALUE _arguments) {
 	}
 
 	return rb_fiber_scheduler_io_result(total, 0);
-}
-
-static
-VALUE io_pwrite_ensure(VALUE _arguments) {
-	struct io_pwrite_arguments *arguments = (struct io_pwrite_arguments *)_arguments;
-
-	IO_Event_Selector_nonblock_restore(arguments->descriptor, arguments->flags);
-
-	return Qnil;
 }
 
 VALUE IO_Event_Selector_KQueue_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _length, VALUE _offset) {
@@ -959,26 +846,43 @@ VALUE IO_Event_Selector_KQueue_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALU
 
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 
+	const void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
+
 	off_t from = NUM2OFFT(_from);
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
+	size_t total = 0;
 
-	struct io_pwrite_arguments io_pwrite_arguments = {
-		.self = self,
-		.fiber = fiber,
-		.io = io,
-
-		.flags = IO_Event_Selector_nonblock_set(descriptor),
-		.descriptor = descriptor,
-		.from = from,
-		.buffer = buffer,
-		.length = length,
-		.offset = offset,
-	};
+	if (length > size) {
+		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
 
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
 
-	return rb_ensure(io_pwrite_loop, (VALUE)&io_pwrite_arguments, io_pwrite_ensure, (VALUE)&io_pwrite_arguments);
+	size_t maximum_size = size - offset;
+	while (maximum_size) {
+		ssize_t result = pwrite(descriptor, (char*)base+offset, maximum_size, from);
+
+		if (result > 0) {
+			total += result;
+			offset += result;
+			from += result;
+			if ((size_t)result >= length) break;
+			length -= result;
+		} else if (result == 0) {
+			break;
+		} else if (length > 0 && IO_Event_try_again(errno)) {
+			IO_Event_Selector_KQueue_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
+		} else {
+			return rb_fiber_scheduler_io_result(-1, errno);
+		}
+
+		maximum_size = size - offset;
+	}
+
+	return rb_fiber_scheduler_io_result(total, 0);
 }
 
 #endif
