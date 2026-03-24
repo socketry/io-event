@@ -147,7 +147,7 @@ void IO_Event_Selector_EPoll_Type_free(void *_selector)
 	
 	IO_Event_Array_free(&selector->descriptors);
 	
-	free(selector);
+	xfree(selector);
 }
 
 static

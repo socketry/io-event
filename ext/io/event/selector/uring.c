@@ -116,7 +116,7 @@ void IO_Event_Selector_URing_Type_free(void *_selector)
 	
 	IO_Event_Array_free(&selector->completions);
 	
-	free(selector);
+	xfree(selector);
 }
 
 static
