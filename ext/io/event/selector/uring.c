@@ -1053,6 +1053,8 @@ static
 int select_internal_without_gvl(struct select_arguments *arguments) {
 	io_uring_submit_flush(arguments->selector);
 	
+	IO_Event_Selector_before_waiting(arguments->selector);
+	
 	arguments->selector->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->selector->blocked = 0;

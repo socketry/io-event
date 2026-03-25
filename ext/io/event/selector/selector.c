@@ -78,6 +78,8 @@ static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
 	return rb_ensure(rb_yield, io, IO_Event_Selector_nonblock_ensure, (VALUE)&arguments);
 }
 
+static float IO_Event_Selector_GARBAGE_COLLECTION = -1;
+
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 #ifndef HAVE_RB_IO_DESCRIPTOR
 	id_fileno = rb_intern("fileno");
@@ -89,6 +91,11 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	rb_gc_register_mark_object(rb_Process_Status);
 #endif
 	
+	char *garbage_collection_env = getenv("IO_EVENT_SELECTOR_GARBAGE_COLLECTION");
+	if (garbage_collection_env) {
+		IO_Event_Selector_GARBAGE_COLLECTION = atof(garbage_collection_env);
+	}
+	
 	rb_define_singleton_method(IO_Event_Selector, "nonblock", IO_Event_Selector_nonblock, 1);
 }
 
@@ -98,6 +105,9 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 	
 	backend->waiting = NULL;
 	backend->ready = NULL;
+	
+	backend->garbage_collection = IO_Event_Selector_GARBAGE_COLLECTION;
+	backend->last_garbage_collection = (struct timespec){0, 0};
 }
 
 VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fiber, int argc, VALUE *argv) {

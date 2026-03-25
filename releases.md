@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - **Experimental** Add support for out-of-band garbage collection. When enabled via the `IO_EVENT_SELECTOR_GARBAGE_COLLECTION` environment variable, the selector will run garbage collection at a minimum interval (in seconds) while the event loop is blocking, reducing GC pressure during active I/O. A negative value (default) disables the feature; `0` runs GC on every block.
+
 ## v1.14.4
 
   - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.

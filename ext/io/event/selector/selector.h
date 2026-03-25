@@ -81,9 +81,26 @@ struct IO_Event_Selector {
 	struct IO_Event_Selector_Queue *waiting;
 	// Process from ready (back/tail of queue).
 	struct IO_Event_Selector_Queue *ready;
+	
+	// Minimum interval in seconds between out-of-band garbage collections, or < 0 to disable:
+	float garbage_collection;
+	struct timespec last_garbage_collection;
 };
 
 void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop);
+
+static inline IO_Event_Selector_before_waiting(struct IO_Event_Selector *backend) {
+	// Experimental support for out-of-band garbage collection. This allows the selector to perform garbage collection at regular intervals while waiting for events, which can help reduce overall latency.
+	if (backend->garbage_collection >= 0) {
+		struct timespec now;
+		IO_Event_Time_current(&now);
+		
+		if (IO_Event_Time_delta(&backend->last_garbage_collection, &now) >= backend->garbage_collection) {
+			rb_gc();
+			backend->last_garbage_collection = now;
+		}
+	}
+}
 
 static inline
 void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {
