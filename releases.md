@@ -3,6 +3,7 @@
 ## Unreleased
 
   - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
+  - Add `io_pread` and `io_pwrite` methods to `IO::Event::Selector::KQueue` for positional read/write operations on BSD/macOS platforms.
 
 ## v1.14.4
 
