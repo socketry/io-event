@@ -814,12 +814,9 @@ VALUE IO_Event_Selector_KQueue_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
 
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	}
-
-	if (offset == size || length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
 	}
 
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -867,12 +864,9 @@ VALUE IO_Event_Selector_KQueue_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALU
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	}
-
-	if (offset == size || length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
 	}
 
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
