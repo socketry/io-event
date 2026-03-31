@@ -188,6 +188,11 @@ module IO::Event
 			# @parameter length [Integer] The minimum number of bytes to read.
 			# @parameter offset [Integer] The offset into the buffer to read to.
 			def io_read(fiber, io, buffer, length, offset = 0)
+				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
+				if offset > buffer.size
+					return -Errno::EINVAL::Errno
+				end
+				
 				total = 0
 				
 				Selector.nonblock(io) do
@@ -218,6 +223,11 @@ module IO::Event
 			# @parameter length [Integer] The minimum number of bytes to write.
 			# @parameter offset [Integer] The offset into the buffer to write from.
 			def io_write(fiber, io, buffer, length, offset = 0)
+				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
+				if offset > buffer.size
+					return -Errno::EINVAL::Errno
+				end
+				
 				total = 0
 				
 				Selector.nonblock(io) do

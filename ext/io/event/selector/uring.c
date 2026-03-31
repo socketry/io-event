@@ -710,6 +710,11 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t total = 0;
 	off_t from = io_seekable(descriptor);
 	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
+	
 	size_t maximum_size = size - offset;
 	
 	// Are we performing a non-blocking read?
@@ -774,6 +779,11 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
 	off_t from = NUM2OFFT(_from);
+	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
@@ -892,6 +902,11 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
 	}
 
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
+
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
@@ -945,6 +960,11 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
+
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
 	}
 
 	size_t maximum_size = size - offset;

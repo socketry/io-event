@@ -615,6 +615,11 @@ VALUE io_read_loop(VALUE _arguments) {
 	size_t offset = arguments->offset;
 	size_t total = 0;
 	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
+	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
@@ -711,6 +716,11 @@ VALUE io_write_loop(VALUE _arguments) {
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
+	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
 	}
 	
 	size_t maximum_size = size - offset;

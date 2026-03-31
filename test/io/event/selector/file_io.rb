@@ -92,6 +92,52 @@ FileIO = Sus::Shared("file io") do
 			
 			expect(wait_result).to be == IO::WRITABLE
 		end
+		
+		it "returns EINVAL when read offset exceeds buffer size" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			buffer = IO::Buffer.new(64)
+			file.seek(0)
+			
+			# Offset 128 exceeds buffer size of 64
+			result = selector.io_read(Fiber.current, file, buffer, 1, 128)
+			
+			expect(result).to be == -Errno::EINVAL::Errno
+		end
+		
+		it "returns EINVAL when write offset exceeds buffer size" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			buffer = IO::Buffer.new(64)
+			file.seek(0)
+			
+			# Offset 128 exceeds buffer size of 64
+			result = selector.io_write(Fiber.current, file, buffer, 1, 128)
+			
+			expect(result).to be == -Errno::EINVAL::Errno
+		end
+		
+		it "returns EINVAL when pread offset exceeds buffer size" do
+			skip "io_pread is not implemented" unless selector.respond_to?(:io_pread)
+			
+			buffer = IO::Buffer.new(64)
+			
+			# Offset 128 exceeds buffer size of 64
+			result = selector.io_pread(Fiber.current, file, buffer, 0, 1, 128)
+			
+			expect(result).to be == -Errno::EINVAL::Errno
+		end
+		
+		it "returns EINVAL when pwrite offset exceeds buffer size" do
+			skip "io_pwrite is not implemented" unless selector.respond_to?(:io_pwrite)
+			
+			buffer = IO::Buffer.new(64)
+			
+			# Offset 128 exceeds buffer size of 64
+			result = selector.io_pwrite(Fiber.current, file, buffer, 0, 1, 128)
+			
+			expect(result).to be == -Errno::EINVAL::Errno
+		end
 	end
 end
 

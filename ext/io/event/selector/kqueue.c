@@ -605,6 +605,11 @@ VALUE io_read_loop(VALUE _arguments) {
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
+	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, offset, maximum_size);
@@ -712,6 +717,11 @@ VALUE io_write_loop(VALUE _arguments) {
 	}
 	
 	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
+	
+	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	}
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {

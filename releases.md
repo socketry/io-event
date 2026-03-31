@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
+
 ## v1.14.4
 
   - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.
