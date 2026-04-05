@@ -33,14 +33,16 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 					# acceptable: the IO was closed while waiting
 				end
 				
-				wait_fiber.transfer
-				
-				# Close the IO before calling select (deterministic, no race):
-				input.close
-				
-				Thread.handle_interrupt(::SignalException => :never) do
-					scheduler.selector.select(0)
+				# Close must happen in a separate fiber so that rb_thread_io_close_wait
+				# can yield (via kernel_sleep) back to the loop fiber instead of deadlocking:
+				close_fiber = Fiber.new do
+					input.close
 				end
+				
+				wait_fiber.transfer
+				close_fiber.transfer
+				
+				scheduler.run
 			ensure
 				Fiber.set_scheduler(nil)
 				scheduler&.close
@@ -70,9 +72,7 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 					input.close
 				end
 				
-				Thread.handle_interrupt(::SignalException => :never) do
-					scheduler.selector.select(1.0)
-				end
+				scheduler.run
 			ensure
 				closer&.join
 				Fiber.set_scheduler(nil)
