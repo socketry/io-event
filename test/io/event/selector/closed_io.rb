@@ -21,6 +21,8 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 		end
 		
 		it "does not raise when IO is closed from the same fiber before selecting" do
+			skip_unless_minimum_ruby_version("4")
+			
 			thread = Thread.new do
 				Thread.current.report_on_exception = false
 				
@@ -52,6 +54,8 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 		end
 		
 		it "does not raise when IO is closed from another thread while selecting" do
+			skip_unless_minimum_ruby_version("4")
+			
 			thread = Thread.new do
 				Thread.current.report_on_exception = false
 				
