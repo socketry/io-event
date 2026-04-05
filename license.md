@@ -16,6 +16,7 @@ Copyright, 2025, by Luke Gruber.
 Copyright, 2026, by William T. Nelson.  
 Copyright, 2026, by Stan Hu.  
 Copyright, 2026, by John Hawthorn.  
+Copyright, 2026, by Italo Brandão.  
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
