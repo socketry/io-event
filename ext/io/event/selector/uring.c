@@ -557,7 +557,12 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
 	
 	int32_t result = arguments->waiting->result;
-	if (result < 0) {
+	if (result == -EBADF) {
+		// The file descriptor was closed before or during the poll operation.
+		// Raise IOError to match Ruby's convention for operations on closed streams,
+		// allowing callers to rescue IOError rather than seeing Errno::EBADF propagate.
+		rb_raise(rb_eIOError, "closed stream");
+	} else if (result < 0) {
 		rb_syserr_fail(-result, "io_wait_transfer:io_uring_poll_add");
 	} else if (result > 0) {
 		// We explicitly filter the resulting events based on the requested events.
