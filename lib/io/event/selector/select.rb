@@ -288,12 +288,14 @@ module IO::Event
 					duration = 0
 				end
 				
+				closed = nil
 				readable = Array.new
 				writable = Array.new
 				priority = Array.new
 				
 				@waiting.delete_if do |io, waiter|
 					if io.closed?
+						(closed ||= Array.new) << waiter
 						true
 					else
 						waiter.each do |fiber, events|
@@ -311,6 +313,14 @@ module IO::Event
 						end
 						
 						false
+					end
+				end
+				
+				closed&.each do |waiter|
+					waiter.each do |fiber, _|
+						fiber.raise(IOError, "closed stream") if fiber.alive?
+					rescue
+						# The fiber didn't handle the exception; it is now terminated.
 					end
 				end
 				
@@ -338,7 +348,26 @@ module IO::Event
 				end
 				
 				if error
-					# Requeue the error into the pending exception queue:
+					# `IO.select` can raise both IOError and Errno::EBADF when one of the given IOs is closed. In that case, we enumerate all waiting IOs to find the closed one(s) and raise on their waiters. Then, we return 0 so the event loop retries cleanly.
+					if error.is_a?(IOError) || error.is_a?(Errno::EBADF)
+						closed = []
+						@waiting.delete_if do |io, waiter|
+							if io.closed?
+								waiter.each{|fiber, _| closed << fiber if fiber.alive?}
+								true
+							end
+						end
+						
+						closed.each do |fiber|
+							fiber.raise(IOError, "closed stream")
+						rescue
+							# The fiber didn't handle the exception; it is now terminated.
+						end
+						
+						return 0
+					end
+					
+					# For all other errors (e.g. thread interrupts), re-queue on the scheduler thread:
 					Thread.current.raise(error)
 					return 0
 				end
@@ -346,15 +375,17 @@ module IO::Event
 				ready = Hash.new(0).compare_by_identity
 				
 				readable&.each do |io|
-					ready[io] |= IO::READABLE
+					# Skip any IO that was closed/reused after IO.select returned - its fd number
+					# may now belong to a different file, so resuming the waiter would be wrong:
+					ready[io] |= IO::READABLE unless io.closed?
 				end
 				
 				writable&.each do |io|
-					ready[io] |= IO::WRITABLE
+					ready[io] |= IO::WRITABLE unless io.closed?
 				end
 				
 				priority&.each do |io|
-					ready[io] |= IO::PRIORITY
+					ready[io] |= IO::PRIORITY unless io.closed?
 				end
 				
 				ready.each do |io, events|
