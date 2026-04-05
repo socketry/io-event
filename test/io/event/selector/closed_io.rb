@@ -7,6 +7,8 @@ require "io/event"
 require "io/event/selector"
 require "socket"
 
+require_relative "../../../../fixtures/io/event/test_scheduler"
+
 ClosedIO = Sus::Shared("closed io while selecting") do
 	with "a pipe" do
 		let(:pipe) {IO.pipe}
@@ -22,10 +24,11 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 			thread = Thread.new do
 				Thread.current.report_on_exception = false
 				
-				selector = subject.new(Fiber.current)
+				scheduler = IO::Event::TestScheduler.new(selector: subject.new(Fiber.current))
+				Fiber.set_scheduler(scheduler)
 				
 				wait_fiber = Fiber.new do
-					selector.io_wait(Fiber.current, input, IO::READABLE)
+					input.wait_readable
 				rescue IOError
 					# acceptable: the IO was closed while waiting
 				end
@@ -36,10 +39,11 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 				input.close
 				
 				Thread.handle_interrupt(::SignalException => :never) do
-					selector.select(0)
+					scheduler.selector.select(0)
 				end
 			ensure
-				selector&.close
+				Fiber.set_scheduler(nil)
+				scheduler&.close
 			end
 			
 			thread.join
@@ -49,29 +53,30 @@ ClosedIO = Sus::Shared("closed io while selecting") do
 			thread = Thread.new do
 				Thread.current.report_on_exception = false
 				
-				selector = subject.new(Fiber.current)
+				scheduler = IO::Event::TestScheduler.new(selector: subject.new(Fiber.current))
+				Fiber.set_scheduler(scheduler)
 				
 				wait_fiber = Fiber.new do
-					selector.io_wait(Fiber.current, input, IO::READABLE)
+					input.wait_readable
 				rescue IOError
 					# acceptable: the IO was closed while waiting
 				end
 				
 				wait_fiber.transfer
 				
-				# Close the IO from another thread while IO.select is blocking — this is
-				# the race condition that triggers IOError: closed stream in Select#select:
+				# Close the IO from another thread while the selector is blocking:
 				closer = Thread.new do
 					sleep(0.01)
 					input.close
 				end
 				
 				Thread.handle_interrupt(::SignalException => :never) do
-					selector.select(1.0)
+					scheduler.selector.select(1.0)
 				end
 			ensure
 				closer&.join
-				selector&.close
+				Fiber.set_scheduler(nil)
+				scheduler&.close
 			end
 			
 			error = nil
