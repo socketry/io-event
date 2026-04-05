@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.15.0
+
+  - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
+
 ### v1.14.4
 
   - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.
@@ -54,10 +58,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.9.0
 
   - Improved `IO::Event::Profiler` for detecting stalls.
-
-### v1.8.0
-
-  - Detecting fibers that are stalling the event loop.
 
 ## Contributing
 

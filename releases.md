@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.15.0
 
   - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
 
