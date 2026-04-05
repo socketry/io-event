@@ -432,7 +432,8 @@ Selector = Sus::Shared("a selector") do
 				events << :wait_readable
 				begin
 					result = selector.io_wait(Fiber.current, local, IO::READABLE)
-					$stderr.puts "result: #{result}"
+					
+					# This should never trigger:
 					events << :readable
 				rescue => error
 					# This isn't a reliable state transition.

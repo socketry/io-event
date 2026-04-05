@@ -288,14 +288,13 @@ module IO::Event
 					duration = 0
 				end
 				
-				closed = nil
 				readable = Array.new
 				writable = Array.new
 				priority = Array.new
 				
 				@waiting.delete_if do |io, waiter|
 					if io.closed?
-						(closed ||= Array.new) << waiter
+						# When an IO is closed, we silently drop it. Ruby 4's `rb_thread_io_close_interrupt` will take care of interrupting any fibers waiting on the closed IO, so we don't need to do anything here.
 						true
 					else
 						waiter.each do |fiber, events|
@@ -313,14 +312,6 @@ module IO::Event
 						end
 						
 						false
-					end
-				end
-				
-				closed&.each do |waiter|
-					waiter.each do |fiber, _|
-						fiber.raise(IOError, "closed stream") if fiber.alive?
-					rescue
-						# The fiber didn't handle the exception; it is now terminated.
 					end
 				end
 				
@@ -348,22 +339,8 @@ module IO::Event
 				end
 				
 				if error
-					# `IO.select` can raise both IOError and Errno::EBADF when one of the given IOs is closed. In that case, we enumerate all waiting IOs to find the closed one(s) and raise on their waiters. Then, we return 0 so the event loop retries cleanly.
 					if error.is_a?(IOError) || error.is_a?(Errno::EBADF)
-						closed = []
-						@waiting.delete_if do |io, waiter|
-							if io.closed?
-								waiter.each{|fiber, _| closed << fiber if fiber.alive?}
-								true
-							end
-						end
-						
-						closed.each do |fiber|
-							fiber.raise(IOError, "closed stream")
-						rescue
-							# The fiber didn't handle the exception; it is now terminated.
-						end
-						
+						# This can happen if an IO is closed while we're blocked in ::IO.select. Ruby 4's `rb_thread_io_close_interrupt` will take care of interrupting any fibers waiting on the closed IO, so we don't need to do anything here, except try again:
 						return 0
 					end
 					
