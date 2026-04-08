@@ -20,7 +20,7 @@ FileIO = Sus::Shared("file io") do
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				file.seek(0)
-				write_result = selector.io_write(Fiber.current, file, buffer, 128)
+				write_result = selector.io_write(Fiber.current, file, buffer, 128, 0)
 			end
 			
 			reader = Fiber.new do
@@ -28,7 +28,7 @@ FileIO = Sus::Shared("file io") do
 				file.seek(0)
 				
 				# The read will return 0 if the data is not written yet:
-				read_result = selector.io_read(Fiber.current, file, buffer, 0)
+				read_result = selector.io_read(Fiber.current, file, buffer, 0, 0)
 			end
 			
 			writer.transfer

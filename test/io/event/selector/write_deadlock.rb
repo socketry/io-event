@@ -37,7 +37,7 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			# Writer fiber that should hit EAGAIN and wait for WRITABLE
 			writer = Fiber.new do
 				buffer = IO::Buffer.for("test" * 64)  # 256 bytes
-				@selector.io_write(Fiber.current, local, buffer, buffer.size)
+				@selector.io_write(Fiber.current, local, buffer, buffer.size, 0)
 				write_completed = true
 			end
 			
