@@ -1,6 +1,6 @@
 // Released under the MIT License.
 // Copyright, 2025, by Samuel Williams.
-// DEBUG STUB: minimal version to isolate linker failure.
+// DEBUG STUB v2: no winsock includes — just kernel32 and Ruby APIs.
 
 #include "iocp.h"
 #include "selector.h"
@@ -8,7 +8,6 @@
 #ifdef _WIN32
 
 #include <ruby/win32.h>
-#include <winsock2.h>
 #include <windows.h>
 
 VALUE IO_Event_Selector_IOCP_allocate(VALUE self) { return self; }
