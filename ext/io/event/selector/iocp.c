@@ -672,27 +672,12 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 	} else if (requested & IO_EVENT_WRITABLE) {
 		if (is_socket) {
-			// First check: is the socket immediately writable?
-			// Use select() with 0 timeout rather than WSAPoll — WSAPoll is
-			// not always properly __declspec(dllimport)-annotated in all
-			// MinGW-w64 toolchain versions, causing a linker failure.
-			fd_set wfds;
-			FD_ZERO(&wfds);
-			FD_SET(sock, &wfds);
-			TIMEVAL tv = {0, 0};
-			int rc = select(0, NULL, &wfds, NULL, &tv);
-			if (rc > 0) {
-				// Immediately writable — enqueue as ready, yield once.
-				waiting.result = IO_EVENT_WRITABLE;
-				IO_Event_Selector_ready_push(&selector->backend, fiber);
-				waiting_cancel(&waiting);
-				// completion slot is unused; release it.
-				completion_release(selector, c);
-				IO_Event_Selector_loop_yield(&selector->backend);
-				return RB_INT2NUM(IO_EVENT_WRITABLE);
-			}
-
-			// Not immediately writable: use WSAEventSelect + OS thread pool.
+			// Use WSAEventSelect + OS thread pool for writable detection.
+			// FD_WRITE fires immediately for freshly-connected sockets and
+			// after WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
+			// We avoid select()+FD_SET here because ruby/win32.h redefines
+			// FD_SET to call _get_osfhandle(fd) expecting a CRT integer fd,
+			// not a raw SOCKET handle, which would produce wrong results.
 			WSAEVENT wsa_ev = WSACreateEvent();
 			if (wsa_ev == WSA_INVALID_EVENT) {
 				waiting_cancel(&waiting);
