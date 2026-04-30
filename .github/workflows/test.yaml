@@ -50,7 +50,3 @@ jobs:
     - name: Run tests
       timeout-minutes: 10
       run: bundle exec bake test
-      env:
-        # V=1 surfaces the full linker command (and errors) on Windows
-        # without affecting overall build behaviour.
-        MAKEFLAGS: "V=1"

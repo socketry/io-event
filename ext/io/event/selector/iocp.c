@@ -866,21 +866,12 @@ IO_Event_Selector_IOCP_io_read(VALUE self, VALUE fiber, VALUE io,
 	if (offset > size)
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
 
-	// length == 0: non-blocking peek — read whatever is available.
-	if (!length) {
-		int state = IO_Event_Selector_nonblock_set(fd);
-		// Use rb_w32_recv / rb_w32_read explicitly: including winsock2.h
-		// after ruby/win32.h can cause the recv/read macros to be undone,
-		// leaving bare undecorated symbol references that may not link.
-		ssize_t result = is_socket
-		    ? rb_w32_recv(fd, (char *)base + offset, (int)(size - offset), 0)
-		    : rb_w32_read(fd, (char *)base + offset, size - offset);
-		int err = errno;
-		IO_Event_Selector_nonblock_restore(fd, state);
-		return rb_fiber_scheduler_io_result((int)result, err);
-	}
-
 	size_t maximum_size = size - offset;
+
+	// length == 0 (non-blocking peek) is not specially handled here.
+	// On IOCP, all reads go through overlapped completion; there is no
+	// zero-copy "give me whatever is buffered" path.
+	if (!length) length = maximum_size;
 	while (maximum_size) {
 		int result = do_read(selector, self, fiber, io,
 		                     is_socket, sock,
