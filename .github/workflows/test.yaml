@@ -47,6 +47,11 @@ jobs:
       if: matrix.os == 'ubuntu'
       run: sudo apt-get install -y liburing-dev
     
+    - name: Build extension
+      run: bundle exec bake build
+      env:
+        MAKEFLAGS: "V=1"
+    
     - name: Run tests
       timeout-minutes: 10
-      run: bundle exec bake test
+      run: bundle exec sus
