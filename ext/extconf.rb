@@ -46,6 +46,11 @@ if have_header("sys/event.h")
 	$srcs << "io/event/selector/kqueue.c"
 end
 
+if /mingw|mswin/ =~ RUBY_PLATFORM
+	$srcs << "io/event/selector/iocp.c"
+	$LOCAL_LIBS << " -lws2_32 -lmswsock"
+end
+
 have_header("sys/wait.h")
 
 have_header("sys/eventfd.h")

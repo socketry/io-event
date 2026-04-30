@@ -19,6 +19,10 @@ void Init_IO_Event(void);
 #include "selector/kqueue.h"
 #endif
 
+#ifdef _WIN32
+#include "selector/iocp.h"
+#endif
+
 #ifdef HAVE_IO_EVENT_WORKER_POOL
 #include "worker_pool.h"
 #endif
