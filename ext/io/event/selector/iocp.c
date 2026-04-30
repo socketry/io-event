@@ -416,8 +416,9 @@ VALUE IO_Event_Selector_IOCP_ready_p(VALUE self)
 
 // Called from the OS thread-pool when a waited process exits.
 static VOID CALLBACK
-process_exit_callback(PVOID param, BOOLEAN UNUSED(timer))
+process_exit_callback(PVOID param, BOOLEAN timer)
 {
+	(void)timer;
 	struct IO_Event_Selector_IOCP_Notify *notify = param;
 
 	// Exactly one PostQueuedCompletionStatus, even if both the callback and
@@ -591,8 +592,9 @@ io_wait_transfer(VALUE _arguments)
 
 // Callback for WSAEventSelect-based writable wait.
 static VOID CALLBACK
-io_wait_writable_callback(PVOID param, BOOLEAN UNUSED(timer))
+io_wait_writable_callback(PVOID param, BOOLEAN timer)
 {
+	(void)timer;
 	struct IO_Event_Selector_IOCP_Notify *notify = param;
 
 	if (notify->wsa_event) {
