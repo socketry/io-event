@@ -9,16 +9,9 @@
 
 #ifdef _WIN32
 
-// Require Windows Vista+ for GetQueuedCompletionStatusEx and WSAPoll.
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#elif _WIN32_WINNT < 0x0600
-#undef _WIN32_WINNT
-#define _WIN32_WINNT 0x0600
-#endif
-
 // winsock2.h must precede windows.h; ruby/win32.h arranges this, but we
 // include it explicitly in case a translation unit pulls us in directly.
+// Note: Ruby's build system already passes -D_WIN32_WINNT=0x0600 on Windows.
 #include <ruby/win32.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
