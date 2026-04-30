@@ -673,9 +673,15 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	} else if (requested & IO_EVENT_WRITABLE) {
 		if (is_socket) {
 			// First check: is the socket immediately writable?
-			WSAPOLLFD pfd = {sock, POLLOUT, 0};
-			int rc = WSAPoll(&pfd, 1, 0);
-			if (rc > 0 && (pfd.revents & POLLOUT)) {
+			// Use select() with 0 timeout rather than WSAPoll — WSAPoll is
+			// not always properly __declspec(dllimport)-annotated in all
+			// MinGW-w64 toolchain versions, causing a linker failure.
+			fd_set wfds;
+			FD_ZERO(&wfds);
+			FD_SET(sock, &wfds);
+			TIMEVAL tv = {0, 0};
+			int rc = select(0, NULL, &wfds, NULL, &tv);
+			if (rc > 0) {
 				// Immediately writable — enqueue as ready, yield once.
 				waiting.result = IO_EVENT_WRITABLE;
 				IO_Event_Selector_ready_push(&selector->backend, fiber);
@@ -878,9 +884,12 @@ IO_Event_Selector_IOCP_io_read(VALUE self, VALUE fiber, VALUE io,
 	// length == 0: non-blocking peek — read whatever is available.
 	if (!length) {
 		int state = IO_Event_Selector_nonblock_set(fd);
+		// Use rb_w32_recv / rb_w32_read explicitly: including winsock2.h
+		// after ruby/win32.h can cause the recv/read macros to be undone,
+		// leaving bare undecorated symbol references that may not link.
 		ssize_t result = is_socket
-		    ? recv(sock, (char *)base + offset, (int)(size - offset), 0)
-		    : read(fd, (char *)base + offset, size - offset);
+		    ? rb_w32_recv(fd, (char *)base + offset, (int)(size - offset), 0)
+		    : rb_w32_read(fd, (char *)base + offset, size - offset);
 		int err = errno;
 		IO_Event_Selector_nonblock_restore(fd, state);
 		return rb_fiber_scheduler_io_result((int)result, err);
