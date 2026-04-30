@@ -47,13 +47,10 @@ jobs:
       if: matrix.os == 'ubuntu'
       run: sudo apt-get install -y liburing-dev
     
-    - name: Build extension verbosely (Windows)
-      if: matrix.os == 'windows'
-      run: |
-        cd ext
-        ruby extconf.rb
-        make V=1 2>&1
-    
     - name: Run tests
       timeout-minutes: 10
       run: bundle exec bake test
+      env:
+        # V=1 surfaces the full linker command (and errors) on Windows
+        # without affecting overall build behaviour.
+        MAKEFLAGS: "V=1"
