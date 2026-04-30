@@ -15,7 +15,6 @@
 #include <ruby/win32.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <mswsock.h>
 #include <windows.h>
 
 #include <time.h>

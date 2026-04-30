@@ -47,6 +47,15 @@ jobs:
       if: matrix.os == 'ubuntu'
       run: sudo apt-get install -y liburing-dev
     
+    - name: Show undefined symbols in iocp.o (Windows)
+      if: matrix.os == 'windows'
+      continue-on-error: true
+      run: |
+        cd ext
+        ruby extconf.rb
+        make iocp.o
+        nm iocp.o | grep " U " || true
+    
     - name: Run tests
       timeout-minutes: 10
       run: bundle exec bake test
