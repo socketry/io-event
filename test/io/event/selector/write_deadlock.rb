@@ -36,7 +36,7 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			
 			# Writer fiber that should hit EAGAIN and wait for WRITABLE
 			writer = Fiber.new do
-				buffer = IO::Buffer.for("test" * 64)  # 256 bytes
+				buffer = IO::Buffer.for("test" * 64)
 				@selector.io_write(Fiber.current, local, buffer, buffer.size)
 				write_completed = true
 			end
@@ -45,7 +45,7 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			writer.transfer
 			
 			# Writer should be stuck waiting (either for right or wrong event)
-			expect(writer.alive?).to be == true
+			expect(writer).to be(:alive?)
 			expect(write_completed).to be == false
 			
 			# Drain some data to make socket writable
@@ -56,7 +56,7 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			# With bug: writer stays stuck because it's waiting for READABLE.
 			timeout_count = 0
 			while writer.alive? && timeout_count < 10
-				@selector.select(1.0)  # Short intervals for responsiveness, many iterations for tolerance
+				@selector.select(1.0)
 				timeout_count += 1
 			end
 			
