@@ -1,6 +1,8 @@
 // Released under the MIT License.
 // Copyright, 2025, by Samuel Williams.
 
+#include <ruby.h>
+
 #include "iocp.h"
 #include "selector.h"
 #include "../list.h"
@@ -9,10 +11,10 @@
 
 #ifdef _WIN32
 
-// winsock2.h must precede windows.h; ruby/win32.h arranges this, but we
-// include it explicitly in case a translation unit pulls us in directly.
-// Note: Ruby's build system already passes -D_WIN32_WINNT=0x0600 on Windows.
-#include <ruby/win32.h>
+// ruby.h → ruby/win32.h already includes winsock2.h and sets up the Win32
+// environment correctly.  We include the headers below for their type and
+// function declarations; they are no-ops at the preprocessor level because
+// their include guards have already been set by ruby/win32.h.
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>

@@ -48,6 +48,12 @@ end
 
 if /mingw|mswin/ =~ RUBY_PLATFORM
 	$srcs << "io/event/selector/iocp.c"
+	# Explicitly add the MinGW import-library path so the linker can find
+	# libws2_32.a.  GCC's built-in spec search paths are sufficient on
+	# cached MSYS2 installations, but the fresh MSYS2 bundled with
+	# RubyInstaller 4.0+ needs an explicit -L flag.
+	mingw_lib = "#{ENV.fetch('MINGW_PREFIX', '/ucrt64')}/lib"
+	$LDFLAGS << " -L#{mingw_lib}" if File.directory?(mingw_lib)
 	$libs = append_library($libs, "ws2_32")
 end
 
