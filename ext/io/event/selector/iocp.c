@@ -1,8 +1,6 @@
 // Released under the MIT License.
 // Copyright, 2025, by Samuel Williams.
 
-#include <ruby.h>
-
 #include "iocp.h"
 #include "selector.h"
 #include "../list.h"
