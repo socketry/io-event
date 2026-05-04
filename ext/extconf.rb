@@ -48,13 +48,15 @@ end
 
 if /mingw|mswin/ =~ RUBY_PLATFORM
 	$srcs << "io/event/selector/iocp.c"
-	# have_library tries to compile+link a real test program, so its
-	# yes/no output appears in the CI log and tells us definitively
-	# whether libws2_32.a is reachable from the current link environment.
-	# It also adds any necessary -L path automatically.
+	# Ensure the MinGW import-library path is in the linker search path.
 	mingw_lib = "#{ENV.fetch('MINGW_PREFIX', '/ucrt64')}/lib"
 	$LDFLAGS << " -L#{mingw_lib}" if File.directory?(mingw_lib)
 	have_library("ws2_32", "WSARecv", "winsock2.h")
+	# On some MinGW-w64 UCRT64 configurations the SSP symbols
+	# (__stack_chk_fail / __stack_chk_guard) are not automatically linked
+	# into shared DLLs.  Disable SSP for Windows to avoid the issue.
+	# (The rest of the extension is protected by the OS and Ruby itself.)
+	append_cflags("-fno-stack-protector")
 end
 
 have_header("sys/wait.h")
