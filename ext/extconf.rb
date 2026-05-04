@@ -48,6 +48,7 @@ end
 
 if /mingw|mswin/ =~ RUBY_PLATFORM
 	$srcs << "io/event/selector/iocp.c"
+	$libs = append_library($libs, "ws2_32")
 end
 
 have_header("sys/wait.h")
