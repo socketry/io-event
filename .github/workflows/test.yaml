@@ -47,12 +47,9 @@ jobs:
       if: matrix.os == 'ubuntu'
       run: sudo apt-get install -y liburing-dev
     
-    - name: Capture linker errors (Windows)
-      if: matrix.os == 'windows'
-      continue-on-error: true
-      shell: bash
-      run: cd ext && ruby extconf.rb && make 2>&1 | cat
-    
     - name: Run tests
       timeout-minutes: 15
+      # Use bash on Windows so the MSYS2/UCRT64 toolchain is on PATH and
+      # shared-library linking against ws2_32 resolves correctly.
+      shell: bash
       run: bundle exec bake test
