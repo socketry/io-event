@@ -90,6 +90,12 @@ struct IO_Event_Selector_IOCP {
 
 	struct IO_Event_Array completions; // pool of IO_Event_Selector_IOCP_Completion
 	struct IO_Event_List  free_list;
+
+	// Reusable dequeue buffer — kept here (in heap-allocated TypedData) rather
+	// than on the stack to avoid triggering -fstack-protector-strong, whose
+	// __stack_chk_fail / __stack_chk_guard symbols may be unresolvable when
+	// linking a shared DLL on some MinGW-w64 configurations.
+	OVERLAPPED_ENTRY completion_entries[IOCP_MAX_EVENTS];
 };
 
 // ─── GC support ──────────────────────────────────────────────────────────────
@@ -1070,7 +1076,7 @@ make_timeout_ms(VALUE duration)
 static int
 process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 {
-	OVERLAPPED_ENTRY entries[IOCP_MAX_EVENTS];
+	OVERLAPPED_ENTRY *entries = selector->completion_entries;
 	ULONG count = 0;
 
 	if (!GetQueuedCompletionStatusEx(selector->port, entries,
