@@ -7,6 +7,7 @@
   - Improve `WorkerPool` GC compaction support and add proper write barriers, fixing potential use-after-free under compacting GC.
   - Keep blocked scheduler fibers alive during GC by registering them as roots in `TestScheduler#block`, preventing premature collection and the resulting use-after-free crash on resume.
   - Correctly handle short `io_uring_submit()` results in the `URing` selector. `io_uring_submit()` returns the number of SQEs actually accepted by the kernel and can be short (SQE prep errors, `ENOMEM`, transient `EAGAIN`); the old accounting reset `pending = 0` on any success and silently lost track of unsubmitted SQEs.
+  - Enable `IORING_SETUP_SUBMIT_ALL` (kernel 5.18+) on the `URing` selector so the kernel keeps processing the rest of an SQE batch past individual errors, reducing the frequency of short submits in practice.
 
 ## v1.15.1
 

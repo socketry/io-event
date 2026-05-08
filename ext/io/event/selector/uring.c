@@ -283,8 +283,22 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 #ifdef IORING_SETUP_TASKRUN_FLAG
 	flags |= IORING_SETUP_TASKRUN_FLAG;
 #endif
+	// IORING_SETUP_SUBMIT_ALL (kernel 5.18+): keep processing the rest of the SQE
+	// batch even when one fails, reducing the frequency of short submits.
+#ifdef IORING_SETUP_SUBMIT_ALL
+	flags |= IORING_SETUP_SUBMIT_ALL;
+#endif
 	
 	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
+	
+#ifdef IORING_SETUP_SUBMIT_ALL
+	if (result == -EINVAL) {
+		// IORING_SETUP_SUBMIT_ALL was added in Linux 5.18; retry without it.
+		if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_initialize: no IORING_SETUP_SUBMIT_ALL\n");
+		flags &= ~IORING_SETUP_SUBMIT_ALL;
+		result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
+	}
+#endif
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, "IO_Event_Selector_URing_initialize:io_uring_queue_init");
@@ -1307,7 +1321,17 @@ static int IO_Event_Selector_URing_supported_p(void) {
 #ifdef IORING_SETUP_TASKRUN_FLAG
 	flags |= IORING_SETUP_TASKRUN_FLAG;
 #endif
+#ifdef IORING_SETUP_SUBMIT_ALL
+	flags |= IORING_SETUP_SUBMIT_ALL;
+#endif
 	int result = io_uring_queue_init(32, &ring, flags);
+	
+#ifdef IORING_SETUP_SUBMIT_ALL
+	if (result == -EINVAL) {
+		flags &= ~IORING_SETUP_SUBMIT_ALL;
+		result = io_uring_queue_init(32, &ring, flags);
+	}
+#endif
 	
 	if (result < 0) {
 		rb_warn("io_uring_queue_init() was available at compile time but failed at run time: %s\n", strerror(-result));
