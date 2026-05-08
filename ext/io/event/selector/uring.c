@@ -8,6 +8,7 @@
 
 #include <liburing.h>
 #include <poll.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
 
@@ -406,30 +407,33 @@ void IO_Event_Selector_URing_dump_completion_queue(struct IO_Event_Selector_URin
 	}
 }
 
-// Flush the submission queue if pending operations are present.
+// Flush the submission queue, optionally yielding if unsuccessful.
 static
-int io_uring_submit_flush(struct IO_Event_Selector_URing *selector) {
-	if (selector->pending) {
-		if (DEBUG) fprintf(stderr, "io_uring_submit_flush(pending=%ld)\n", selector->pending);
-		
-		// Try to submit:
+int io_uring_submit_all(struct IO_Event_Selector_URing *selector, bool yield) {
+	while (selector->pending > 0) {
 		int result = io_uring_submit(&selector->ring);
 		
 		if (result >= 0) {
-			// If it was submitted, reset pending count:
-			selector->pending = 0;
-		} else if (result != -EBUSY && result != -EAGAIN) {
-			rb_syserr_fail(-result, "io_uring_submit_flush:io_uring_submit");
+			// io_uring_submit() returns the number of submitted SQEs
+			selector->pending -= result;
+		} else if (result == -EBUSY || result == -EAGAIN) {
+			if (yield) IO_Event_Selector_yield(&selector->backend);
+		} else {
+			rb_syserr_fail(-result, "io_uring_submit_all:io_uring_submit");
+			return result;
 		}
-		
-		return result;
 	}
-	
-	if (DEBUG) {
-		IO_Event_Selector_URing_dump_completion_queue(selector);
-	}
-	
+
+	if (DEBUG) IO_Event_Selector_URing_dump_completion_queue(selector);
 	return 0;
+}
+
+// Flush the submission queue if pending operations are present.
+static
+int io_uring_submit_flush(struct IO_Event_Selector_URing *selector) {
+	if (DEBUG) fprintf(stderr, "io_uring_submit_now(pending=%ld)\n", selector->pending);
+
+	return io_uring_submit_all(selector, false);
 }
 
 // Immediately flush the submission queue, yielding to the event loop if it was not successful.
@@ -437,28 +441,12 @@ static
 int io_uring_submit_now(struct IO_Event_Selector_URing *selector) {
 	if (DEBUG) fprintf(stderr, "io_uring_submit_now(pending=%ld)\n", selector->pending);
 	
-	while (true) {
-		int result = io_uring_submit(&selector->ring);
-		
-		if (result >= 0) {
-			selector->pending = 0;
-			if (DEBUG) IO_Event_Selector_URing_dump_completion_queue(selector);
-			return result;
-		}
-		
-		if (result == -EBUSY || result == -EAGAIN) {
-			IO_Event_Selector_yield(&selector->backend);
-		} else {
-			rb_syserr_fail(-result, "io_uring_submit_now:io_uring_submit");
-		}
-	}
+	return io_uring_submit_all(selector, true);
 }
 
 // Submit a pending operation. This does not submit the operation immediately, but instead defers it to the next call to `io_uring_submit_flush` or `io_uring_submit_now`. This is useful for operations that are not urgent, but should be used with care as it can lead to a deadlock if the submission queue is not flushed.
 static
 void io_uring_submit_pending(struct IO_Event_Selector_URing *selector) {
-	selector->pending += 1;
-	
 	if (DEBUG) fprintf(stderr, "io_uring_submit_pending(ring=%p, pending=%ld)\n", &selector->ring, selector->pending);
 }
 
@@ -471,7 +459,8 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 		
 		sqe = io_uring_get_sqe(&selector->ring);
 	}
-	
+
+	selector->pending += 1;
 	return sqe;
 }
 
@@ -1136,7 +1125,6 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 		io_uring_prep_read(sqe, IO_Event_Interrupt_descriptor(&selector->interrupt), &selector->wakeup_value, sizeof(selector->wakeup_value), 0);
 		io_uring_sqe_set_data(sqe, &selector->interrupt);
 		selector->wakeup_registered = 1;
-		selector->pending += 1;
 	}
 	
 	io_uring_submit_flush(selector);

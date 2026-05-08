@@ -6,6 +6,7 @@
   - Add support for the `io_close` fiber-scheduler hook (Ruby 4.0+). The `URing` selector performs the close asynchronously via the ring; the `Debug::Selector` and `TestScheduler` wrappers forward to the underlying selector when supported.
   - Improve `WorkerPool` GC compaction support and add proper write barriers, fixing potential use-after-free under compacting GC.
   - Keep blocked scheduler fibers alive during GC by registering them as roots in `TestScheduler#block`, preventing premature collection and the resulting use-after-free crash on resume.
+  - Correctly handle short `io_uring_submit()` results in the `URing` selector. `io_uring_submit()` returns the number of SQEs actually accepted by the kernel and can be short (SQE prep errors, `ENOMEM`, transient `EAGAIN`); the old accounting reset `pending = 0` on any success and silently lost track of unsubmitted SQEs.
 
 ## v1.15.1
 
