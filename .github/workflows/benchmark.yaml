@@ -4,36 +4,47 @@ on: [push, pull_request]
 
 jobs:
   test:
+    name: ${{matrix.selector}} on ${{matrix.os}} (${{matrix.ruby}})
     runs-on: ${{matrix.os}}-latest
-    
+
     strategy:
+      fail-fast: false
       matrix:
         os:
           - ubuntu
-        
+
         ruby:
           - head
-    
+
+        selector:
+          - EPoll
+          - URing
+
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{matrix.ruby}}
         bundler-cache: true
-    
+
+    - name: Install packages (Ubuntu)
+      if: matrix.os == 'ubuntu'
+      run: sudo apt-get install -y liburing-dev
+
     - name: Build extensions
       timeout-minutes: 5
       run: bundle exec bake build
-    
-    - name: Install packages
+
+    - name: Install wrk
       timeout-minutes: 5
       run: |
         git clone https://github.com/ioquatix/wrk
         cd wrk
         make
-    
-    - name: Run benchmarks
-      timeout-minutes: 5
+
+    - name: Run benchmarks (${{matrix.selector}})
+      timeout-minutes: 10
       env:
         WRK: ./wrk/wrk
+        IO_EVENT_SELECTOR: ${{matrix.selector}}
       run: bundle exec bake -b benchmark/server/bake.rb
