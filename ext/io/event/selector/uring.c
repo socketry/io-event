@@ -1001,7 +1001,9 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
+	// Ruby's fiber scheduler io_close hook may receive a raw Integer fd
+	// (observed on Ruby head/4.1) rather than an IO object.
+	int descriptor = RB_INTEGER_TYPE_P(io) ? RB_NUM2INT(io) : IO_Event_Selector_io_descriptor(io);
 
 	if (ASYNC_CLOSE) {
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
