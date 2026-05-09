@@ -50,13 +50,23 @@ module IO::Event
 		attr_reader :selector
 		
 		if ::IO::Event.const_defined?(:WorkerPool)
-			# Optional fiber scheduler hook - delegates to WorkerPool:
+			# Fiber scheduler hook for blocking operations (IO#close, IO::Buffer.copy, etc.).
+			#
+			# Ruby head has a bug: rb_fiber_scheduler_blocking_operation_wait does not
+			# GC-guard the `blocking_operation` VALUE during rb_funcall. If our hook
+			# causes a fiber switch (via the worker pool calling rb_fiber_scheduler_block),
+			# the GC can collect `blocking_operation` while the calling fiber is suspended.
+			# Ruby then crashes reading it back at scheduler.c:1104 with wrong-type error.
+			#
+			# Workaround: disable GC for the duration of the worker-pool call so the VALUE
+			# cannot be collected during the fiber switch. This is safe for tests.
 			def blocking_operation_wait(operation)
 				@blocked += 1
-				# Submit the operation to the worker pool and wait for completion
+				gc_was_disabled = GC.disable
 				@worker_pool&.call(operation)
 			ensure
 				@blocked -= 1
+				GC.enable unless gc_was_disabled
 			end
 		end
 		
