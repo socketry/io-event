@@ -375,6 +375,8 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	
 	if (DEBUG) fprintf(stderr, "<- worker_pool_call:work completed=%d, state=%d\n", work.completed, state);
 	
+	RB_GC_GUARD(_blocking_operation);
+	
 	if (state) {
 		rb_jump_tag(state);
 	} else {
