@@ -41,6 +41,7 @@ module IO::Event
 			
 			# Track the number of fibers that are blocked.
 			@blocked = 0
+			@blocking = {}
 		end
 		
 		# @attribute [WorkerPool] The worker pool used for executing blocking operations.
@@ -80,8 +81,10 @@ module IO::Event
 			
 			begin
 				@blocked += 1
+				@blocking[fiber] = true
 				@selector.transfer
 			ensure
+				@blocking.delete(fiber)
 				@blocked -= 1
 			end
 		ensure
