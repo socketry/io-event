@@ -1,5 +1,16 @@
 # Releases
 
+## Unreleased
+
+  - Use `eventfd` for `URing` cross-thread wakeup, and enable `IORING_SETUP_SINGLE_ISSUER`, `IORING_SETUP_DEFER_TASKRUN`, and `IORING_SETUP_TASKRUN_FLAG`. The waking thread now signals via `eventfd` rather than submitting a `NOP` SQE, which unlocks the single-issuer optimisation, defers task work to the application thread, and lets `select()` skip the `io_uring_get_events()` syscall when no task work is pending.
+  - Add support for the `io_close` fiber-scheduler hook (Ruby 4.0+). The `URing` selector performs the close asynchronously via the ring; the `Debug::Selector` and `TestScheduler` wrappers forward to the underlying selector when supported.
+  - Improve `WorkerPool` GC compaction support and add proper write barriers, fixing potential use-after-free under compacting GC.
+  - Keep blocked scheduler fibers alive during GC by registering them as roots in `TestScheduler#block`, preventing premature collection and the resulting use-after-free crash on resume.
+
+## v1.15.1
+
+  - Simplify closed-IO handling in the `Select` selector: rely on Ruby 4's `rb_thread_io_close_interrupt` to wake fibers waiting on a descriptor that's been closed, removing a custom error-recovery path that could mis-attribute `IOError` / `Errno::EBADF` to the wrong waiter.
+
 ## v1.15.0
 
   - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
