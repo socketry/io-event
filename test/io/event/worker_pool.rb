@@ -123,6 +123,34 @@ describe IO::Event::WorkerPool do
 			expect(result[:duration]).to be == 0.05
 		end
 		
+		it "keeps blocked fibers alive during garbage collection" do
+			result = nil
+			
+			Thread.new do
+				Fiber.set_scheduler(scheduler)
+				
+				gc_thread = Thread.new do
+					sleep(0.02)
+					GC.start(full_mark: true, immediate_sweep: true)
+				end
+				
+				Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: 0.1)
+				end
+				
+				scheduler.run
+				gc_thread.value
+			ensure
+				Fiber.set_scheduler(nil)
+				scheduler.close
+			end.value
+			
+			expect(result).to have_keys(
+				cancelled: be == false,
+				result: be == :completed
+			)
+		end
+		
 		it "can cancel a busy operation using unblock function" do
 			# This tests the cancellation mechanism through rb_thread_call_without_gvl
 			completed = false
