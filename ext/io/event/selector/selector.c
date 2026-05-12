@@ -246,8 +246,7 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 
 void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber)
 {
-	struct IO_Event_Selector_Queue *waiting = malloc(sizeof(struct IO_Event_Selector_Queue));
-	assert(waiting);
+	struct IO_Event_Selector_Queue *waiting = xmalloc(sizeof(struct IO_Event_Selector_Queue));
 	
 	waiting->head = NULL;
 	waiting->tail = NULL;
