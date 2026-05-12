@@ -174,13 +174,8 @@ static const rb_data_type_t IO_Event_Selector_KQueue_Type = {
 inline static
 struct IO_Event_Selector_KQueue_Descriptor * IO_Event_Selector_KQueue_Descriptor_lookup(struct IO_Event_Selector_KQueue *selector, uintptr_t descriptor)
 {
-	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = IO_Event_Array_lookup(&selector->descriptors, descriptor);
-	
-	if (!kqueue_descriptor) {
-		rb_sys_fail("IO_Event_Selector_KQueue_Descriptor_lookup:IO_Event_Array_lookup");
-	}
-	
-	return kqueue_descriptor;
+	// `IO_Event_Array_lookup` raises on allocation failure, so the returned pointer is always non-NULL.
+	return IO_Event_Array_lookup(&selector->descriptors, descriptor);
 }
 
 inline static
@@ -299,10 +294,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	selector->descriptors.element_initialize = IO_Event_Selector_KQueue_Descriptor_initialize;
 	selector->descriptors.element_free = IO_Event_Selector_KQueue_Descriptor_free;
 	
-	int result = IO_Event_Array_initialize(&selector->descriptors, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_KQueue_Descriptor));
-	if (result < 0) {
-		rb_sys_fail("IO_Event_Selector_KQueue_allocate:IO_Event_Array_initialize");
-	}
+	IO_Event_Array_initialize(&selector->descriptors, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_KQueue_Descriptor));
 	
 	return instance;
 }
