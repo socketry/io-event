@@ -2,6 +2,7 @@
 
 # Released under the MIT License.
 # Copyright, 2025, by Samuel Williams.
+# Copyright, 2026, by Fletcher Dares.
 
 require "io/event"
 require "io/event/test_scheduler"
