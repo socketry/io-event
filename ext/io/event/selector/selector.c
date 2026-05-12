@@ -246,8 +246,8 @@ VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE
 
 void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber)
 {
-	struct IO_Event_Selector_Queue *waiting = malloc(sizeof(struct IO_Event_Selector_Queue));
-	assert(waiting);
+	// Ruby's allocator triggers GC on memory pressure and raises `NoMemoryError` on failure, so no NULL check is required.
+	struct IO_Event_Selector_Queue *waiting = xmalloc(sizeof(struct IO_Event_Selector_Queue));
 	
 	waiting->head = NULL;
 	waiting->tail = NULL;
@@ -268,7 +268,7 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 	if (ready->flags & IO_EVENT_SELECTOR_QUEUE_INTERNAL) {
 		// This means that the fiber was added to the ready queue by the selector itself, and we need to transfer control to it, but before we do that, we need to remove it from the queue, as there is no expectation that returning from `transfer` will remove it.
 		queue_pop(backend, ready);
-		free(ready);
+		xfree(ready);
 	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
 		// This means the fiber added itself to the ready queue, and we need to transfer control back to it. Transferring control back to the fiber will call `queue_pop` and remove it from the queue.
 	} else {
