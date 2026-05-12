@@ -10,6 +10,17 @@ module IO::Event
 		#
 		# You can enable this in the default selector by setting the `IO_EVENT_DEBUG_SELECTOR` environment variable. In addition, you can log all selector operations to a file by setting the `IO_EVENT_DEBUG_SELECTOR_LOG` environment variable. This is useful for debugging and understanding the behavior of the event loop.
 		class Selector
+			# Forwarders for optional selector hooks that not every backing selector implements (e.g. `io_close` is only provided by `URing`). Each method here is mixed into the wrapper's singleton class only when the wrapped selector actually defines a method of the same name, so feature detection via `respond_to?` continues to reflect the real backend.
+			module Forwarders
+				# Close a file descriptor, forwarded to the underlying selector. Ruby invokes this hook with a raw integer descriptor (Ruby 4.0+).
+				#
+				# @parameter descriptor [Integer] The raw file descriptor being closed.
+				def io_close(descriptor)
+					log("Closing file descriptor #{descriptor}")
+					@selector.io_close(descriptor)
+				end
+			end
+			
 			# Wrap the given selector with debugging.
 			#
 			# @parameter selector [Selector] The selector to wrap.
@@ -40,6 +51,20 @@ module IO::Event
 				end
 				
 				@log = log
+				
+				install_optional_forwarders(selector)
+			end
+			
+			private def install_optional_forwarders(selector)
+				forwarders = nil
+				
+				Forwarders.instance_methods(false).each do |name|
+					next unless selector.class.method_defined?(name)
+					forwarders ||= Module.new
+					forwarders.define_method(name, Forwarders.instance_method(name))
+				end
+				
+				singleton_class.include(forwarders) if forwarders
 			end
 			
 			# The idle duration of the underlying selector.
