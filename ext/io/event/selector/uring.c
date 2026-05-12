@@ -271,10 +271,16 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 #endif
 	// IORING_SETUP_DEFER_TASKRUN (kernel 6.1+, requires SINGLE_ISSUER): defer io_uring
 	// task work to the application thread rather than a kernel thread, reducing
-	// cross-CPU signaling overhead. io_uring_get_events() is called before the
-	// non-blocking CQ check in select() to flush deferred work into the CQ.
+	// cross-CPU signaling overhead.
 #ifdef IORING_SETUP_DEFER_TASKRUN
 	flags |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+	// IORING_SETUP_TASKRUN_FLAG (kernel 5.19+, always available alongside
+	// DEFER_TASKRUN): the kernel surfaces IORING_SQ_TASKRUN in sq.flags whenever
+	// task work is pending, so select() can skip the io_uring_get_events()
+	// syscall when there is nothing deferred to flush.
+#ifdef IORING_SETUP_TASKRUN_FLAG
+	flags |= IORING_SETUP_TASKRUN_FLAG;
 #endif
 	
 	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
@@ -1228,11 +1234,20 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	
 #ifdef IORING_SETUP_DEFER_TASKRUN
 	// With DEFER_TASKRUN the kernel holds completions as "deferred task work"
-	// rather than placing them directly into the CQ. io_uring_get_events() calls
-	// io_uring_enter with IORING_ENTER_GETEVENTS (without blocking) to flush that
-	// work into the CQ so the non-blocking select_process_completions below sees them.
+	// rather than placing them directly into the CQ.  We need to flush that work
+	// into the CQ so the non-blocking select_process_completions below can see
+	// it.  With TASKRUN_FLAG enabled the kernel sets IORING_SQ_TASKRUN in
+	// sq.flags whenever task work is pending; a relaxed atomic load is enough
+	// to check, and we only pay for an io_uring_enter syscall (via
+	// io_uring_get_events) when there is actually deferred work to flush.
 	if (selector->ring.flags & IORING_SETUP_DEFER_TASKRUN) {
-		io_uring_get_events(&selector->ring);
+#ifdef IORING_SETUP_TASKRUN_FLAG
+		unsigned sq_flags = __atomic_load_n(selector->ring.sq.kflags, __ATOMIC_RELAXED);
+		if (sq_flags & IORING_SQ_TASKRUN)
+#endif
+		{
+			io_uring_get_events(&selector->ring);
+		}
 	}
 #endif
 	
@@ -1300,6 +1315,9 @@ static int IO_Event_Selector_URing_supported_p(void) {
 #endif
 #ifdef IORING_SETUP_DEFER_TASKRUN
 	flags |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+#ifdef IORING_SETUP_TASKRUN_FLAG
+	flags |= IORING_SETUP_TASKRUN_FLAG;
 #endif
 	int result = io_uring_queue_init(32, &ring, flags);
 	
