@@ -117,6 +117,20 @@ module IO::Event
 			unblock(nil, FiberInterrupt.new(fiber, exception))
 		end
 		
+		# Optional fiber scheduler hook for `IO#close`.
+		#
+		# When defined, Ruby routes `IO#close` through here rather than falling
+		# back to `rb_nogvl` and `blocking_operation_wait`.  Ruby 4.0+ passes a
+		# raw `Integer` file descriptor; earlier versions pass an `IO`.
+		def io_close(io)
+			return @selector.io_close(io) if @selector.respond_to?(:io_close)
+			
+			# Default: close the descriptor without re-entering the scheduler.
+			fd = io.is_a?(Integer) ? io : io.fileno
+			Fiber.blocking{IO.for_fd(fd, autoclose: false).close}
+			true
+		end
+		
 		def io_wait(io, events, timeout = nil)
 			fiber = Fiber.current
 			
