@@ -30,6 +30,14 @@ module IO::Event
 	# end.resume
 	# ```
 	class TestScheduler
+		# Optional fiber scheduler hooks that we forward to the underlying selector. Mixed into the scheduler's singleton class only when the selector actually implements the corresponding method, so feature detection via `respond_to?` reflects the real backend (and Ruby falls back to its default behaviour otherwise).
+		module Forwarders
+			# Fiber scheduler hook for `IO#close`. Ruby invokes this with a raw integer file descriptor (Ruby 4.0+).
+			def io_close(descriptor)
+				@selector.io_close(descriptor)
+			end
+		end
+		
 		def initialize(selector: nil, worker_pool: nil, maximum_worker_count: nil)
 			@selector = selector || ::IO::Event::Selector.new(Fiber.current)
 			
@@ -42,6 +50,20 @@ module IO::Event
 			# Track the number of fibers that are blocked.
 			@blocked = 0
 			@blocking = {}
+			
+			install_optional_forwarders(@selector)
+		end
+		
+		private def install_optional_forwarders(selector)
+			forwarders = nil
+			
+			Forwarders.instance_methods(false).each do |name|
+				next unless selector.respond_to?(name)
+				forwarders ||= Module.new
+				forwarders.define_method(name, Forwarders.instance_method(name))
+			end
+			
+			singleton_class.include(forwarders) if forwarders
 		end
 		
 		# @attribute [WorkerPool] The worker pool used for executing blocking operations.
@@ -115,20 +137,6 @@ module IO::Event
 		
 		def fiber_interrupt(fiber, exception)
 			unblock(nil, FiberInterrupt.new(fiber, exception))
-		end
-		
-		# Optional fiber scheduler hook for `IO#close`.
-		#
-		# When defined, Ruby routes `IO#close` through here rather than falling
-		# back to `rb_nogvl` and `blocking_operation_wait`.  Ruby 4.0+ passes a
-		# raw `Integer` file descriptor; earlier versions pass an `IO`.
-		def io_close(io)
-			return @selector.io_close(io) if @selector.respond_to?(:io_close)
-			
-			# Default: close the descriptor without re-entering the scheduler.
-			fd = io.is_a?(Integer) ? io : io.fileno
-			Fiber.blocking{IO.for_fd(fd, autoclose: false).close}
-			true
 		end
 		
 		def io_wait(io, events, timeout = nil)

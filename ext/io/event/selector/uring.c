@@ -997,14 +997,13 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 
 static const int ASYNC_CLOSE = 1;
 
-VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
+VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE _descriptor) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	// Ruby's fiber scheduler io_close hook may receive a raw Integer fd
-	// (observed on Ruby head/4.1) rather than an IO object.
-	int descriptor = RB_INTEGER_TYPE_P(io) ? RB_NUM2INT(io) : IO_Event_Selector_io_descriptor(io);
-
+	// Ruby's fiber scheduler `io_close` hook is invoked with a raw integer file descriptor (Ruby 4.0+); it does not pass the `IO` object.
+	int descriptor = RB_NUM2INT(_descriptor);
+	
 	if (ASYNC_CLOSE) {
 		struct io_uring_sqe *sqe = io_get_sqe(selector);
 		io_uring_prep_close(sqe, descriptor);
@@ -1017,8 +1016,8 @@ VALUE IO_Event_Selector_URing_io_close(VALUE self, VALUE io) {
 	} else {
 		close(descriptor);
 	}
-
-	// We don't wait for the result of close since it has no use in pratice:
+	
+	// We don't wait for the result of close since it has no use in practice:
 	return Qtrue;
 }
 
