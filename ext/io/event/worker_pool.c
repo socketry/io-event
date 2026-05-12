@@ -91,11 +91,20 @@ static void worker_pool_mark(void *ptr)
 	struct IO_Event_WorkerPool *pool = (struct IO_Event_WorkerPool *)ptr;
 	struct IO_Event_WorkerPool_Worker *worker = pool->workers;
 	while (worker) {
-		struct IO_Event_WorkerPool_Worker *next = worker->next;
 		// We need to mark the thread even though its marked through the VM's ractors because we call `join`
 		// on them after their completion. They could be freed by then.
-		rb_gc_mark(worker->thread);  // thread objects are currently pinned anyway
-		worker = next;
+		rb_gc_mark_movable(worker->thread);
+		worker = worker->next;
+	}
+}
+
+static void worker_pool_compact(void *ptr)
+{
+	struct IO_Event_WorkerPool *pool = (struct IO_Event_WorkerPool *)ptr;
+	struct IO_Event_WorkerPool_Worker *worker = pool->workers;
+	while (worker) {
+		worker->thread = rb_gc_location(worker->thread);
+		worker = worker->next;
 	}
 }
 
@@ -107,8 +116,8 @@ static size_t worker_pool_size(const void *ptr) {
 // Ruby TypedData structures
 static const rb_data_type_t IO_Event_WorkerPool_type = {
 	"IO::Event::WorkerPool",
-	{worker_pool_mark, worker_pool_free, worker_pool_size,},
-	0, 0, RUBY_TYPED_FREE_IMMEDIATELY
+	{worker_pool_mark, worker_pool_free, worker_pool_size, worker_pool_compact},
+	0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_WB_PROTECTED
 };
 
 // Helper function to enqueue work (must be called with mutex held)
