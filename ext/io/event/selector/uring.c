@@ -11,6 +11,8 @@
 #include <stdint.h>
 #include <time.h>
 
+#include "../interrupt.h"
+
 #include "pidfd.c"
 
 #include <linux/version.h>
@@ -33,8 +35,20 @@ struct IO_Event_Selector_URing
 	
 	// Flag indicating whether the selector is currently blocked in a system call.
 	// Set to 1 when blocked in io_uring_wait_cqe_timeout() without GVL, 0 otherwise.
-	// Used by wakeup() to determine if an interrupt signal is needed.
 	int blocked;
+	
+	// Interrupt used to wake the selector from another thread without touching the ring's SQ.
+	// This allows IORING_SETUP_SINGLE_ISSUER: only the owner thread ever submits SQEs.
+	// Uses eventfd on Linux, pipe fallback elsewhere.
+	struct IO_Event_Interrupt interrupt;
+	
+	// Whether an async read on interrupt is currently pending in the ring.
+	// The read is re-submitted before each blocking wait when not registered.
+	int wakeup_registered;
+	
+	// Buffer for the pending async read on the interrupt descriptor.
+	// Must remain valid for the lifetime of the in-flight SQE.
+	uint64_t wakeup_value;
 	
 	struct timespec idle_duration;
 	
@@ -101,6 +115,12 @@ void IO_Event_Selector_URing_Type_compact(void *_selector)
 static
 void close_internal(struct IO_Event_Selector_URing *selector)
 {
+	if (selector->interrupt.descriptor >= 0) {
+		IO_Event_Interrupt_close(&selector->interrupt);
+		selector->interrupt.descriptor = -1;
+		selector->wakeup_registered = 0;
+	}
+	
 	if (selector->ring.ring_fd >= 0) {
 		io_uring_queue_exit(&selector->ring);
 		selector->ring.ring_fd = -1;
@@ -220,6 +240,8 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	
 	selector->pending = 0;
 	selector->blocked = 0;
+	selector->interrupt.descriptor = -1;
+	selector->wakeup_registered = 0;
 	
 	IO_Event_List_initialize(&selector->free_list);
 	
@@ -240,13 +262,38 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
 	IO_Event_Selector_initialize(&selector->backend, self, loop);
-	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, 0);
+	
+	unsigned int flags = 0;
+	// IORING_SETUP_SINGLE_ISSUER (kernel 6.0+): only the owner thread submits SQEs.
+	// Safe here because wakeup() uses eventfd (no ring access from other threads).
+#ifdef IORING_SETUP_SINGLE_ISSUER
+	flags |= IORING_SETUP_SINGLE_ISSUER;
+#endif
+	// IORING_SETUP_DEFER_TASKRUN (kernel 6.1+, requires SINGLE_ISSUER): defer io_uring
+	// task work to the application thread rather than a kernel thread, reducing
+	// cross-CPU signaling overhead. io_uring_get_events() is called before the
+	// non-blocking CQ check in select() to flush deferred work into the CQ.
+#ifdef IORING_SETUP_DEFER_TASKRUN
+	flags |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+	
+	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, "IO_Event_Selector_URing_initialize:io_uring_queue_init");
 	}
 	
 	rb_update_max_fd(selector->ring.ring_fd);
+	
+	// Interrupt for cross-thread wakeup: another thread calls signal(); the owner
+	// thread submits an async read before each blocking wait so the ring wakes up
+	// without the waking thread ever touching the SQ.
+	IO_Event_Interrupt_open(&selector->interrupt);
+	if (selector->interrupt.descriptor < 0) {
+		io_uring_queue_exit(&selector->ring);
+		selector->ring.ring_fd = -1;
+		rb_sys_fail("IO_Event_Selector_URing_initialize:IO_Event_Interrupt_open");
+	}
 	
 	return self;
 }
@@ -1072,11 +1119,25 @@ void * select_internal(void *_arguments) {
 
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
-	io_uring_submit_flush(arguments->selector);
+	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	arguments->selector->blocked = 1;
+	// Submit an async read on the wakeup eventfd before releasing the GVL.
+	// When wakeup() writes to the fd the read completes, consuming the counter
+	// atomically — no separate poll + drain step required.
+	// The address of the interrupt struct serves as a unique sentinel in user_data.
+	if (!selector->wakeup_registered) {
+		struct io_uring_sqe *sqe = io_get_sqe(selector);
+		io_uring_prep_read(sqe, IO_Event_Interrupt_descriptor(&selector->interrupt), &selector->wakeup_value, sizeof(selector->wakeup_value), 0);
+		io_uring_sqe_set_data(sqe, &selector->interrupt);
+		selector->wakeup_registered = 1;
+		selector->pending += 1;
+	}
+	
+	io_uring_submit_flush(selector);
+	
+	selector->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
-	arguments->selector->blocked = 0;
+	selector->blocked = 0;
 	
 	if (arguments->result == -ETIME) {
 		arguments->result = 0;
@@ -1111,6 +1172,14 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		
 		// If the operation was cancelled, or the operation has no user data:
 		if (cqe->user_data == 0 || cqe->user_data == LIBURING_UDATA_TIMEOUT) {
+			io_uring_cq_advance(ring, 1);
+			continue;
+		}
+		
+		// Interrupt read completion — the read already consumed the counter.
+		// Clear the flag so the next blocking wait re-submits the read.
+		if (io_uring_cqe_get_data(cqe) == &selector->interrupt) {
+			selector->wakeup_registered = 0;
 			io_uring_cq_advance(ring, 1);
 			continue;
 		}
@@ -1157,6 +1226,16 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	// Flush any pending events:
 	io_uring_submit_flush(selector);
 	
+#ifdef IORING_SETUP_DEFER_TASKRUN
+	// With DEFER_TASKRUN the kernel holds completions as "deferred task work"
+	// rather than placing them directly into the CQ. io_uring_get_events() calls
+	// io_uring_enter with IORING_ENTER_GETEVENTS (without blocking) to flush that
+	// work into the CQ so the non-blocking select_process_completions below sees them.
+	if (selector->ring.flags & IORING_SETUP_DEFER_TASKRUN) {
+		io_uring_get_events(&selector->ring);
+	}
+#endif
+	
 	int ready = IO_Event_Selector_ready_flush(&selector->backend);
 	
 	int result = select_process_completions(selector);
@@ -1200,25 +1279,10 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	// If we are blocking, we can schedule a nop event to wake up the selector:
+	// Wake the selector by signalling the interrupt. This is safe from any thread
+	// and never touches the ring's SQ, which is required for IORING_SETUP_SINGLE_ISSUER.
 	if (selector->blocked) {
-		struct io_uring_sqe *sqe = NULL;
-		
-		while (true) {
-			sqe = io_uring_get_sqe(&selector->ring);
-			if (sqe) break;
-			
-			rb_thread_schedule();
-			
-			// It's possible we became unblocked already, so we can assume the selector has already cycled at least once:
-			if (!selector->blocked) return Qfalse;
-		}
-		
-		io_uring_prep_nop(sqe);
-		// If you don't set this line, the SQE will eventually be recycled and have valid user selector which can cause odd behaviour:
-		io_uring_sqe_set_data(sqe, NULL);
-		io_uring_submit(&selector->ring);
-		
+		IO_Event_Interrupt_signal(&selector->interrupt);
 		return Qtrue;
 	}
 	
@@ -1229,7 +1293,15 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
-	int result = io_uring_queue_init(32, &ring, 0);
+	
+	unsigned int flags = 0;
+#ifdef IORING_SETUP_SINGLE_ISSUER
+	flags |= IORING_SETUP_SINGLE_ISSUER;
+#endif
+#ifdef IORING_SETUP_DEFER_TASKRUN
+	flags |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+	int result = io_uring_queue_init(32, &ring, flags);
 	
 	if (result < 0) {
 		rb_warn("io_uring_queue_init() was available at compile time but failed at run time: %s\n", strerror(-result));
