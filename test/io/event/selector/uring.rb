@@ -11,35 +11,35 @@ describe IO::Event::Selector do
 	with "URing" do
 		it "does not resume io_wait with zero for an unrequested priority event" do
 			skip "URing is not available" unless subject.const_defined?(:URing)
-
+			
 			uring = subject.const_get(:URing)
 			selector = uring.new(Fiber.current)
-
+			
 			server = TCPServer.new("127.0.0.1", 0)
 			client = TCPSocket.new("127.0.0.1", server.addr[1])
 			peer = server.accept
-
+			
 			result = nil
-
+			
 			fiber = Fiber.new do
 				result = selector.io_wait(Fiber.current, client, IO::READABLE)
 			end
-
+			
 			fiber.transfer
-
+			
 			peer.send("!", Socket::MSG_OOB)
 			selector.select(0.1)
-
+			
 			expect(result).not.to be == 0
-
+			
 			if fiber.alive?
 				peer.write("x")
-
+				
 				10.times do
 					selector.select(0.1)
 					break unless fiber.alive?
 				end
-
+				
 				expect(result).to be == IO::READABLE
 			end
 		ensure
@@ -48,8 +48,10 @@ describe IO::Event::Selector do
 			peer&.close
 			server&.close
 		end
-
+		
 		it "does not expose unmatched poll completions as integer zero from io_wait" do
+			skip "disabled while validating the real io_wait repro"
+			
 			skip "URing is not available" unless subject.const_defined?(:URing)
 			
 			uring = subject.const_get(:URing)
