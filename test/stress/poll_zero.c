@@ -4,10 +4,10 @@
  * Three server modes (select one):
  *
  *   (default)         local server, accepts immediately — loopback RTT ~0ms
- *   --delay MS        local server sleeps MS milliseconds before accept,
- *                     keeping the socket in TCP_SYN_SENT long enough for
- *                     races to develop (simulates real network latency)
- *   --remote HOST:PORT connect to a real remote host with genuine RTT
+ *   --remote HOST:PORT connect to a real remote host with genuine RTT;
+ *                     this is the important mode: the socket stays in
+ *                     TCP_SYN_SENT for real network latency (ms), giving
+ *                     time for the cancel race and DEFER_TASKRUN races
  *
  * Two poll modes (combine freely):
  *
@@ -113,13 +113,12 @@ static void process_cqe(struct io_uring_cqe *cqe, int cancel_mode,
 
 int main(int argc, char **argv) {
     int concurrency = 200, total = 20000;
-    int cancel_mode = 0, delay_ms = 0;
+    int cancel_mode = 0;
     const char *remote_host = NULL;
     int remote_port = 0;
 
     for (int i = 1; i < argc; i++) {
         if      (!strcmp(argv[i], "--cancel"))         cancel_mode = 1;
-        else if (!strcmp(argv[i], "--delay") && i+1 < argc) delay_ms = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--remote") && i+1 < argc) {
             char *colon = strrchr(argv[i+1], ':');
             if (!colon) { fprintf(stderr, "--remote needs HOST:PORT\n"); return 1; }
@@ -135,7 +134,7 @@ int main(int argc, char **argv) {
 
     /* ── server setup ───────────────────────────────────────────────── */
     struct sockaddr_in target = { .sin_family = AF_INET };
-    pthread_t acc_thread;
+    pthread_t acc_thread = 0;
     int srv_fd = -1;
 
     if (remote_host) {
@@ -155,12 +154,12 @@ int main(int argc, char **argv) {
         setsockopt(srv_fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
         target.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         bind(srv_fd, (struct sockaddr *)&target, sizeof(target));
-        listen(srv_fd, 1024);
+        listen(srv_fd, 4096);
         socklen_t al = sizeof(target);
         getsockname(srv_fd, (struct sockaddr *)&target, &al);
-        fprintf(stderr, "Local server 127.0.0.1:%d  delay=%dms  concurrency=%d  total=%d\n",
-                ntohs(target.sin_port), delay_ms, concurrency, total);
-        struct srv_args sargs = { .fd = srv_fd, .delay_ms = delay_ms };
+        fprintf(stderr, "Local server 127.0.0.1:%d  concurrency=%d  total=%d\n",
+                ntohs(target.sin_port), concurrency, total);
+        struct srv_args sargs = { .fd = srv_fd, .delay_ms = 0 };
         pthread_create(&acc_thread, NULL, acceptor, &sargs);
     }
 
