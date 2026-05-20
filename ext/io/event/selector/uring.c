@@ -19,6 +19,11 @@ enum {
 	DEBUG = 0,
 	DEBUG_COMPLETION = 0,
 	DEBUG_CQE = 0,
+	// Log every io_wait poll completion to stderr for production diagnosis.
+	// Each line shows the raw poll mask, the requested mask, and the translated
+	// return value. Lines tagged UNEXPECTED carry flags outside the requested
+	// mask; lines tagged ZERO would return Integer(0) to Ruby.
+	DEBUG_IO_WAIT = 1,
 };
 
 enum {URING_ENTRIES = 64};
@@ -562,7 +567,21 @@ VALUE io_wait_transfer(VALUE _arguments) {
 	} else if (result > 0) {
 		// We explicitly filter the resulting events based on the requested events.
 		// In some cases, poll will report events we didn't ask for.
-		return RB_INT2NUM(events_from_poll_flags(arguments->waiting->result & arguments->flags));
+		int returned = events_from_poll_flags(result & arguments->flags);
+		
+		if (DEBUG_IO_WAIT && ((result & ~arguments->flags) || returned == 0)) {
+			fprintf(stderr,
+				"io_wait: result=%#06x flags=%#06x translated=%#x returned=%#x%s%s\n",
+				(unsigned)result,
+				(unsigned)arguments->flags,
+				(unsigned)events_from_poll_flags(result),
+				(unsigned)returned,
+				(result & ~arguments->flags) ? " UNEXPECTED" : "",
+				returned == 0 ? " ZERO" : ""
+			);
+		}
+		
+		return RB_INT2NUM(returned);
 	} else {
 		return Qfalse;
 	}
