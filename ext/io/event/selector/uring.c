@@ -584,8 +584,23 @@ int events_from_poll_flags(short flags) {
 struct io_wait_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	int events;
 	short flags;
+	int descriptor;
 };
+
+static
+void io_wait_submit(struct io_wait_arguments *arguments)
+{
+	struct IO_Event_Selector_URing *selector = arguments->selector;
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, arguments->waiting);
+
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_poll_add(sqe, arguments->descriptor, arguments->flags);
+	io_uring_sqe_set_data(sqe, completion);
+	// If we are going to wait, we assume that we are waiting for a while:
+	io_uring_submit_pending(selector);
+}
 
 static
 VALUE io_wait_ensure(VALUE _arguments) {
@@ -609,20 +624,31 @@ static
 VALUE io_wait_transfer(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
-	
-	IO_Event_Selector_loop_yield(&selector->backend);
-	
-	if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
-	
-	int32_t result = arguments->waiting->result;
-	if (result < 0) {
-		rb_syserr_fail(-result, "io_wait_transfer:io_uring_poll_add");
-	} else if (result > 0) {
-		// We explicitly filter the resulting events based on the requested events.
-		// In some cases, poll will report events we didn't ask for.
-		return RB_INT2NUM(events_from_poll_flags(arguments->waiting->result & arguments->flags));
-	} else {
-		return Qfalse;
+
+	while (true) {
+		IO_Event_Selector_loop_yield(&selector->backend);
+
+		if (DEBUG) fprintf(stderr, "io_wait_transfer:waiting=%p, result=%d\n", (void*)arguments->waiting, arguments->waiting->result);
+
+		int32_t result = arguments->waiting->result;
+		if (result < 0) {
+			rb_syserr_fail(-result, "io_wait_transfer:io_uring_poll_add");
+		} else if (result > 0) {
+			// We explicitly filter the resulting events based on the requested events.
+			// In some cases, poll will report events we didn't ask for.
+			int events = events_from_poll_flags(result) & arguments->events;
+			if (events) {
+				return RB_INT2NUM(events);
+			}
+
+			if (result & POLLNVAL) {
+				rb_syserr_fail(EBADF, "io_wait_transfer:io_uring_poll_add");
+			}
+
+			io_wait_submit(arguments);
+		} else {
+			return Qfalse;
+		}
 	}
 };
 
@@ -632,7 +658,8 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
-	short flags = poll_flags_from_events(NUM2INT(events));
+	int requested_events = NUM2INT(events);
+	short flags = poll_flags_from_events(requested_events);
 	
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_io_wait:io_uring_prep_poll_add(descriptor=%d, flags=%d, fiber=%p)\n", descriptor, flags, (void*)fiber);
 	
@@ -642,20 +669,16 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
 	
-	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
-	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
-	io_uring_prep_poll_add(sqe, descriptor, flags);
-	io_uring_sqe_set_data(sqe, completion);
-	// If we are going to wait, we assume that we are waiting for a while:
-	io_uring_submit_pending(selector);
-	
 	struct io_wait_arguments io_wait_arguments = {
 		.selector = selector,
 		.waiting = &waiting,
-		.flags = flags
+		.events = requested_events,
+		.flags = flags,
+		.descriptor = descriptor,
 	};
-	
+
+	io_wait_submit(&io_wait_arguments);
+
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
