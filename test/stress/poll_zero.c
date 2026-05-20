@@ -73,7 +73,7 @@ static struct io_uring_sqe *get_sqe(struct io_uring *ring) {
 /* ── run one scenario ────────────────────────────────────────────────── */
 static int run(const char *label, struct io_uring *ring,
                struct sockaddr_in *target, int total, int concurrency,
-               int cancel_mode, int overflow_mode)
+               int cancel_mode, int overflow_mode, int epollet_mode)
 {
     long ok = 0, unexp = 0, zero = 0, errs = 0, cancels = 0;
     int in_flight = 0, submitted = 0, cqes_recv = 0;
@@ -92,7 +92,10 @@ static int run(const char *label, struct io_uring *ring,
             }
             uint64_t poll_ud = (uint64_t)fd;
             struct io_uring_sqe *sqe = get_sqe(ring);
-            io_uring_prep_poll_add(sqe, fd, REQUESTED_MASK);
+            /* --epollet simulates COS kernel patch to io_poll_parse_events
+             * that unconditionally adds EPOLLET to every non-level poll.   */
+            unsigned poll_mask = REQUESTED_MASK | (epollet_mode ? EPOLLET : 0);
+            io_uring_prep_poll_add(sqe, fd, poll_mask);
             io_uring_sqe_set_data64(sqe, poll_ud);
             if (cancel_mode) {
                 struct io_uring_sqe *cs = get_sqe(ring);
@@ -138,14 +141,15 @@ next:;
 /* ── main ────────────────────────────────────────────────────────────── */
 int main(int argc, char **argv) {
     int concurrency = 50, total = 2000;
-    int cancel_mode = 0, overflow_mode = 0;
-    int ring_size = 512;
+    int cancel_mode = 0, overflow_mode = 0, epollet_mode = 0;
+    int ring_size = 64;                  /* io-event 1.14.0 uses ring size 64 */
     unsigned custom_flags = 0xFFFFFFFF;  /* sentinel = use default */
     const char *remote_host = NULL; int remote_port = 0;
 
     for (int i = 1; i < argc; i++) {
         if      (!strcmp(argv[i], "--cancel"))                   cancel_mode = 1;
         else if (!strcmp(argv[i], "--overflow"))                 overflow_mode = 1;
+        else if (!strcmp(argv[i], "--epollet"))                  epollet_mode = 1;
         else if (!strcmp(argv[i], "--ring") && i+1 < argc)       ring_size = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--flags") && i+1 < argc)      custom_flags = (unsigned)strtoul(argv[++i], NULL, 0);
         else if (!strcmp(argv[i], "--remote") && i+1 < argc) {
@@ -187,29 +191,23 @@ int main(int argc, char **argv) {
     printf("\nKernel: "); fflush(stdout);
     system("uname -r");
 
-    /* ── flag permutations to test ──────────────────────────────── */
+    /* ── flag permutations ──────────────────────────────────────── */
+    /*
+     * Production sidekick uses io-event 1.14.0 which calls
+     * io_uring_queue_init(N, ring, 0) — zero flags.
+     * Current io-event uses SINGLE_ISSUER|DEFER_TASKRUN.
+     * We test both, plus the COS EPOLLET variant of each.
+     */
     struct { unsigned flags; const char *name; } configs[] = {
-        { def,           "io-event defaults (SINGLE_ISSUER|DEFER_TASKRUN|TASKRUN_FLAG)" },
-        { 0,             "no flags (bare io_uring)"                                     },
-#ifdef IORING_SETUP_SINGLE_ISSUER
-        { IORING_SETUP_SINGLE_ISSUER, "SINGLE_ISSUER only"                              },
-#endif
-#ifdef IORING_SETUP_DEFER_TASKRUN
-        { IORING_SETUP_DEFER_TASKRUN, "DEFER_TASKRUN only"                              },
-#endif
-#if defined(IORING_SETUP_SINGLE_ISSUER) && defined(IORING_SETUP_DEFER_TASKRUN)
-        { IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN,
-          "SINGLE_ISSUER|DEFER_TASKRUN (no TASKRUN_FLAG)"                               },
-#endif
+        { 0,   "flags=0  [io-event 1.14.0 / sidekick production]" },
+        { def, "flags=default (SINGLE_ISSUER|DEFER_TASKRUN|TASKRUN_FLAG)" },
     };
 
-    int ring_sizes[] = { ring_size, 64 };  /* test user-specified and io-event default */
+    int ring_sizes[] = { ring_size };
     int any_zero = 0;
 
     for (int ri = 0; ri < (int)(sizeof ring_sizes / sizeof *ring_sizes); ri++) {
         int rs = ring_sizes[ri];
-        /* deduplicate */
-        if (ri > 0 && rs == ring_sizes[0]) continue;
 
         for (int ci = 0; ci < (int)(sizeof configs / sizeof *configs); ci++) {
             unsigned f = (custom_flags != 0xFFFFFFFF) ? custom_flags : configs[ci].flags;
@@ -217,23 +215,23 @@ int main(int argc, char **argv) {
             struct io_uring ring;
             struct io_uring_params params = { .flags = f };
             if (io_uring_queue_init_params(rs, &ring, &params) < 0) {
-                printf("  [skip: ring size %d flags %#x not supported]\n", rs, f);
+                printf("  [skip: ring=%d flags=%#x]\n", rs, f);
                 continue;
             }
 
-            char label[128];
-            snprintf(label, sizeof label, "ring=%-3d flags=0x%04x [%s%s] %s",
+            char label[160];
+            snprintf(label, sizeof label, "ring=%-3d flags=0x%05x [%s%s%s] %s",
                      rs, ring.flags,
                      cancel_mode   ? "cancel "   : "",
                      overflow_mode ? "overflow " : "",
+                     epollet_mode  ? "epollet "  : "",
                      (custom_flags != 0xFFFFFFFF) ? "custom" : configs[ci].name);
 
             any_zero |= run(label, &ring, &target, total, concurrency,
-                            cancel_mode, overflow_mode);
+                            cancel_mode, overflow_mode, epollet_mode);
 
             io_uring_queue_exit(&ring);
 
-            /* if single custom flags requested, only run once per ring size */
             if (custom_flags != 0xFFFFFFFF) break;
         }
     }
