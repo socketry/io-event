@@ -30,6 +30,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <poll.h>
+#include <sys/epoll.h>
 #include <liburing.h>
 
 #define REQUESTED_MASK  (POLLIN | POLLOUT | POLLERR | POLLHUP)
