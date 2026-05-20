@@ -65,16 +65,14 @@ end
 
 # ── Async event loop ────────────────────────────────────────────────────
 Async do |task|
-	semaphore = Async::Semaphore.new(CONCURRENCY)
-	
 	TOTAL.times do |i|
-		semaphore.async do
+		task.async do
 			begin
 				# Exact Net::HTTP pattern:
 				# Timeout.timeout(@open_timeout, Net::OpenTimeout) { TCPSocket.open(...) }
 				# followed by socket.remote_address.ip_address
 				
-				socket = Timeout.timeout(OPEN_TIMEOUT) do
+				socket = Timeout.timeout(OPEN_TIMEOUT, Errno::ETIMEDOUT) do
 					TCPSocket.new(actual_host, actual_port)
 				end
 				
