@@ -581,6 +581,16 @@ int events_from_poll_flags(short flags) {
 	return events;
 }
 
+#ifdef RUBY_DEBUG
+VALUE IO_Event_Selector_URing_test_io_wait_result(VALUE self, VALUE _result, VALUE _events) {
+	int result = NUM2INT(_result);
+	int events = NUM2INT(_events);
+	short flags = poll_flags_from_events(events);
+
+	return RB_INT2NUM(events_from_poll_flags(result & flags));
+}
+#endif
+
 struct io_wait_arguments {
 	struct IO_Event_Selector_URing *selector;
 	struct IO_Event_Selector_URing_Waiting *waiting;
@@ -1373,6 +1383,10 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
+#ifdef RUBY_DEBUG
+	rb_define_singleton_method(IO_Event_Selector_URing, "__test_io_wait_result", IO_Event_Selector_URing_test_io_wait_result, 2);
+#endif
+
 #ifdef HAVE_RUBY_IO_BUFFER_H
 	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
 	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
