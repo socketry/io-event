@@ -95,8 +95,12 @@ Async do |task|
     task.async do
       begin
         # Exact Net::HTTP#timeouted_connect pattern:
+        # Exact Net::HTTP#timeouted_connect + RestrictedTCPSocket.open production pattern:
+        #   Timeout.timeout(@open_timeout, Net::OpenTimeout) {
+        #     TCPSocket.open(host, port, local_host, local_port)  ← nil, nil from Net::HTTP
+        #   }
         socket = Timeout.timeout(options[:timeout], Errno::ETIMEDOUT) do
-          TCPSocket.new(target_host, target_port)
+          TCPSocket.open(target_host, target_port, nil, nil)
         end
 
         # Exact RestrictedTCPSocket.open pattern that raises ENOTCONN:
