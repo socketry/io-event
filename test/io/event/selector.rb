@@ -123,10 +123,11 @@ Selector = Sus::Shared("a selector") do
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
 		
+		after do
+			@sockets&.each(&:close)
+		end
+		
 		it "does not return nil when resumed without events" do
-			sockets = UNIXSocket.pair
-			local = sockets.first
-			
 			result = :unset
 			
 			fiber = Fiber.new do
@@ -137,10 +138,6 @@ Selector = Sus::Shared("a selector") do
 			fiber.transfer
 			
 			expect(result).to be == false
-		ensure
-			sockets&.each do |socket|
-				socket.close unless socket.closed?
-			end
 		end
 		
 		it "can wait for an io to become readable" do
@@ -290,12 +287,15 @@ Selector = Sus::Shared("a selector") do
 				events << :new_io
 				fileno = local.fileno
 				local.close
+				remote.close
 				
 				new_local, new_remote = UNIXSocket.pair
+				@sockets = [new_local, new_remote]
 				
 				# Make sure we attempt to wait on the same file descriptor:
 				if new_remote.fileno == fileno
 					new_local, new_remote = new_remote, new_local
+					@sockets = [new_local, new_remote]
 				end
 				
 				if new_local.fileno != fileno
@@ -494,6 +494,10 @@ Selector = Sus::Shared("a selector") do
 		
 		let(:buffer) {IO::Buffer.new(1024, IO::Buffer::MAPPED)}
 		
+		after do
+			@sockets&.each(&:close)
+		end
+		
 		it "can read a single message" do
 			return unless selector.respond_to?(:io_read)
 			
@@ -571,6 +575,10 @@ Selector = Sus::Shared("a selector") do
 		let(:sockets) {UNIXSocket.pair}
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
+		
+		after do
+			@sockets&.each(&:close)
+		end
 		
 		it "can write a single message" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
