@@ -123,6 +123,26 @@ Selector = Sus::Shared("a selector") do
 		let(:local) {sockets.first}
 		let(:remote) {sockets.last}
 		
+		it "does not return nil when resumed without events" do
+			sockets = UNIXSocket.pair
+			local = sockets.first
+			
+			result = :unset
+			
+			fiber = Fiber.new do
+				result = selector.io_wait(Fiber.current, local, IO::READABLE)
+			end
+			
+			fiber.transfer
+			fiber.transfer
+			
+			expect(result).to be == false
+		ensure
+			sockets&.each do |socket|
+				socket.close unless socket.closed?
+			end
+		end
+		
 		it "can wait for an io to become readable" do
 			fiber = Fiber.new do
 				events << :wait_readable

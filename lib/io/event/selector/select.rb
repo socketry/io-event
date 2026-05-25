@@ -159,7 +159,7 @@ module IO::Event
 			def io_wait(fiber, io, events)
 				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
 				
-				@loop.transfer
+				@loop.transfer || false
 			ensure
 				waiter&.invalidate
 			end

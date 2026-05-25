@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Ensure the pure Ruby `Select` selector returns `false`, not `nil`, when `io_wait` resumes without any ready events.
+
 ## v1.16.0
 
   - Use `eventfd` for `URing` cross-thread wakeup, and enable `IORING_SETUP_SINGLE_ISSUER`, `IORING_SETUP_DEFER_TASKRUN`, and `IORING_SETUP_TASKRUN_FLAG`. The waking thread now signals via `eventfd` rather than submitting a `NOP` SQE, which unlocks the single-issuer optimisation, defers task work to the application thread, and lets `select()` skip the `io_uring_get_events()` syscall when no task work is pending.
