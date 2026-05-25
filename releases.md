@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.16.1
 
   - Ensure the pure Ruby `Select` selector returns `false`, not `nil`, when `io_wait` resumes without any ready events.
 

@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.16.1
+
+  - Ensure the pure Ruby `Select` selector returns `false`, not `nil`, when `io_wait` resumes without any ready events.
+
 ### v1.16.0
 
   - Use `eventfd` for `URing` cross-thread wakeup, and enable `IORING_SETUP_SINGLE_ISSUER`, `IORING_SETUP_DEFER_TASKRUN`, and `IORING_SETUP_TASKRUN_FLAG`. The waking thread now signals via `eventfd` rather than submitting a `NOP` SQE, which unlocks the single-issuer optimisation, defers task work to the application thread, and lets `select()` skip the `io_uring_get_events()` syscall when no task work is pending.
@@ -59,10 +63,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.11.0
 
   - [Introduce `IO::Event::WorkerPool` for off-loading blocking operations.](https://socketry.github.io/io-event/releases/index#introduce-io::event::workerpool-for-off-loading-blocking-operations.)
-
-### v1.10.2
-
-  - Improved consistency of handling closed IO when invoking `#select`.
 
 ## Contributing
 
