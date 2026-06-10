@@ -77,6 +77,57 @@ describe IO::Event::Timers do
 		expect(timers.size).to be == 0
 	end
 	
+	it "should compact cancelled timers from the heap" do
+		now = timers.now
+		count = subject::COMPACT_MINIMUM_COUNT
+		handles = count.times.map do |index|
+			timers.schedule(now + index, proc{})
+		end
+		
+		expect(timers.size).to be == count
+		
+		handles.each(&:cancel!)
+		
+		expect(timers.size).to be == 0
+	end
+	
+	it "should not compact half-cancelled timers from the heap" do
+		now = timers.now
+		count = subject::COMPACT_MINIMUM_COUNT
+		handles = (count * 2).times.map do |index|
+			timers.schedule(now + index, proc{})
+		end
+		
+		expect(timers.size).to be == count * 2
+		
+		handles.first(count).each(&:cancel!)
+		
+		expect(timers.size).to be == count * 2
+	end
+	
+	it "should compact more than half-cancelled timers from the heap" do
+		now = timers.now
+		count = subject::COMPACT_MINIMUM_COUNT
+		handles = (count * 2).times.map do |index|
+			timers.schedule(now + index, proc{})
+		end
+		
+		expect(timers.size).to be == count * 2
+		
+		handles.first(count + 1).each(&:cancel!)
+		
+		expect(timers.size).to be == count - 1
+	end
+	
+	it "should allow fired timers to be cancelled" do
+		handle = timers.after(0.1){}
+		
+		timers.fire(timers.now + 0.2)
+		handle.cancel!
+		
+		expect(timers.size).to be == 0
+	end
+	
 	with "#schedule" do
 		it "raises an error if given an invalid time" do
 			expect do

@@ -9,6 +9,8 @@ class IO
 	module Event
 		# An efficient sorted set of timers.
 		class Timers
+			COMPACT_MINIMUM_COUNT = 128
+			
 			# A handle to a scheduled timer.
 			class Handle
 				# Initialize the handle with the given time and block.
@@ -16,6 +18,7 @@ class IO
 				# @parameter time [Float] The time at which the block should be called.
 				# @parameter block [Proc] The block to call.
 				def initialize(time, block)
+					@timers = nil
 					@time = time
 					@block = block
 				end
@@ -25,6 +28,16 @@ class IO
 				
 				# @attribute [Proc | Nil] The block to call when the timer fires.
 				attr :block
+				
+				# Mark the timer as inserted into the heap.
+				def schedule!(timers)
+					@timers = timers
+				end
+				
+				# Mark the timer as removed from the heap.
+				def removed!
+					@timers = nil
+				end
 				
 				# Compare the handle with another handle.
 				#
@@ -49,7 +62,14 @@ class IO
 				
 				# Cancel the timer.
 				def cancel!
+					return if @block.nil?
+					
 					@block = nil
+					
+					if timers = @timers
+						@timers = nil
+						timers.cancelled!(self)
+					end
 				end
 				
 				# @returns [Boolean] Whether the timer has been cancelled.
@@ -62,11 +82,13 @@ class IO
 			def initialize
 				@heap = PriorityHeap.new
 				@scheduled = []
+				@cancelled = 0
 			end
 			
 			# @returns [Integer] The number of timers in the heap.
 			def size
 				flush!
+				compact!
 				
 				return @heap.size
 			end
@@ -97,10 +119,13 @@ class IO
 			# @returns [Float | Nil] The time interval until the next timer fires, if any.
 			def wait_interval(now = self.now)
 				flush!
+				compact!
 				
 				while handle = @heap.peek
 					if handle.cancelled?
 						@heap.pop
+						handle.removed!
+						@cancelled -= 1 if @cancelled > 0
 					else
 						return handle.time - now
 					end
@@ -118,14 +143,18 @@ class IO
 			def fire(now = self.now)
 				# Flush scheduled timers into the heap:
 				flush!
+				compact!
 				
 				# Get the earliest timer:
 				while handle = @heap.peek
 					if handle.cancelled?
 						@heap.pop
+						handle.removed!
+						@cancelled -= 1 if @cancelled > 0
 					elsif handle.time <= now
 						# Remove the earliest timer from the heap:
 						@heap.pop
+						handle.removed!
 						
 						# Call the block:
 						handle.call(now)
@@ -140,8 +169,34 @@ class IO
 			# This is a small optimization which assumes that most timers (timeouts) will be cancelled.
 			protected def flush!
 				while handle = @scheduled.pop
-					@heap.push(handle) unless handle.cancelled?
+					unless handle.cancelled?
+						handle.schedule!(self)
+						@heap.push(handle)
+					end
 				end
+			end
+			
+			# Periodically rebuild the heap when cancelled timers become a large
+			# enough fraction of the heap to risk unbounded retention or pruning spikes.
+			protected def compact!
+				if @cancelled == @heap.size
+					@heap.clear!
+					@cancelled = 0
+				elsif @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
+					@heap.delete_if do |handle|
+						if handle.cancelled?
+							handle.removed!
+							true
+						end
+					end
+					
+					@cancelled = 0
+				end
+			end
+			
+			# Track cancelled timers that are still retained in the heap.
+			def cancelled!(handle)
+				@cancelled += 1
 			end
 		end
 	end
