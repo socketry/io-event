@@ -44,17 +44,21 @@ class IO
 				
 				# If we have only one item, no swapping is required:
 				if @contents.size == 1
-					return @contents.pop
+					value = @contents.pop
+					set_heap_index(value, nil)
+					return value
 				end
 				
 				# Take the root of the tree:
 				value = @contents[0]
+				set_heap_index(value, nil)
 				
 				# Remove the last item in the tree:
 				last = @contents.pop
 				
 				# Overwrite the root of the tree with the item:
 				@contents[0] = last
+				set_heap_index(last, 0)
 				
 				# Bubble it down into place:
 				bubble_down(0)
@@ -70,6 +74,7 @@ class IO
 			def push(element)
 				# Insert the item at the end of the heap:
 				@contents.push(element)
+				set_heap_index(element, @contents.size - 1)
 				
 				# Bubble it up into position:
 				bubble_up(@contents.size - 1)
@@ -89,6 +94,7 @@ class IO
 				
 				# Add all elements to the array without maintaining heap property - O(n)
 				@contents.concat(elements)
+				update_heap_indices!
 				
 				# Rebuild the heap property for the entire array - O(n)
 				heapify!
@@ -98,31 +104,35 @@ class IO
 			
 			# Empties out the heap, discarding all elements
 			def clear!
+				@contents.each{|element| set_heap_index(element, nil)}
 				@contents = []
 			end
 			
 			# Remove a specific element from the heap.
 			#
-			# O(n) where n is the number of elements in the heap.
+			# O(log n) when the element tracks its heap index, otherwise O(n).
 			#
 			# @parameter element [Object] The element to remove.
 			# @returns [Object | Nil] The removed element, or nil if not found.
 			def delete(element)
-				# Find the index of the element - O(n) linear search
-				index = @contents.index(element)
+				index = heap_index_for(element)
 				return nil unless index
 				
 				# If it's the last element, just remove it
 				if index == @contents.size - 1
-					return @contents.pop
+					removed_value = @contents.pop
+					set_heap_index(removed_value, nil)
+					return removed_value
 				end
 				
 				# Store the value we're removing
 				removed_value = @contents[index]
+				set_heap_index(removed_value, nil)
 				
 				# Replace with the last element
 				last = @contents.pop
 				@contents[index] = last
+				set_heap_index(last, index)
 				
 				# Restore heap property - might need to bubble up or down
 				if index > 0 && @contents[index] < @contents[(index - 1) / 2]
@@ -150,12 +160,20 @@ class IO
 				return enum_for(:delete_if) unless block_given?
 				
 				original_size = @contents.size
+				removed = []
 				
 				# Filter out elements that match the condition - O(n)
-				@contents.reject!{|element| yield(element)}
+				@contents.reject! do |element|
+					if yield(element)
+						removed << element
+						true
+					end
+				end
 				
 				# If we removed elements, rebuild the heap - O(n)
 				if @contents.size < original_size
+					removed.each{|element| set_heap_index(element, nil)}
+					update_heap_indices!
 					heapify!
 				end
 				
@@ -170,6 +188,25 @@ class IO
 			end
 			
 			private
+			
+			def set_heap_index(element, index)
+				element.heap_index = index if element.respond_to?(:heap_index=)
+			end
+			
+			def update_heap_indices!
+				@contents.each_with_index{|element, index| set_heap_index(element, index)}
+			end
+			
+			def heap_index_for(element)
+				if element.respond_to?(:heap_index)
+					index = element.heap_index
+					
+					return index if index && @contents[index].equal?(element)
+				end
+				
+				# Fall back to an O(n) linear search when no valid heap_index is available.
+				@contents.index(element)
+			end
 			
 			# Rebuild the heap property from an arbitrary array in O(n) time.
 			# Uses bottom-up heapify algorithm starting from the last non-leaf node.
@@ -190,13 +227,18 @@ class IO
 			# 	@contents[i], @contents[j] = @contents[j], @contents[i]
 			# end
 			
+			def swap(i, j)
+				@contents[i], @contents[j] = @contents[j], @contents[i]
+				set_heap_index(@contents[i], i)
+				set_heap_index(@contents[j], j)
+			end
+			
 			def bubble_up(index)
 				parent_index = (index - 1) / 2 # watch out, integer division!
 				
 				while index > 0 && @contents[index] < @contents[parent_index]
 					# If the node has a smaller value than its parent, swap these nodes to uphold the minheap invariant and update the index of the 'current' node. If the node is already at index 0, we can also stop because that is the root of the heap.
-					# swap(index, parent_index)
-					@contents[index], @contents[parent_index] = @contents[parent_index], @contents[index]
+					swap(index, parent_index)
 					
 					index = parent_index
 					parent_index = (index - 1) / 2 # watch out, integer division!
@@ -233,8 +275,7 @@ class IO
 						return
 					else
 						# At least one of the child node has a smaller value than the current node, swap current node with that child and update current node for if it might need to bubble down even further:
-						# swap(index, swap_index)
-						@contents[index], @contents[swap_index] = @contents[swap_index], @contents[index]
+						swap(index, swap_index)
 						
 						index = swap_index
 					end

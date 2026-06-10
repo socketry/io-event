@@ -14,10 +14,13 @@ class IO
 				# Initialize the handle with the given time and block.
 				#
 				# @parameter time [Float] The time at which the block should be called.
+				# @parameter heap [PriorityHeap] The heap used to schedule the timer.
 				# @parameter block [Proc] The block to call.
-				def initialize(time, block)
+				def initialize(time, heap, block)
 					@time = time
+					@heap = heap
 					@block = block
+					@heap_index = nil
 				end
 				
 				# @attribute [Float] The time at which the block should be called.
@@ -25,6 +28,9 @@ class IO
 				
 				# @attribute [Proc | Nil] The block to call when the timer fires.
 				attr :block
+				
+				# @attribute [Integer | Nil] The current index of the handle in the heap.
+				attr_accessor :heap_index
 				
 				# Compare the handle with another handle.
 				#
@@ -50,6 +56,10 @@ class IO
 				# Cancel the timer.
 				def cancel!
 					@block = nil
+					
+					if @heap_index
+						@heap.delete(self)
+					end
 				end
 				
 				# @returns [Boolean] Whether the timer has been cancelled.
@@ -76,7 +86,7 @@ class IO
 			# @parameter time [Float] The time at which the block should be called, relative to {#now}.
 			# @parameter block [Proc] The block to call.
 			def schedule(time, block)
-				handle = Handle.new(time, block)
+				handle = Handle.new(time, @heap, block)
 				
 				@scheduled << handle
 				

@@ -5,8 +5,33 @@
 
 require "io/event/priority_heap"
 
+class IndexedPriorityHeapItem
+	include Comparable
+	
+	attr :value
+	attr_accessor :heap_index
+	
+	def initialize(value)
+		@value = value
+		@heap_index = nil
+	end
+	
+	def <=> other
+		@value <=> other.value
+	end
+end
+
 describe IO::Event::PriorityHeap do
 	let(:priority_heap) {subject.new}
+	
+	def expect_valid_heap_indices(priority_heap)
+		contents = priority_heap.instance_variable_get(:@contents)
+		
+		contents.each_with_index do |element, index|
+			expect(element.heap_index).to be == index
+			expect(contents[element.heap_index]).to be == element
+		end
+	end
 	
 	with "empty heap" do 
 		it "should return nil when the first element is requested" do
@@ -102,6 +127,50 @@ describe IO::Event::PriorityHeap do
 			test_values = (1..10).to_a + [4] * 5
 			test_values.each{|element| priority_heap.push(element)}
 			expect(priority_heap).to be(:valid?)
+		end
+	end
+	
+	with "indexed elements" do
+		it "tracks the current heap index for every element" do
+			items = [5, 2, 8, 1, 9, 3].map{|value| IndexedPriorityHeapItem.new(value)}
+			
+			items.each do |item|
+				priority_heap.push(item)
+				expect_valid_heap_indices(priority_heap)
+			end
+			
+			expect(priority_heap).to be(:valid?)
+		end
+		
+		it "clears heap indexes for removed elements" do
+			items = [5, 2, 8, 1, 9, 3].map{|value| IndexedPriorityHeapItem.new(value)}
+			items.each{|item| priority_heap.push(item)}
+			
+			removed = priority_heap.delete(items[1])
+			
+			expect(removed).to be == items[1]
+			expect(removed.heap_index).to be_nil
+			expect_valid_heap_indices(priority_heap)
+			
+			popped = priority_heap.pop
+			
+			expect(popped.heap_index).to be_nil
+			expect_valid_heap_indices(priority_heap)
+		end
+		
+		it "updates heap indexes when concatenating and deleting in bulk" do
+			items = (1..10).map{|value| IndexedPriorityHeapItem.new(value)}
+			
+			priority_heap.concat(items.shuffle)
+			expect_valid_heap_indices(priority_heap)
+			
+			removed_count = priority_heap.delete_if{|item| item.value.even?}
+			
+			expect(removed_count).to be == 5
+			items.select{|item| item.value.even?}.each do |item|
+				expect(item.heap_index).to be_nil
+			end
+			expect_valid_heap_indices(priority_heap)
 		end
 	end
 	

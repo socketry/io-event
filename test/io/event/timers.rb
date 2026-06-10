@@ -77,6 +77,20 @@ describe IO::Event::Timers do
 		expect(timers.size).to be == 0
 	end
 	
+	it "should immediately remove cancelled timers from the heap" do
+		first = timers.after(0.1){}
+		timers.after(0.2){}
+		
+		expect(timers.size).to be == 2
+		expect(first.heap_index).not.to be_nil
+		
+		first.cancel!
+		
+		expect(first.heap_index).to be_nil
+		expect(timers.size).to be == 1
+		expect(timers.wait_interval).to be_within(0.01).of(0.2)
+	end
+	
 	with "#schedule" do
 		it "raises an error if given an invalid time" do
 			expect do
