@@ -9,7 +9,7 @@ require "io/event/timers"
 # Measures timer scheduling and cancellation behavior, including the cost of
 # retaining cancelled timers in the priority heap.
 #
-# Run with: bundle exec sus --verbose benchmark/timers.rb
+# Run with: bundle exec sus --verbose benchmark/io/event/timers.rb
 
 describe IO::Event::Timers do
 	include Sus::Fixtures::Benchmark

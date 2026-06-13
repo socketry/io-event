@@ -10,7 +10,7 @@ require "io/event"
 # the time from when an external thread calls selector.wakeup to when the
 # blocking select returns in the owner thread.
 #
-# Run with: bundle exec sus --verbose benchmark/selector_wakeup.rb
+# Run with: bundle exec sus --verbose benchmark/io/event/selector/wakeup.rb
 
 IO::Event::Selector.constants.each do |name|
 	klass = IO::Event::Selector.const_get(name)
