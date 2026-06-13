@@ -88,7 +88,6 @@ class IO
 			# @returns [Integer] The number of timers in the heap.
 			def size
 				flush!
-				compact!
 				
 				return @heap.size
 			end
@@ -119,7 +118,6 @@ class IO
 			# @returns [Float | Nil] The time interval until the next timer fires, if any.
 			def wait_interval(now = self.now)
 				flush!
-				compact!
 				
 				while handle = @heap.peek
 					if handle.cancelled?
@@ -143,7 +141,6 @@ class IO
 			def fire(now = self.now)
 				# Flush scheduled timers into the heap:
 				flush!
-				compact!
 				
 				# Get the earliest timer:
 				while handle = @heap.peek
@@ -168,29 +165,53 @@ class IO
 			#
 			# This is a small optimization which assumes that most timers (timeouts) will be cancelled.
 			protected def flush!
-				while handle = @scheduled.pop
-					unless handle.cancelled?
-						handle.schedule!(self)
-						@heap.push(handle)
+				scheduled = @scheduled
+				@scheduled = []
+				
+				if @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
+					@heap.heapify do |contents|
+						contents.delete_if do |handle|
+							if handle.cancelled?
+								handle.removed!
+								true
+							end
+						end
+						
+						append_scheduled!(scheduled, contents)
+					end
+					
+					@cancelled = 0
+				else
+					scheduled.delete_if do |handle|
+						if handle.cancelled?
+							true
+						else
+							handle.schedule!(self)
+							false
+						end
+					end
+					
+					if @cancelled == @heap.size && scheduled.empty?
+						@heap.clear!
+						@cancelled = 0
+					else
+						@heap.concat(scheduled)
 					end
 				end
 			end
 			
-			# Periodically rebuild the heap when cancelled timers become a large
-			# enough fraction of the heap to risk unbounded retention or pruning spikes.
-			protected def compact!
-				if @cancelled == @heap.size
-					@heap.clear!
-					@cancelled = 0
-				elsif @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
-					@heap.delete_if do |handle|
-						if handle.cancelled?
-							handle.removed!
-							true
-						end
+			def append_scheduled!(scheduled, target)
+				index = 0
+				
+				while index < scheduled.size
+					handle = scheduled[index]
+					
+					unless handle.cancelled?
+						handle.schedule!(self)
+						target << handle
 					end
 					
-					@cancelled = 0
+					index += 1
 				end
 			end
 			
