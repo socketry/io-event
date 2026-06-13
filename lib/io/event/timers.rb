@@ -88,7 +88,6 @@ class IO
 			# @returns [Integer] The number of timers in the heap.
 			def size
 				flush!
-				compact!
 				
 				return @heap.size
 			end
@@ -119,7 +118,6 @@ class IO
 			# @returns [Float | Nil] The time interval until the next timer fires, if any.
 			def wait_interval(now = self.now)
 				flush!
-				compact!
 				
 				while handle = @heap.peek
 					if handle.cancelled?
@@ -143,7 +141,6 @@ class IO
 			def fire(now = self.now)
 				# Flush scheduled timers into the heap:
 				flush!
-				compact!
 				
 				# Get the earliest timer:
 				while handle = @heap.peek
@@ -166,32 +163,48 @@ class IO
 			
 			# Flush all scheduled timers into the heap.
 			#
-			# This is a small optimization which assumes that most timers (timeouts) will be cancelled.
+			# Scheduling appends to `@scheduled` and cancellation is `O(1)`. We pay the cost of filtering and heap repair here, where we can batch work and choose between incremental insertion and one `heapify` pass.
 			protected def flush!
-				while handle = @scheduled.pop
-					unless handle.cancelled?
-						handle.schedule!(self)
-						@heap.push(handle)
-					end
-				end
-			end
-			
-			# Periodically rebuild the heap when cancelled timers become a large
-			# enough fraction of the heap to risk unbounded retention or pruning spikes.
-			protected def compact!
-				if @cancelled == @heap.size
-					@heap.clear!
-					@cancelled = 0
-				elsif @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
-					@heap.delete_if do |handle|
-						if handle.cancelled?
-							handle.removed!
-							true
+				# Once cancelled handles are both numerous and a large fraction of the heap, rebuild the heap. This is `O(n + m)`, but it removes retained cancelled handles and appends live scheduled handles in the same `heapify` pass instead of paying for separate filtering and insertion.
+				if @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
+					@heap.heapify do |contents|
+						contents.delete_if do |handle|
+							if handle.cancelled?
+								handle.removed!
+								true
+							end
+						end
+						
+						@scheduled.each do |handle|
+							unless handle.cancelled?
+								handle.schedule!(self)
+								contents << handle
+							end
 						end
 					end
 					
 					@cancelled = 0
+				else
+					# If we are not compacting the heap, filter scheduled handles in place before insertion. This keeps cancelled scheduled handles out of the heap without adding cancellation-time heap deletion.
+					@scheduled.delete_if do |handle|
+						if handle.cancelled?
+							true
+						else
+							handle.schedule!(self)
+							false
+						end
+					end
+					
+					# Small heaps can become entirely cancelled before reaching the compaction threshold. Clear those immediately so `size` does not retain cancelled handles indefinitely.
+					if @cancelled == @heap.size && @scheduled.empty?
+						@heap.clear!
+						@cancelled = 0
+					else
+						@heap.concat(@scheduled)
+					end
 				end
+				
+				@scheduled.clear
 			end
 			
 			# Track cancelled timers that are still retained in the heap.

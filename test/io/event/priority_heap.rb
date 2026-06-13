@@ -8,7 +8,7 @@ require "io/event/priority_heap"
 describe IO::Event::PriorityHeap do
 	let(:priority_heap) {subject.new}
 	
-	with "empty heap" do 
+	with "empty heap" do
 		it "should return nil when the first element is requested" do
 			expect(priority_heap.peek).to be_nil
 		end
@@ -571,6 +571,27 @@ describe IO::Event::PriorityHeap do
 				sorted << priority_heap.pop
 			end
 			expect(sorted).to be == [1, 5, 8, 10, 15]
+		end
+	end
+	
+	with "#heapify" do
+		it "should allow batched mutation of heap contents" do
+			priority_heap.concat([1, 2, 3, 4, 5])
+			
+			result = priority_heap.heapify do |contents|
+				contents.delete_if{|element| element.even?}
+				contents.concat([6, 7])
+			end
+			
+			expect(result).to be == priority_heap
+			expect(priority_heap).to be(:valid?)
+			
+			values = []
+			while !priority_heap.empty?
+				values << priority_heap.pop
+			end
+			
+			expect(values).to be == [1, 3, 5, 6, 7]
 		end
 	end
 end

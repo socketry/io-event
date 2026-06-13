@@ -10,6 +10,8 @@ class IO
 		# of its contents to determine priority.
 		# See <https://en.wikipedia.org/wiki/Binary_heap> for explanations of the main methods.
 		class PriorityHeap
+			HEAPIFY_INSERT_RATIO = 2
+			
 			# Initializes the heap.
 			def initialize
 				# The heap is represented with an array containing a binary tree. See
@@ -79,18 +81,34 @@ class IO
 				return self
 			end
 			
-			# Add multiple elements to the heap efficiently in O(n) time.
-			# This is more efficient than calling push multiple times (O(n log n)).
+			# Add multiple elements to the heap efficiently.
 			#
 			# @parameter elements [Array] The elements to add to the heap.
 			# @returns [self] Returns self for method chaining.
 			def concat(elements)
 				return self if elements.empty?
 				
-				# Add all elements to the array without maintaining heap property - O(n)
-				@contents.concat(elements)
+				# Rebuilding the whole heap is `O(n + m)`, where `n` is the existing heap size and `m` is the appended batch size. Incremental `push` is `O(m log(n))`, but is often closer to `O(m)` when appended elements are later than the existing entries and do not bubble far. Prefer `heapify` only when building from empty or when the batch dominates the existing heap.
+				if @contents.empty? || elements.size > @contents.size * HEAPIFY_INSERT_RATIO
+					@contents.concat(elements)
+					heapify!
+				else
+					elements.each{|element| push(element)}
+				end
 				
-				# Rebuild the heap property for the entire array - O(n)
+				return self
+			end
+			
+			# Mutate the heap contents directly, then rebuild the heap property.
+			#
+			# This supports batched operations that can be completed with a single `O(n)` heapify instead of multiple `O(log n)` heap operations.
+			#
+			# @yields {|contents| ...} The heap contents array.
+			# @returns [self] Returns self for method chaining.
+			def heapify
+				yield @contents
+				
+				# The block may arbitrarily append, delete or reorder contents, so repair the invariant with one `O(n)` bottom-up heapify pass.
 				heapify!
 				
 				return self
