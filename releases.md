@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.16.2
 
   - Improve timer heap performance by batching scheduled timer insertion, compacting cancelled timers during flush, and avoiding unnecessary heap rebuilds for small incremental inserts.
 

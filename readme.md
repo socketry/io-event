@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.16.2
+
+  - Improve timer heap performance by batching scheduled timer insertion, compacting cancelled timers during flush, and avoiding unnecessary heap rebuilds for small incremental inserts.
+
 ### v1.16.1
 
   - Ensure the pure Ruby `Select` selector returns `false`, not `nil`, when `io_wait` resumes without any ready events.
@@ -59,10 +63,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.11.1
 
   - Fix `read_nonblock` when using the `URing` selector, which was not handling zero-length reads correctly. This allows reading available data without blocking.
-
-### v1.11.0
-
-  - [Introduce `IO::Event::WorkerPool` for off-loading blocking operations.](https://socketry.github.io/io-event/releases/index#introduce-io::event::workerpool-for-off-loading-blocking-operations.)
 
 ## Contributing
 
