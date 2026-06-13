@@ -88,6 +88,7 @@ class IO
 			def concat(elements)
 				return self if elements.empty?
 				
+				# Rebuilding the whole heap is `O(n + m)`, where `n` is the existing heap size and `m` is the appended batch size. Incremental `push` is `O(m log(n))`, but is often closer to `O(m)` when appended elements are later than the existing entries and do not bubble far. Prefer `heapify` only when building from empty or when the batch dominates the existing heap.
 				if @contents.empty? || elements.size > @contents.size * HEAPIFY_INSERT_RATIO
 					@contents.concat(elements)
 					heapify!
@@ -100,15 +101,14 @@ class IO
 			
 			# Mutate the heap contents directly, then rebuild the heap property.
 			#
-			# This supports batched operations that can be completed with a single
-			# O(n) heapify instead of multiple O(log n) heap operations.
+			# This supports batched operations that can be completed with a single `O(n)` heapify instead of multiple `O(log n)` heap operations.
 			#
 			# @yields {|contents| ...} The heap contents array.
 			# @returns [self] Returns self for method chaining.
 			def heapify
 				yield @contents
 				
-				# Rebuild the heap property for the entire array - O(n).
+				# The block may arbitrarily append, delete or reorder contents, so repair the invariant with one `O(n)` bottom-up heapify pass.
 				heapify!
 				
 				return self

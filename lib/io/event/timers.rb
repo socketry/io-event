@@ -163,8 +163,9 @@ class IO
 			
 			# Flush all scheduled timers into the heap.
 			#
-			# This is a small optimization which assumes that most timers (timeouts) will be cancelled.
+			# Scheduling appends to `@scheduled` and cancellation is `O(1)`. We pay the cost of filtering and heap repair here, where we can batch work and choose between incremental insertion and one `heapify` pass.
 			protected def flush!
+				# Once cancelled handles are both numerous and a large fraction of the heap, rebuild the heap. This is `O(n + m)`, but it removes retained cancelled handles and appends live scheduled handles in the same `heapify` pass instead of paying for separate filtering and insertion.
 				if @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
 					@heap.heapify do |contents|
 						contents.delete_if do |handle|
@@ -184,6 +185,7 @@ class IO
 					
 					@cancelled = 0
 				else
+					# If we are not compacting the heap, filter scheduled handles in place before insertion. This keeps cancelled scheduled handles out of the heap without adding cancellation-time heap deletion.
 					@scheduled.delete_if do |handle|
 						if handle.cancelled?
 							true
@@ -193,6 +195,7 @@ class IO
 						end
 					end
 					
+					# Small heaps can become entirely cancelled before reaching the compaction threshold. Clear those immediately so `size` does not retain cancelled handles indefinitely.
 					if @cancelled == @heap.size && @scheduled.empty?
 						@heap.clear!
 						@cancelled = 0
