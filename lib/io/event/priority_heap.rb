@@ -108,6 +108,7 @@ class IO
 			def heapify
 				yield @contents
 				
+				# Rebuild the heap property for the entire array - O(n).
 				heapify!
 				
 				return self

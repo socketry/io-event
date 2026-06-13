@@ -165,9 +165,6 @@ class IO
 			#
 			# This is a small optimization which assumes that most timers (timeouts) will be cancelled.
 			protected def flush!
-				scheduled = @scheduled
-				@scheduled = []
-				
 				if @cancelled >= COMPACT_MINIMUM_COUNT && @cancelled * 2 > @heap.size
 					@heap.heapify do |contents|
 						contents.delete_if do |handle|
@@ -177,12 +174,17 @@ class IO
 							end
 						end
 						
-						append_scheduled!(scheduled, contents)
+						@scheduled.each do |handle|
+							unless handle.cancelled?
+								handle.schedule!(self)
+								contents << handle
+							end
+						end
 					end
 					
 					@cancelled = 0
 				else
-					scheduled.delete_if do |handle|
+					@scheduled.delete_if do |handle|
 						if handle.cancelled?
 							true
 						else
@@ -191,28 +193,15 @@ class IO
 						end
 					end
 					
-					if @cancelled == @heap.size && scheduled.empty?
+					if @cancelled == @heap.size && @scheduled.empty?
 						@heap.clear!
 						@cancelled = 0
 					else
-						@heap.concat(scheduled)
+						@heap.concat(@scheduled)
 					end
 				end
-			end
-			
-			def append_scheduled!(scheduled, target)
-				index = 0
 				
-				while index < scheduled.size
-					handle = scheduled[index]
-					
-					unless handle.cancelled?
-						handle.schedule!(self)
-						target << handle
-					end
-					
-					index += 1
-				end
+				@scheduled.clear
 			end
 			
 			# Track cancelled timers that are still retained in the heap.
