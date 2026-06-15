@@ -7,8 +7,10 @@ require_relative "environment"
 
 Warning[:experimental] = false
 
-require "covered/sus"
-include Covered::Sus
+if ENV.key?("COVERAGE")
+	require "covered/sus"
+	include Covered::Sus
+end
 
 # Intensive GC checking:
 #

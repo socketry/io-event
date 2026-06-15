@@ -20,7 +20,6 @@ end
 group :test do
 	gem "sus"
 	gem "sus-fixtures-benchmark"
-	gem "covered"
 	gem "decode"
 	
 	gem "rubocop"
@@ -30,4 +29,8 @@ group :test do
 	gem "bake-test"
 	gem "bake-test-external"
 	gem "async"
+end
+
+group :coverage, optional: true do
+	gem "covered"
 end
