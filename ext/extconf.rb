@@ -55,7 +55,7 @@ have_func("rb_io_descriptor")
 have_func("&rb_process_status_wait")
 have_func("rb_fiber_current")
 have_func("&rb_fiber_raise")
-have_func("epoll_pwait2") if enable_config("epoll_pwait2", true)
+have_func("epoll_pwait2(0, 0, 0, 0, 0)", "sys/epoll.h") if enable_config("epoll_pwait2", true)
 
 have_header("ruby/io/buffer.h")
 
