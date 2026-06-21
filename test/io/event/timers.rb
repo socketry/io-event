@@ -140,7 +140,7 @@ describe IO::Event::Timers do
 	
 	it "should skip cancelled timers while firing" do
 		fired = false
-		handle = timers.after(0.1) {fired = true}
+		handle = timers.after(0.1){fired = true}
 		timers.wait_interval
 		
 		handle.cancel!
@@ -163,7 +163,7 @@ describe IO::Event::Timers do
 		handles.each(&:cancel!)
 		
 		fired = false
-		timers.schedule(now, proc {fired = true})
+		timers.schedule(now, proc{fired = true})
 		
 		timers.fire(now)
 		
