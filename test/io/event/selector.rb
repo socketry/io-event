@@ -17,18 +17,6 @@ require "tempfile"
 
 require "unix_socket"
 
-module IOEventNonblockFailure
-	def nonblock(...)
-		if $io_event_force_ebadf
-			raise Errno::EBADF
-		end
-		
-		super
-	end
-end
-
-IO.prepend(IOEventNonblockFailure)
-
 class FakeFiber
 	def initialize(alive = true)
 		@alive = alive
@@ -795,14 +783,16 @@ describe IO::Event::Selector do
 			input, output = IO.pipe
 			executed = false
 			
-			$io_event_force_ebadf = true
+			mock(input).replace(:nonblock) do
+				raise Errno::EBADF
+			end
+			
 			subject.nonblock(input) do
 				executed = true
 			end
 			
 			expect(executed).to be == true
 		ensure
-			$io_event_force_ebadf = false
 			input&.close
 			output&.close
 		end
