@@ -107,6 +107,9 @@ module IO::Event
 				
 				@selector.close
 				@selector = nil
+				
+				@log&.close
+				@log = nil
 			end
 			
 			# Transfer from the calling fiber to the selector.

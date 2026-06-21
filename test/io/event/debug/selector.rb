@@ -111,13 +111,12 @@ describe IO::Event::Debug::Selector do
 		selector = subject.wrap(FakeSelector.new, {"IO_EVENT_DEBUG_SELECTOR_LOG" => file.path})
 		
 		selector.log("Hello")
-		log = selector.instance_variable_get(:@log)
-		log.flush
+		selector.close
+		selector = nil
 		
 		expect(File.read(file.path)).to be =~ /Hello/
 	ensure
 		selector&.close
-		log&.close
 		file&.close!
 	end
 	
