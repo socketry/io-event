@@ -128,6 +128,49 @@ describe IO::Event::Timers do
 		expect(timers.size).to be == 0
 	end
 	
+	it "should skip cancelled timers while computing the wait interval" do
+		handle = timers.after(0.1){}
+		timers.wait_interval
+		
+		handle.cancel!
+		timers.after(0.2){}
+		
+		expect(timers.wait_interval).to be_within(0.01).of(0.2)
+	end
+	
+	it "should skip cancelled timers while firing" do
+		fired = false
+		handle = timers.after(0.1){fired = true}
+		timers.wait_interval
+		
+		handle.cancel!
+		timers.after(0.3){}
+		timers.fire(timers.now + 0.2)
+		
+		expect(fired).to be == false
+		expect(timers.size).to be == 1
+	end
+	
+	it "should include scheduled timers while compacting cancelled timers" do
+		now = timers.now
+		count = subject::COMPACT_MINIMUM_COUNT
+		handles = count.times.map do |index|
+			timers.schedule(now + index, proc{})
+		end
+		
+		timers.wait_interval
+		
+		handles.each(&:cancel!)
+		
+		fired = false
+		timers.schedule(now, proc{fired = true})
+		
+		timers.fire(now)
+		
+		expect(fired).to be == true
+		expect(timers.size).to be == 0
+	end
+	
 	with "#schedule" do
 		it "raises an error if given an invalid time" do
 			expect do

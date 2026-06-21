@@ -6,10 +6,12 @@
 
 require "io/event"
 require "io/event/selector"
+require "io/event/selector/nonblock"
 require "io/event/debug/selector"
 
 require "socket"
 require "fiber"
+require "stringio"
 
 require "unix_socket"
 
@@ -703,6 +705,62 @@ describe IO::Event::Selector do
 			env = {"IO_EVENT_SELECTOR" => "invalid"}
 			expect{subject.default(env)}.to raise_exception(NameError)
 		end
+	end
+	
+	with ".new" do
+		it "wraps the selector when debug is enabled" do
+			selector = subject.new(Fiber.current, {"IO_EVENT_DEBUG_SELECTOR" => "1"})
+			
+			expect(selector).to be_a(IO::Event::Debug::Selector)
+		ensure
+			selector&.close
+		end
+	end
+end
+
+describe IO::Event::Selector do
+	with ".nonblock" do
+		it "yields if nonblock raises EBADF" do
+			input, output = IO.pipe
+			executed = false
+			
+			mock(input).replace(:nonblock) do
+				raise Errno::EBADF
+			end
+			
+			subject.nonblock(input) do
+				executed = true
+			end
+			
+			expect(executed).to be == true
+		ensure
+			input&.close
+			output&.close
+		end
+	end
+end
+
+describe "io/event/native" do
+	it "falls back to the non-blocking selector when the native extension is not available" do
+		context = Object.new
+		warnings = String.new
+		
+		mock(context).replace(:require) do |path|
+			if path == "IO_Event"
+				raise LoadError, path
+			else
+				require(path)
+			end
+		end
+		
+		mock(context).replace(:warn) do |message|
+			warnings << message
+		end
+		
+		path = File.expand_path("../../../lib/io/event/native.rb", __dir__)
+		context.instance_eval(File.read(path), path)
+		
+		expect(warnings).to be =~ /Could not load native event selector/
 	end
 end
 
