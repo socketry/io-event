@@ -5,6 +5,8 @@
 
 require "io/event/selector"
 
+require "socket"
+
 describe IO::Event::Selector::Select do
 	before do
 		@selector = subject.new(Fiber.current)
@@ -84,35 +86,24 @@ describe IO::Event::Selector::Select do
 	
 	with "#select" do
 		it "dispatches priority events" do
-			input, output = IO.pipe
+			server = TCPServer.new("127.0.0.1", 0)
+			client = TCPSocket.new("127.0.0.1", server.addr[1])
+			socket = server.accept
 			events = nil
 			
 			fiber = Fiber.new do
-				events = selector.io_wait(Fiber.current, input, IO::PRIORITY)
+				events = selector.io_wait(Fiber.current, socket, IO::PRIORITY)
 			end
 			
 			fiber.transfer
+			client.send("!", Socket::MSG_OOB)
 			
-			IO.singleton_class.class_eval do
-				alias_method :select_without_io_event_priority_test, :select
-				
-				def select(readable, writable, priority, duration = nil)
-					[nil, nil, priority]
-				end
-			end
-			
-			expect(selector.select(0)).to be == 1
+			expect(selector.select(1)).to be == 1
 			expect(events).to be == IO::PRIORITY
 		ensure
-			IO.singleton_class.class_eval do
-				if method_defined?(:select_without_io_event_priority_test)
-					alias_method :select, :select_without_io_event_priority_test
-					remove_method :select_without_io_event_priority_test
-				end
-			end
-			
-			input&.close
-			output&.close
+			socket&.close
+			client&.close
+			server&.close
 		end
 	end
 end
