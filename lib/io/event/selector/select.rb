@@ -52,15 +52,19 @@ module IO::Event
 				@waiting = nil
 			end
 			
+			# An optional reference to a fiber which can be cleared before it is resumed.
 			Optional = Struct.new(:fiber) do
+				# Transfer control to the fiber if it is still available.
 				def transfer(*arguments)
 					fiber&.transfer(*arguments)
 				end
 				
+				# @returns [Boolean | Nil] Whether the referenced fiber is still alive.
 				def alive?
 					fiber&.alive?
 				end
 				
+				# Clear the referenced fiber.
 				def nullify
 					self.fiber = nil
 				end
@@ -111,7 +115,9 @@ module IO::Event
 				!@ready.empty?
 			end
 			
+			# A linked list node used to track fibers waiting for IO events.
 			Waiter = Struct.new(:fiber, :events, :tail) do
+				# @returns [Boolean | Nil] Whether the waiting fiber is still alive.
 				def alive?
 					self.fiber&.alive?
 				end
@@ -138,10 +144,12 @@ module IO::Event
 					tail&.dispatch(events, &reactivate)
 				end
 				
+				# Clear the waiting fiber so it will not be resumed.
 				def invalidate
 					self.fiber = nil
 				end
 				
+				# Iterate over each active waiting fiber and its requested events.
 				def each(&block)
 					if fiber = self.fiber
 						yield fiber, self.events
