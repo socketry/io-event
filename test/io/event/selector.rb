@@ -8,7 +8,6 @@ require "io/event"
 require "io/event/selector"
 require "io/event/selector/nonblock"
 require "io/event/debug/selector"
-require "io/event/support"
 
 require "socket"
 require "fiber"
@@ -752,12 +751,6 @@ describe IO::Event::Selector do
 		ensure
 			selector&.close
 		end
-	end
-end
-
-describe IO::Event::Support do
-	it "can report buffer support" do
-		expect(subject.buffer?).to be == IO.const_defined?(:Buffer)
 	end
 end
 
