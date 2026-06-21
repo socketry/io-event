@@ -6,12 +6,28 @@
 
 require "io/event"
 require "io/event/selector"
+require "io/event/selector/nonblock"
 require "io/event/debug/selector"
+require "io/event/support"
 
 require "socket"
 require "fiber"
+require "stringio"
+require "tempfile"
 
 require "unix_socket"
+
+module IOEventNonblockFailure
+	def nonblock(...)
+		if $io_event_force_ebadf
+			raise Errno::EBADF
+		end
+		
+		super
+	end
+end
+
+IO.prepend(IOEventNonblockFailure)
 
 class FakeFiber
 	def initialize(alive = true)
@@ -703,6 +719,237 @@ describe IO::Event::Selector do
 			env = {"IO_EVENT_SELECTOR" => "invalid"}
 			expect{subject.default(env)}.to raise_exception(NameError)
 		end
+		
+		it "prefers URing when available" do
+			selector = Module.new
+			previous = if subject.const_defined?(:URing, false)
+				subject.const_get(:URing)
+			end
+			
+			subject.const_set(:URing, selector)
+			
+			expect(subject.default({})).to be == selector
+		ensure
+			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
+			subject.const_set(:URing, previous) if previous
+		end
+		
+		it "prefers EPoll when URing is not available" do
+			selector = Module.new
+			previous_uring = if subject.const_defined?(:URing, false)
+				subject.const_get(:URing)
+			end
+			previous_epoll = if subject.const_defined?(:EPoll, false)
+				subject.const_get(:EPoll)
+			end
+			
+			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
+			subject.const_set(:EPoll, selector)
+			
+			expect(subject.default({})).to be == selector
+		ensure
+			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
+			subject.send(:remove_const, :EPoll) if subject.const_defined?(:EPoll, false)
+			subject.const_set(:URing, previous_uring) if previous_uring
+			subject.const_set(:EPoll, previous_epoll) if previous_epoll
+		end
+		
+		it "falls back to Select when no native selector is available" do
+			previous = {}
+			
+			[:URing, :EPoll, :KQueue].each do |name|
+				if subject.const_defined?(name, false)
+					previous[name] = subject.const_get(name)
+					subject.send(:remove_const, name)
+				end
+			end
+			
+			expect(subject.default({})).to be == subject::Select
+		ensure
+			previous&.each do |name, value|
+				subject.const_set(name, value)
+			end
+		end
+	end
+	
+	with ".new" do
+		it "wraps the selector when debug is enabled" do
+			selector = subject.new(Fiber.current, {"IO_EVENT_DEBUG_SELECTOR" => "1"})
+			
+			expect(selector).to be_a(IO::Event::Debug::Selector)
+		ensure
+			selector&.close
+		end
+	end
+end
+
+describe IO::Event::Support do
+	it "can report buffer support" do
+		expect(subject.buffer?).to be == IO.const_defined?(:Buffer)
+	end
+end
+
+describe IO::Event::Selector do
+	with ".nonblock" do
+		it "yields if nonblock raises EBADF" do
+			input, output = IO.pipe
+			executed = false
+			
+			$io_event_force_ebadf = true
+			subject.nonblock(input) do
+				executed = true
+			end
+			
+			expect(executed).to be == true
+		ensure
+			$io_event_force_ebadf = false
+			input&.close
+			output&.close
+		end
+	end
+end
+
+describe IO::Event::Selector::Select do
+	before do
+		@selector = subject.new(Fiber.current)
+	end
+	
+	after do
+		@selector&.close
+	end
+	
+	attr :selector
+	
+	with "#ready?" do
+		it "reports whether a fiber is ready" do
+			fiber = Fiber.new{}
+			
+			expect(selector).not.to be(:ready?)
+			
+			selector.push(fiber)
+			
+			expect(selector).to be(:ready?)
+			
+			selector.select(0)
+			
+			expect(selector).not.to be(:ready?)
+		end
+	end
+	
+	with "Waiter" do
+		it "can report whether the fiber is alive" do
+			fiber = Fiber.new{}
+			waiter = subject::Waiter.new(fiber, IO::READABLE, nil)
+			
+			expect(waiter).to be(:alive?)
+			
+			fiber.transfer
+			
+			expect(waiter).not.to be(:alive?)
+		end
+		
+		it "clears dead fibers while dispatching" do
+			fiber = Fiber.new{}
+			fiber.transfer
+			
+			waiter = subject::Waiter.new(fiber, IO::READABLE, nil)
+			waiter.dispatch(IO::READABLE) {}
+			
+			expect(waiter.fiber).to be_nil
+		end
+	end
+	
+	with "#io_select" do
+		it "delegates to IO.select from a worker thread" do
+			input, output = IO.pipe
+			output.write(".")
+			
+			readable, = selector.io_select([input], nil, nil, 0)
+			
+			expect(readable).to be == [input]
+		ensure
+			input&.close
+			output&.close
+		end
+	end
+	
+	with "#io_read" do
+		it "returns zero at EOF" do
+			input, output = IO.pipe
+			output.close
+			
+			buffer = IO::Buffer.new(64)
+			
+			expect(selector.io_read(Fiber.current, input, buffer, 1)).to be == 0
+		ensure
+			input&.close
+		end
+	end
+	
+	with "#select" do
+		it "dispatches priority events" do
+			input, output = IO.pipe
+			events = nil
+			
+			fiber = Fiber.new do
+				events = selector.io_wait(Fiber.current, input, IO::PRIORITY)
+			end
+			
+			fiber.transfer
+			
+			IO.singleton_class.class_eval do
+				alias_method :select_without_io_event_priority_test, :select
+				
+				def select(readable, writable, priority, duration = nil)
+					[nil, nil, priority]
+				end
+			end
+			
+			expect(selector.select(0)).to be == 1
+			expect(events).to be == IO::PRIORITY
+		ensure
+			IO.singleton_class.class_eval do
+				if method_defined?(:select_without_io_event_priority_test)
+					alias_method :select, :select_without_io_event_priority_test
+					remove_method :select_without_io_event_priority_test
+				end
+			end
+			
+			input&.close
+			output&.close
+		end
+	end
+end
+
+describe "io/event/native" do
+	it "falls back to the non-blocking selector when the native extension is not available" do
+		original_stderr = $stderr
+		$stderr = StringIO.new
+		
+		Kernel.module_eval do
+			alias_method :require_without_io_event_native_test, :require
+			
+			def require(path)
+				if path == "IO_Event"
+					raise LoadError, path
+				else
+					require_without_io_event_native_test(path)
+				end
+			end
+		end
+		
+		load File.expand_path("../../../lib/io/event/native.rb", __dir__)
+		
+		expect($stderr.string).to be =~ /Could not load native event selector/
+	ensure
+		Kernel.module_eval do
+			if method_defined?(:require_without_io_event_native_test)
+				alias_method :require, :require_without_io_event_native_test
+				remove_method :require_without_io_event_native_test
+			end
+		end
+		
+		$stderr = original_stderr
 	end
 end
 
@@ -764,4 +1011,166 @@ describe IO::Event::Debug::Selector do
 	attr :selector
 	
 	it_behaves_like Selector
+end
+
+describe IO::Event::Debug::Selector do
+	class FakeSelector
+		def initialize(loop = Fiber.current)
+			@loop = loop
+			@closed = false
+			@ready = false
+			@calls = []
+		end
+		
+		attr :loop
+		attr :calls
+		
+		def idle_duration
+			0.1
+		end
+		
+		def wakeup
+			:calls_wakeup
+		end
+		
+		def close
+			@closed = true
+		end
+		
+		def transfer
+			:calls_transfer
+		end
+		
+		def resume(*arguments)
+			@calls << [:resume, arguments]
+			:calls_resume
+		end
+		
+		def yield
+			:calls_yield
+		end
+		
+		def push(fiber)
+			@calls << [:push, fiber]
+			:calls_push
+		end
+		
+		def raise(fiber, *arguments, **options)
+			@calls << [:raise, fiber, arguments, options]
+			:calls_raise
+		end
+		
+		def ready?
+			@ready
+		end
+		
+		def blocking_operation_wait(operation)
+			@calls << [:blocking_operation_wait, operation]
+			:calls_blocking_operation_wait
+		end
+		
+		def process_wait(*arguments)
+			@calls << [:process_wait, arguments]
+			:calls_process_wait
+		end
+		
+		def io_wait(fiber, io, events)
+			@calls << [:io_wait, fiber, io, events]
+			:calls_io_wait
+		end
+		
+		def io_read(fiber, io, buffer, length, offset = 0)
+			@calls << [:io_read, fiber, io, buffer, length, offset]
+			:calls_io_read
+		end
+		
+		def io_write(fiber, io, buffer, length, offset = 0)
+			@calls << [:io_write, fiber, io, buffer, length, offset]
+			:calls_io_write
+		end
+		
+		def io_close(descriptor)
+			@calls << [:io_close, descriptor]
+			:calls_io_close
+		end
+		
+		def select(duration = nil)
+			@calls << [:select, duration]
+			:calls_select
+		end
+	end
+	
+	it "raises if initialized from a fiber other than the selector loop" do
+		selector = FakeSelector.new(Fiber.current)
+		
+		fiber = Fiber.new do
+			subject.new(selector)
+		end
+		
+		expect{fiber.transfer}.to raise_exception(RuntimeError, message: be =~ /initialized/)
+	end
+	
+	it "wraps with a log file" do
+		file = Tempfile.new
+		selector = subject.wrap(FakeSelector.new, {"IO_EVENT_DEBUG_SELECTOR_LOG" => file.path})
+		
+		selector.log("Hello")
+		log = selector.instance_variable_get(:@log)
+		log.flush
+		
+		expect(File.read(file.path)).to be =~ /Hello/
+	ensure
+		selector&.close
+		log&.close
+		file&.close!
+	end
+	
+	it "forwards selector operations" do
+		backend = FakeSelector.new
+		selector = subject.new(backend, log: StringIO.new)
+		fiber = Fiber.current
+		input, output = IO.pipe
+		buffer = IO::Buffer.new(8)
+		
+		expect(selector.idle_duration).to be == 0.1
+		expect(selector.now).to be_a(Numeric)
+		expect(selector.wakeup).to be == :calls_wakeup
+		expect(selector.transfer).to be == :calls_transfer
+		expect(selector.resume(fiber, :argument)).to be == :calls_resume
+		expect(selector.yield).to be == :calls_yield
+		expect(selector.push(fiber)).to be == :calls_push
+		expect(selector.raise(fiber, "Boom")).to be == :calls_raise
+		expect(selector.ready?).to be == false
+		expect(selector.blocking_operation_wait(:operation)).to be == :calls_blocking_operation_wait
+		expect(selector.process_wait(123, 0)).to be == :calls_process_wait
+		expect(selector.io_wait(fiber, input, IO::READABLE)).to be == :calls_io_wait
+		expect(selector.io_read(fiber, input, buffer, 1)).to be == :calls_io_read
+		expect(selector.io_write(fiber, output, buffer, 1)).to be == :calls_io_write
+		expect(selector.io_close(input.fileno)).to be == :calls_io_close
+		expect(selector.respond_to?(:io_close)).to be == true
+		expect(selector.select(0)).to be == :calls_select
+	ensure
+		input&.close
+		output&.close
+		selector&.close
+	end
+	
+	it "raises if closed twice" do
+		selector = subject.new(FakeSelector.new)
+		selector.close
+		
+		expect{selector.close}.to raise_exception(RuntimeError, message: be =~ /already closed/)
+	end
+	
+	it "raises if selected from a fiber other than the selector loop" do
+		selector = subject.new(FakeSelector.new(Fiber.current))
+		
+		fiber = Fiber.new do
+			selector.select(0)
+		end
+		
+		expect{fiber.transfer}.to raise_exception(RuntimeError, message: be =~ /run on event loop/)
+	ensure
+		selector&.close
+	end
 end

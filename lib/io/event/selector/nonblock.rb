@@ -15,7 +15,7 @@ module IO::Event
 			io.nonblock(&block)
 		rescue Errno::EBADF
 			# Windows.
-			yield
+			block.call
 		end
 	end
 end
