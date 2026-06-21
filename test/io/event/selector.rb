@@ -890,33 +890,25 @@ end
 
 describe "io/event/native" do
 	it "falls back to the non-blocking selector when the native extension is not available" do
-		original_stderr = $stderr
-		$stderr = StringIO.new
+		context = Object.new
+		warnings = String.new
 		
-		Kernel.module_eval do
-			alias_method :require_without_io_event_native_test, :require
-			
-			def require(path)
-				if path == "IO_Event"
-					raise LoadError, path
-				else
-					require_without_io_event_native_test(path)
-				end
+		mock(context).replace(:require) do |path|
+			if path == "IO_Event"
+				raise LoadError, path
+			else
+				require(path)
 			end
 		end
 		
-		load File.expand_path("../../../lib/io/event/native.rb", __dir__)
-		
-		expect($stderr.string).to be =~ /Could not load native event selector/
-	ensure
-		Kernel.module_eval do
-			if method_defined?(:require_without_io_event_native_test)
-				alias_method :require, :require_without_io_event_native_test
-				remove_method :require_without_io_event_native_test
-			end
+		mock(context).replace(:warn) do |message|
+			warnings << message
 		end
 		
-		$stderr = original_stderr
+		path = File.expand_path("../../../lib/io/event/native.rb", __dir__)
+		context.instance_eval(File.read(path), path)
+		
+		expect(warnings).to be =~ /Could not load native event selector/
 	end
 end
 
