@@ -12,6 +12,8 @@ group :maintenance, optional: true do
 	gem "bake-modernize"
 	gem "bake-releases"
 	
+	gem "decode"
+	
 	gem "agent-context"
 	
 	gem "utopia-project"
@@ -21,7 +23,6 @@ group :test do
 	gem "sus"
 	gem "sus-fixtures-benchmark"
 	gem "covered"
-	gem "decode"
 	
 	gem "rubocop"
 	gem "rubocop-md"
