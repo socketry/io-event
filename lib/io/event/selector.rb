@@ -3,12 +3,17 @@
 # Released under the MIT License.
 # Copyright, 2021-2026, by Samuel Williams.
 
+require_relative "native"
 require_relative "selector/select"
 require_relative "debug/selector"
 
 module IO::Event
 	# @namespace
 	module Selector
+		selectors = [:URing, :EPoll, :KQueue, :Select]
+		BEST = const_get(selectors.find{|name| const_defined?(name)})
+		private_constant :BEST
+		
 		# The default selector implementation, which is chosen based on the environment and available implementations.
 		#
 		# @parameter env [Hash] The environment to read configuration from.
@@ -16,16 +21,8 @@ module IO::Event
 		def self.default(env = ENV)
 			if name = env["IO_EVENT_SELECTOR"]&.to_sym
 				return const_get(name)
-			end
-			
-			if self.const_defined?(:URing)
-				const_get(:URing)
-			elsif self.const_defined?(:EPoll)
-				const_get(:EPoll)
-			elsif self.const_defined?(:KQueue)
-				const_get(:KQueue)
 			else
-				const_get(:Select)
+				BEST
 			end
 		end
 		

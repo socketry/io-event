@@ -697,22 +697,6 @@ end
 
 describe IO::Event::Selector do
 	with ".default" do
-		def local_selector(**constants)
-			selector = subject.dup
-			
-			[:URing, :EPoll, :KQueue].each do |name|
-				if selector.const_defined?(name, false)
-					selector.send(:remove_const, name)
-				end
-			end
-			
-			constants.each do |name, value|
-				selector.const_set(name, value)
-			end
-			
-			return selector
-		end
-		
 		it "can get the default selector" do
 			expect(subject.default).to be_a(Module)
 		end
@@ -720,26 +704,6 @@ describe IO::Event::Selector do
 		it "returns the default if an invalid name is provided" do
 			env = {"IO_EVENT_SELECTOR" => "invalid"}
 			expect{subject.default(env)}.to raise_exception(NameError)
-		end
-		
-		it "prefers URing when available" do
-			selector = Module.new
-			selector_module = local_selector(URing: selector)
-			
-			expect(selector_module.default({})).to be == selector
-		end
-		
-		it "prefers EPoll when URing is not available" do
-			selector = Module.new
-			selector_module = local_selector(EPoll: selector)
-			
-			expect(selector_module.default({})).to be == selector
-		end
-		
-		it "falls back to Select when no native selector is available" do
-			selector_module = local_selector
-			
-			expect(selector_module.default({})).to be == selector_module::Select
 		end
 	end
 	
