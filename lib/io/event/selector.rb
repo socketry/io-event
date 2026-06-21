@@ -19,13 +19,13 @@ module IO::Event
 			end
 			
 			if self.const_defined?(:URing)
-				URing
+				const_get(:URing)
 			elsif self.const_defined?(:EPoll)
-				EPoll
+				const_get(:EPoll)
 			elsif self.const_defined?(:KQueue)
-				KQueue
+				const_get(:KQueue)
 			else
-				Select
+				const_get(:Select)
 			end
 		end
 		

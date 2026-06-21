@@ -698,6 +698,22 @@ end
 
 describe IO::Event::Selector do
 	with ".default" do
+		def local_selector(**constants)
+			selector = subject.dup
+			
+			[:URing, :EPoll, :KQueue].each do |name|
+				if selector.const_defined?(name, false)
+					selector.send(:remove_const, name)
+				end
+			end
+			
+			constants.each do |name, value|
+				selector.const_set(name, value)
+			end
+			
+			return selector
+		end
+		
 		it "can get the default selector" do
 			expect(subject.default).to be_a(Module)
 		end
@@ -709,53 +725,22 @@ describe IO::Event::Selector do
 		
 		it "prefers URing when available" do
 			selector = Module.new
-			previous = if subject.const_defined?(:URing, false)
-				subject.const_get(:URing)
-			end
+			selector_module = local_selector(URing: selector)
 			
-			subject.const_set(:URing, selector)
-			
-			expect(subject.default({})).to be == selector
-		ensure
-			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
-			subject.const_set(:URing, previous) if previous
+			expect(selector_module.default({})).to be == selector
 		end
 		
 		it "prefers EPoll when URing is not available" do
 			selector = Module.new
-			previous_uring = if subject.const_defined?(:URing, false)
-				subject.const_get(:URing)
-			end
-			previous_epoll = if subject.const_defined?(:EPoll, false)
-				subject.const_get(:EPoll)
-			end
+			selector_module = local_selector(EPoll: selector)
 			
-			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
-			subject.const_set(:EPoll, selector)
-			
-			expect(subject.default({})).to be == selector
-		ensure
-			subject.send(:remove_const, :URing) if subject.const_defined?(:URing, false)
-			subject.send(:remove_const, :EPoll) if subject.const_defined?(:EPoll, false)
-			subject.const_set(:URing, previous_uring) if previous_uring
-			subject.const_set(:EPoll, previous_epoll) if previous_epoll
+			expect(selector_module.default({})).to be == selector
 		end
 		
 		it "falls back to Select when no native selector is available" do
-			previous = {}
+			selector_module = local_selector
 			
-			[:URing, :EPoll, :KQueue].each do |name|
-				if subject.const_defined?(name, false)
-					previous[name] = subject.const_get(name)
-					subject.send(:remove_const, name)
-				end
-			end
-			
-			expect(subject.default({})).to be == subject::Select
-		ensure
-			previous&.each do |name, value|
-				subject.const_set(name, value)
-			end
+			expect(selector_module.default({})).to be == selector_module::Select
 		end
 	end
 	
