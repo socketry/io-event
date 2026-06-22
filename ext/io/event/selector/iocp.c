@@ -21,7 +21,7 @@
 #include <time.h>
 
 enum {
-	DEBUG = 1,
+	DEBUG = 0,
 	IOCP_MAX_EVENTS = 64,
 };
 
@@ -108,57 +108,12 @@ struct IO_Event_Selector_IOCP {
 	OVERLAPPED_ENTRY completion_entries[IOCP_MAX_EVENTS];
 };
 
-static void
-completion_debug(const char *event,
-                 struct IO_Event_Selector_IOCP *selector,
-                 struct IO_Event_Selector_IOCP_Completion *c)
-{
-	if (!DEBUG) return;
-
-	fprintf(stderr,
-	        "[iocp] %s selector=%p port=%p c=%p ov=%p waiting=%p aux=%p pending=%d detached=%d pending_count=%d detached_count=%d\n",
-	        event, selector, selector ? selector->port : NULL, c,
-	        c ? &c->overlapped : NULL,
-	        c ? c->waiting : NULL,
-	        c ? c->aux : NULL,
-	        c ? c->pending : 0,
-	        c ? c->detached : 0,
-	        selector ? selector->pending_count : 0,
-	        selector ? selector->detached_count : 0);
-	fflush(stderr);
-}
-
-static void
-completion_debug_result(const char *event,
-                        struct IO_Event_Selector_IOCP *selector,
-                        struct IO_Event_Selector_IOCP_Completion *c,
-                        ULONG_PTR key, ULONG_PTR status, DWORD bytes)
-{
-	if (!DEBUG) return;
-
-	fprintf(stderr,
-	        "[iocp] %s selector=%p port=%p c=%p ov=%p key=%llu status=0x%llx bytes=%lu waiting=%p aux=%p pending=%d detached=%d pending_count=%d detached_count=%d\n",
-	        event, selector, selector ? selector->port : NULL, c,
-	        c ? &c->overlapped : NULL,
-	        (unsigned long long)key,
-	        (unsigned long long)status,
-	        (unsigned long)bytes,
-	        c ? c->waiting : NULL,
-	        c ? c->aux : NULL,
-	        c ? c->pending : 0,
-	        c ? c->detached : 0,
-	        selector ? selector->pending_count : 0,
-	        selector ? selector->detached_count : 0);
-	fflush(stderr);
-}
-
 static struct IO_Event_Selector_IOCP_Completion *
 completion_from_list(struct IO_Event_List *list)
 {
 	return (struct IO_Event_Selector_IOCP_Completion *)((char *)list -
 	    offsetof(struct IO_Event_Selector_IOCP_Completion, list));
 }
-
 // ─── GC support ──────────────────────────────────────────────────────────────
 
 static void
@@ -298,8 +253,6 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	c->detached = 0;
 	waiting->completion = c;
 
-	completion_debug("acquire", selector, c);
-
 	return c;
 }
 
@@ -311,8 +264,6 @@ completion_submit(struct IO_Event_Selector_IOCP *selector,
 		c->pending = 1;
 		selector->pending_count += 1;
 	}
-
-	completion_debug("submit", selector, c);
 }
 
 static void
@@ -321,8 +272,6 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 {
 	if (c->waiting && c->waiting->completion == c)
 		c->waiting->completion = NULL;
-
-	completion_debug("release-before", selector, c);
 
 	if (c->pending) {
 		c->pending = 0;
@@ -337,8 +286,6 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 	c->waiting = NULL;
 	c->aux     = NULL;
 	IO_Event_List_prepend(&selector->free_list, &c->list);
-
-	completion_debug("release-after", selector, c);
 }
 
 static void
@@ -352,7 +299,6 @@ completion_detach(struct IO_Event_Selector_IOCP *selector,
 			c->detached = 1;
 			selector->detached_count += 1;
 		}
-		completion_debug("detach", selector, c);
 		waiting->completion = NULL;
 	}
 	waiting->fiber = 0;
@@ -364,8 +310,6 @@ completion_drain(struct IO_Event_Selector_IOCP *selector,
 {
 	int attempts = 100;
 
-	completion_debug("drain-start", selector, c);
-
 	while (c->pending && attempts-- > 0) {
 		process_completions(selector, 10);
 	}
@@ -373,8 +317,6 @@ completion_drain(struct IO_Event_Selector_IOCP *selector,
 	if (c->pending) {
 		rb_warn("IOCP completion cancellation did not drain before reuse");
 	}
-
-	completion_debug("drain-finish", selector, c);
 }
 
 static void
@@ -751,14 +693,7 @@ io_wait_ensure(VALUE _arguments)
 		} else {
 			// Overlapped-IO based (io_wait readable): cancel via CancelIoEx.
 			c->waiting = NULL;
-			BOOL cancelled = CancelIoEx(args->waiting->handle, &c->overlapped);
-			if (DEBUG) {
-				fprintf(stderr,
-				        "[iocp] cancel io_wait handle=%p c=%p result=%d error=%lu\n",
-				        args->waiting->handle, c, (int)cancelled,
-				        (unsigned long)GetLastError());
-				fflush(stderr);
-			}
+			CancelIoEx(args->waiting->handle, &c->overlapped);
 		}
 	}
 
@@ -997,14 +932,7 @@ io_read_ensure(VALUE _arguments)
 	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
 	if (c) {
 		c->waiting = NULL;
-		BOOL cancelled = CancelIoEx(args->waiting->handle, &c->overlapped);
-		if (DEBUG) {
-			fprintf(stderr,
-			        "[iocp] cancel io_read handle=%p c=%p result=%d error=%lu\n",
-			        args->waiting->handle, c, (int)cancelled,
-			        (unsigned long)GetLastError());
-			fflush(stderr);
-		}
+		CancelIoEx(args->waiting->handle, &c->overlapped);
 	}
 	completion_detach(args->selector, args->waiting);
 	if (c)
@@ -1135,14 +1063,7 @@ io_write_ensure(VALUE _arguments)
 	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
 	if (c) {
 		c->waiting = NULL;
-		BOOL cancelled = CancelIoEx(args->waiting->handle, &c->overlapped);
-		if (DEBUG) {
-			fprintf(stderr,
-			        "[iocp] cancel io_write handle=%p c=%p result=%d error=%lu\n",
-			        args->waiting->handle, c, (int)cancelled,
-			        (unsigned long)GetLastError());
-			fflush(stderr);
-		}
+		CancelIoEx(args->waiting->handle, &c->overlapped);
 	}
 	completion_detach(args->selector, args->waiting);
 	if (c)
@@ -1312,9 +1233,6 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 
 		struct IO_Event_Selector_IOCP_Completion *c =
 		    (struct IO_Event_Selector_IOCP_Completion *)e->lpOverlapped;
-
-		completion_debug_result("dequeue", selector, c, e->lpCompletionKey,
-		                        e->Internal, e->dwNumberOfBytesTransferred);
 
 		// Free aux data (process/WSAEvent handles) if present.
 		if (c->aux) {
