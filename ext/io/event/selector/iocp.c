@@ -375,10 +375,10 @@ notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
 }
 
 static int
-socket_in_fd_set(fd_set *set, SOCKET sock)
+socket_in_set(fd_set *set, SOCKET socket)
 {
 	for (u_int i = 0; i < set->fd_count; i++) {
-		if (set->fd_array[i] == sock)
+		if (set->fd_array[i] == socket)
 			return 1;
 	}
 
@@ -386,24 +386,24 @@ socket_in_fd_set(fd_set *set, SOCKET sock)
 }
 
 static int
-socket_ready_select(SOCKET sock, int requested)
+socket_ready_select(SOCKET socket, int requested)
 {
 	fd_set read_fds, write_fds, except_fds;
 	fd_set *read_ptr = NULL, *write_ptr = NULL;
 	struct timeval timeout = {0, 0};
 
 	except_fds.fd_count = 0;
-	except_fds.fd_array[except_fds.fd_count++] = sock;
+	except_fds.fd_array[except_fds.fd_count++] = socket;
 
 	if (requested & IO_EVENT_READABLE) {
 		read_fds.fd_count = 0;
-		read_fds.fd_array[read_fds.fd_count++] = sock;
+		read_fds.fd_array[read_fds.fd_count++] = socket;
 		read_ptr = &read_fds;
 	}
 
 	if (requested & IO_EVENT_WRITABLE) {
 		write_fds.fd_count = 0;
-		write_fds.fd_array[write_fds.fd_count++] = sock;
+		write_fds.fd_array[write_fds.fd_count++] = socket;
 		write_ptr = &write_fds;
 	}
 
@@ -414,11 +414,11 @@ socket_ready_select(SOCKET sock, int requested)
 		return -WSAGetLastError();
 
 	int ready = 0;
-	if (read_ptr && socket_in_fd_set(read_ptr, sock))
+	if (read_ptr && socket_in_set(read_ptr, socket))
 		ready |= IO_EVENT_READABLE;
-	if (write_ptr && socket_in_fd_set(write_ptr, sock))
+	if (write_ptr && socket_in_set(write_ptr, socket))
 		ready |= IO_EVENT_WRITABLE;
-	if (socket_in_fd_set(&except_fds, sock))
+	if (socket_in_set(&except_fds, socket))
 		ready |= requested;
 
 	return ready & requested;
@@ -822,14 +822,14 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	TypedData_Get_Struct(self, struct IO_Event_Selector_IOCP,
 	                     &IO_Event_Selector_IOCP_Type, selector);
 
-	int fd              = IO_Event_Selector_io_descriptor(io);
+	int descriptor      = IO_Event_Selector_io_descriptor(io);
 	int requested       = RB_NUM2INT(events);
-	SOCKET sock         = rb_w32_get_osfhandle(fd);
-	int    is_socket    = rb_w32_is_socket(fd);
-	HANDLE handle       = (HANDLE)sock;
+	HANDLE handle       = (HANDLE)rb_w32_get_osfhandle(descriptor);
+	int    is_socket    = rb_w32_is_socket(descriptor);
+	SOCKET socket       = (SOCKET)handle;
 
 	if (is_socket && (requested & IO_EVENT_WRITABLE)) {
-		int ready = socket_ready_select(sock, requested);
+		int ready = socket_ready_select(socket, requested);
 		if (ready > 0) {
 			IO_Event_Selector_ready_push(&selector->backend, fiber);
 			IO_Event_Selector_loop_yield(&selector->backend);
@@ -875,7 +875,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			WSABUF wsabuf = {0, NULL};
 			DWORD  bytes = 0, wsa_flags = 0;
 			completion_submit(selector, c);
-			int rc = WSARecv(sock, &wsabuf, 1, &bytes, &wsa_flags,
+			int rc = WSARecv(socket, &wsabuf, 1, &bytes, &wsa_flags,
 			                 &c->overlapped, NULL);
 			if (rc == SOCKET_ERROR) {
 				int err = WSAGetLastError();
@@ -906,8 +906,9 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			// FD_WRITE fires immediately for freshly-connected sockets and
 			// after WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
 			// We avoid select()+FD_SET here because ruby/win32.h redefines
-			// FD_SET to call _get_osfhandle(fd) expecting a CRT integer fd,
-			// not a raw SOCKET handle, which would produce wrong results.
+			// FD_SET to call _get_osfhandle(descriptor) expecting a CRT
+			// integer descriptor, not a raw SOCKET handle, which would
+			// produce wrong results.
 			WSAEVENT wsa_ev = WSACreateEvent();
 			if (wsa_ev == WSA_INVALID_EVENT) {
 				completion_cancel(selector, &waiting);
@@ -917,7 +918,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 			// FD_WRITE fires when previously-blocked send becomes possible;
 			// FD_CONNECT fires when an async connect completes.
-			if (WSAEventSelect(sock, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
+			if (WSAEventSelect(socket, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
 				WSACloseEvent(wsa_ev);
 				completion_cancel(selector, &waiting);
 				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
@@ -927,7 +928,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			struct IO_Event_Selector_IOCP_Notify *notify =
 			    malloc(sizeof(*notify));
 			if (!notify) {
-				WSAEventSelect(sock, NULL, 0);
+				WSAEventSelect(socket, NULL, 0);
 				WSACloseEvent(wsa_ev);
 				completion_cancel(selector, &waiting);
 				rb_memerror();
@@ -937,7 +938,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			notify->posted      = 0;
 			notify->process     = NULL;
 			notify->wsa_event   = wsa_ev;
-			notify->socket      = sock;
+			notify->socket      = socket;
 			notify->wait_handle = NULL;
 			c->aux = notify;
 
@@ -947,7 +948,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			                                 io_wait_writable_callback,
 			                                 notify, INFINITE,
 			                                 WT_EXECUTEONLYONCE)) {
-				WSAEventSelect(sock, NULL, 0);
+				WSAEventSelect(socket, NULL, 0);
 				WSACloseEvent(wsa_ev);
 				free(notify);
 				c->aux = NULL;
@@ -974,7 +975,7 @@ struct io_read_arguments {
 static int
 submit_read(struct IO_Event_Selector_IOCP *selector,
             struct IO_Event_Selector_IOCP_Waiting *waiting,
-            int is_socket, SOCKET sock,
+            int is_socket, HANDLE handle, SOCKET socket,
             void *base, size_t len)
 {
 	struct IO_Event_Selector_IOCP_Completion *c = waiting->completion;
@@ -985,7 +986,7 @@ submit_read(struct IO_Event_Selector_IOCP *selector,
 		WSABUF wsabuf = {(ULONG)len, (char *)base};
 		DWORD  bytes = 0, flags = 0;
 		completion_submit(selector, c);
-		int rc = WSARecv(sock, &wsabuf, 1, &bytes, &flags,
+		int rc = WSARecv(socket, &wsabuf, 1, &bytes, &flags,
 		                 &c->overlapped, NULL);
 		if (rc == SOCKET_ERROR) {
 			int err = WSAGetLastError();
@@ -995,7 +996,7 @@ submit_read(struct IO_Event_Selector_IOCP *selector,
 	} else {
 		DWORD bytes = 0;
 		completion_submit(selector, c);
-		if (!ReadFile((HANDLE)sock, base, (DWORD)len, &bytes,
+		if (!ReadFile(handle, base, (DWORD)len, &bytes,
 		              &c->overlapped)) {
 			DWORD err = GetLastError();
 			if (err != ERROR_IO_PENDING)
@@ -1033,19 +1034,19 @@ io_read_ensure(VALUE _arguments)
 static int
 do_read(struct IO_Event_Selector_IOCP *selector,
         VALUE self, VALUE fiber, VALUE io,
-        int is_socket, SOCKET sock,
+        int is_socket, HANDLE handle, SOCKET socket,
         char *base, size_t len)
 {
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
-		.handle = (HANDLE)sock,
+		.handle = handle,
 	};
 	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
 
 	completion_acquire(selector, &waiting);
 
-	int submit_result = submit_read(selector, &waiting, is_socket, sock,
-	                                base, len);
+	int submit_result = submit_read(selector, &waiting, is_socket, handle,
+	                                socket, base, len);
 	if (submit_result < 0) {
 		completion_cancel(selector, &waiting);
 		return submit_result;
@@ -1069,11 +1070,12 @@ IO_Event_Selector_IOCP_io_read(VALUE self, VALUE fiber, VALUE io,
 	TypedData_Get_Struct(self, struct IO_Event_Selector_IOCP,
 	                     &IO_Event_Selector_IOCP_Type, selector);
 
-	int    fd        = IO_Event_Selector_io_descriptor(io);
-	SOCKET sock      = rb_w32_get_osfhandle(fd);
-	int    is_socket = rb_w32_is_socket(fd);
+	int    descriptor = IO_Event_Selector_io_descriptor(io);
+	HANDLE handle     = (HANDLE)rb_w32_get_osfhandle(descriptor);
+	int    is_socket  = rb_w32_is_socket(descriptor);
+	SOCKET socket     = (SOCKET)handle;
 
-	ensure_associated(selector, (HANDLE)sock);
+	ensure_associated(selector, handle);
 
 	void  *base;
 	size_t size;
@@ -1094,7 +1096,7 @@ IO_Event_Selector_IOCP_io_read(VALUE self, VALUE fiber, VALUE io,
 	if (!length) length = maximum_size;
 	while (maximum_size) {
 		int result = do_read(selector, self, fiber, io,
-		                     is_socket, sock,
+		                     is_socket, handle, socket,
 		                     (char *)base + offset, maximum_size);
 		if (result > 0) {
 			total  += result;
@@ -1159,7 +1161,7 @@ io_write_ensure(VALUE _arguments)
 static int
 submit_write(struct IO_Event_Selector_IOCP *selector,
              struct IO_Event_Selector_IOCP_Waiting *waiting,
-             int is_socket, SOCKET sock,
+             int is_socket, HANDLE handle, SOCKET socket,
              const void *base, size_t len)
 {
 	struct IO_Event_Selector_IOCP_Completion *c = waiting->completion;
@@ -1169,7 +1171,7 @@ submit_write(struct IO_Event_Selector_IOCP *selector,
 		WSABUF wsabuf = {(ULONG)len, (char *)base};
 		DWORD  bytes = 0;
 		completion_submit(selector, c);
-		int rc = WSASend(sock, &wsabuf, 1, &bytes, 0,
+		int rc = WSASend(socket, &wsabuf, 1, &bytes, 0,
 		                 &c->overlapped, NULL);
 		if (rc == SOCKET_ERROR) {
 			int err = WSAGetLastError();
@@ -1179,7 +1181,7 @@ submit_write(struct IO_Event_Selector_IOCP *selector,
 	} else {
 		DWORD bytes = 0;
 		completion_submit(selector, c);
-		if (!WriteFile((HANDLE)sock, base, (DWORD)len, &bytes,
+		if (!WriteFile(handle, base, (DWORD)len, &bytes,
 		               &c->overlapped)) {
 			DWORD err = GetLastError();
 			if (err != ERROR_IO_PENDING)
@@ -1191,19 +1193,19 @@ submit_write(struct IO_Event_Selector_IOCP *selector,
 
 static int
 do_write(struct IO_Event_Selector_IOCP *selector,
-         VALUE fiber, int is_socket, SOCKET sock,
+         VALUE fiber, int is_socket, HANDLE handle, SOCKET socket,
          const char *base, size_t len)
 {
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
-		.handle = (HANDLE)sock,
+		.handle = handle,
 	};
 	RB_OBJ_WRITTEN(selector->backend.self, Qundef, fiber);
 
 	completion_acquire(selector, &waiting);
 
-	int submit_result = submit_write(selector, &waiting, is_socket, sock,
-	                                 base, len);
+	int submit_result = submit_write(selector, &waiting, is_socket, handle,
+	                                 socket, base, len);
 	if (submit_result < 0) {
 		completion_cancel(selector, &waiting);
 		return submit_result;
@@ -1225,11 +1227,12 @@ IO_Event_Selector_IOCP_io_write(VALUE self, VALUE fiber, VALUE io,
 	TypedData_Get_Struct(self, struct IO_Event_Selector_IOCP,
 	                     &IO_Event_Selector_IOCP_Type, selector);
 
-	int    fd        = IO_Event_Selector_io_descriptor(io);
-	SOCKET sock      = rb_w32_get_osfhandle(fd);
-	int    is_socket = rb_w32_is_socket(fd);
+	int    descriptor = IO_Event_Selector_io_descriptor(io);
+	HANDLE handle     = (HANDLE)rb_w32_get_osfhandle(descriptor);
+	int    is_socket  = rb_w32_is_socket(descriptor);
+	SOCKET socket     = (SOCKET)handle;
 
-	ensure_associated(selector, (HANDLE)sock);
+	ensure_associated(selector, handle);
 
 	const void *base;
 	size_t      size;
@@ -1246,7 +1249,7 @@ IO_Event_Selector_IOCP_io_write(VALUE self, VALUE fiber, VALUE io,
 
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
-		int result = do_write(selector, fiber, is_socket, sock,
+		int result = do_write(selector, fiber, is_socket, handle, socket,
 		                      (const char *)base + offset, maximum_size);
 		if (result > 0) {
 			total  += result;
