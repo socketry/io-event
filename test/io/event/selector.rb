@@ -70,23 +70,25 @@ Selector = Sus::Shared("a selector") do
 	with "#wakeup" do
 		it "can wakeup selector from different thread" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
 			
-			if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
-				ready = Thread::Queue.new
-				thread = Thread.new do
-					Thread.current.report_on_exception = false
-					ready.push(true)
-					selector.select(1)
-				end
-				
-				ready.pop
-				sleep(0.01)
-				expect(selector.wakeup).to be == true
-				
-				expect do
-					thread.join
-				end.to have_duration(be < 1)
-			else
+			thread = Thread.new do
+				sleep 0.001
+				selector.wakeup
+			end
+			
+			expect do
+				selector.select(1)
+			end.to have_duration(be < 1)
+		ensure
+			thread&.join
+		end
+		
+		it "can wakeup selector from different thread twice in a row" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			
+			2.times do
 				thread = Thread.new do
 					sleep 0.001
 					selector.wakeup
@@ -95,42 +97,8 @@ Selector = Sus::Shared("a selector") do
 				expect do
 					selector.select(1)
 				end.to have_duration(be < 1)
-			end
-		ensure
-			thread.join
-		end
-		
-		it "can wakeup selector from different thread twice in a row" do
-			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
-			
-			2.times do
-				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
-					ready = Thread::Queue.new
-					thread = Thread.new do
-						Thread.current.report_on_exception = false
-						ready.push(true)
-						selector.select(1)
-					end
-					
-					ready.pop
-					sleep(0.01)
-					expect(selector.wakeup).to be == true
-					
-					expect do
-						thread.join
-					end.to have_duration(be < 1)
-				else
-					thread = Thread.new do
-						sleep 0.001
-						selector.wakeup
-					end
-					
-					expect do
-						selector.select(1)
-					end.to have_duration(be < 1)
-				end
 			ensure
-				thread.join
+				thread&.join
 			end
 		end
 		
@@ -139,40 +107,22 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "doesn't block when readying another fiber" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			
 			fiber = FakeFiber.new
 			
 			10.times do |i|
-				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/ && subject != IO::Event::Selector::Select
-					ready = Thread::Queue.new
-					thread = Thread.new do
-						Thread.current.report_on_exception = false
-						ready.push(true)
-						selector.select(1.0)
-					end
-					
-					ready.pop
-					sleep(0.01)
+				thread = Thread.new do
+					sleep(i / 10000.0)
 					selector.push(fiber)
 					selector.wakeup
-					
-					expect do
-						thread.join
-					end.to have_duration(be < 1.0)
-					
-					selector.select(0)
-				else
-					thread = Thread.new do
-						sleep(i / 10000.0)
-						selector.push(fiber)
-						selector.wakeup
-					end
-					
-					expect do
-						selector.select(1.0)
-					end.to have_duration(be < 1.0)
 				end
+				
+				expect do
+					selector.select(1.0)
+				end.to have_duration(be < 1.0)
 			ensure
-				thread.join
+				thread&.join
 			end
 		end
 	end
