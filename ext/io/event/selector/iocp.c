@@ -360,6 +360,26 @@ completion_drain(struct IO_Event_Selector_IOCP *selector,
 }
 
 static void
+notify_unregister_wait(struct IO_Event_Selector_IOCP_Notify *notify)
+{
+	HANDLE wait_handle = notify->wait_handle;
+	if (!wait_handle)
+		return;
+
+	notify->wait_handle = NULL;
+
+	// The notify struct is freed when the queued completion is processed.
+	// Wait for any in-flight callback here so cancellation cannot race that
+	// free against a callback still using the same notify pointer.
+	if (!UnregisterWaitEx(wait_handle, INVALID_HANDLE_VALUE)) {
+		DWORD err = GetLastError();
+		if (err != ERROR_IO_PENDING) {
+			rb_warn("IOCP UnregisterWaitEx failed: %lu", err);
+		}
+	}
+}
+
+static void
 completion_cancel_notify(struct IO_Event_Selector_IOCP *selector,
                          struct IO_Event_Selector_IOCP_Completion *c)
 {
@@ -367,16 +387,15 @@ completion_cancel_notify(struct IO_Event_Selector_IOCP *selector,
 
 	c->waiting = NULL;
 
+	if (notify)
+		notify_unregister_wait(notify);
+
 	// Ensure exactly one completion arrives so process_completions can free
 	// the notify struct and release the completion slot.
 	if (notify && InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
 		PostQueuedCompletionStatus(selector->port, 0,
 		                           IOCP_KEY_NOTIFY, &c->overlapped);
 	}
-
-	// Non-blocking unregister — the callback may have already fired.
-	if (notify && notify->wait_handle)
-		UnregisterWait(notify->wait_handle);
 }
 
 static void
