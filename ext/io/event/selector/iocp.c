@@ -248,6 +248,8 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	if (!IO_Event_List_empty(&selector->free_list)) {
 		c = completion_from_list(selector->free_list.tail);
 		IO_Event_List_pop(&c->list);
+		if (c->pending || c->detached || c->waiting)
+			rb_bug("IOCP completion acquired while still in use");
 	} else {
 		c = IO_Event_Array_push(&selector->completions);
 		IO_Event_List_clear(&c->list);
@@ -268,6 +270,11 @@ static void
 completion_submit(struct IO_Event_Selector_IOCP *selector,
                   struct IO_Event_Selector_IOCP_Completion *c)
 {
+	// Once submitted, the OVERLAPPED storage belongs to the kernel or a
+	// notification callback until the queued completion is processed.
+	if (c->detached)
+		rb_bug("IOCP detached completion submitted again");
+
 	if (!c->pending) {
 		c->pending = 1;
 		selector->pending_count += 1;
@@ -283,11 +290,15 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 
 	if (c->pending) {
 		c->pending = 0;
+		if (selector->pending_count <= 0)
+			rb_bug("IOCP pending completion count underflow");
 		selector->pending_count -= 1;
 	}
 
 	if (c->detached) {
 		c->detached = 0;
+		if (selector->detached_count <= 0)
+			rb_bug("IOCP detached completion count underflow");
 		selector->detached_count -= 1;
 	}
 
@@ -303,6 +314,10 @@ completion_detach(struct IO_Event_Selector_IOCP *selector,
 {
 	if (waiting->completion) {
 		struct IO_Event_Selector_IOCP_Completion *c = waiting->completion;
+
+		// The waiting object lives on the suspended fiber's stack. Detaching
+		// clears the back-pointer before that stack frame can unwind; any late
+		// completion will simply release the slot without resuming a fiber.
 		c->waiting = NULL;
 		if (c->pending && !c->detached) {
 			c->detached = 1;
@@ -359,6 +374,13 @@ ensure_associated(struct IO_Event_Selector_IOCP *selector, HANDLE h)
 }
 
 static void
+socket_event_select_cancel(SOCKET socket)
+{
+	if (socket != INVALID_SOCKET)
+		WSAEventSelect(socket, NULL, 0);
+}
+
+static void
 notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
 {
 	WSAEVENT wsa_event = (WSAEVENT)InterlockedExchangePointer(
@@ -366,7 +388,7 @@ notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
 
 	if (wsa_event) {
 		if (notify->socket != INVALID_SOCKET) {
-			WSAEventSelect(notify->socket, NULL, 0);
+			socket_event_select_cancel(notify->socket);
 			notify->socket = INVALID_SOCKET;
 		}
 
@@ -444,6 +466,22 @@ handle_ready_immediately(HANDLE handle, int requested)
 	// otherwise, so keep this optimistic and avoid a fake wait.
 	if (requested & IO_EVENT_WRITABLE)
 		return IO_EVENT_WRITABLE;
+
+	return 0;
+}
+
+static int
+io_wait_ready_immediately(int is_socket, HANDLE handle, SOCKET socket,
+                          int requested)
+{
+	if (is_socket && (requested & IO_EVENT_WRITABLE)) {
+		int ready = socket_ready_select(socket, requested);
+		if (ready != 0)
+			return ready;
+	}
+
+	if (!is_socket)
+		return handle_ready_immediately(handle, requested);
 
 	return 0;
 }
@@ -828,24 +866,24 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	int    is_socket    = rb_w32_is_socket(descriptor);
 	SOCKET socket       = (SOCKET)handle;
 
-	if (is_socket && (requested & IO_EVENT_WRITABLE)) {
-		int ready = socket_ready_select(socket, requested);
-		if (ready > 0) {
-			IO_Event_Selector_ready_push(&selector->backend, fiber);
-			IO_Event_Selector_loop_yield(&selector->backend);
-			return RB_INT2NUM(ready);
-		} else if (ready < 0) {
-			rb_syserr_fail(rb_w32_map_errno(-ready), "io_wait:select");
-		}
-	}
-
-	if (!is_socket) {
-		int ready = handle_ready_immediately(handle, requested);
-		if (ready) {
-			IO_Event_Selector_ready_push(&selector->backend, fiber);
-			IO_Event_Selector_loop_yield(&selector->backend);
-			return RB_INT2NUM(ready);
-		}
+	// Windows has no single readiness primitive covering sockets, pipes, and
+	// disk files. The IOCP selector is therefore socket-first:
+	// - socket writable readiness is checked with Winsock select() before
+	//   arming slower notification paths;
+	// - disk and character handles are treated as immediately ready;
+	// - non-socket writable waits are optimistic and the following operation
+	//   reports any real error or backpressure.
+	//
+	// For mixed READABLE | WRITABLE waits, this also makes the policy explicit:
+	// return any immediately-ready writable/error state first; otherwise arm
+	// the readable wait below.
+	int ready = io_wait_ready_immediately(is_socket, handle, socket, requested);
+	if (ready > 0) {
+		IO_Event_Selector_ready_push(&selector->backend, fiber);
+		IO_Event_Selector_loop_yield(&selector->backend);
+		return RB_INT2NUM(ready);
+	} else if (ready < 0) {
+		rb_syserr_fail(rb_w32_map_errno(-ready), "io_wait:select");
 	}
 
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
@@ -928,7 +966,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			struct IO_Event_Selector_IOCP_Notify *notify =
 			    malloc(sizeof(*notify));
 			if (!notify) {
-				WSAEventSelect(socket, NULL, 0);
+				socket_event_select_cancel(socket);
 				WSACloseEvent(wsa_ev);
 				completion_cancel(selector, &waiting);
 				rb_memerror();
@@ -948,7 +986,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			                                 io_wait_writable_callback,
 			                                 notify, INFINITE,
 			                                 WT_EXECUTEONLYONCE)) {
-				WSAEventSelect(socket, NULL, 0);
+				socket_event_select_cancel(socket);
 				WSACloseEvent(wsa_ev);
 				free(notify);
 				c->aux = NULL;

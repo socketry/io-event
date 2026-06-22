@@ -72,6 +72,83 @@ describe TCPSocket do
 		server_socket&.close
 	end
 	
+	it "can wait for writability repeatedly" do
+		server_socket, client, server = make_socket_pair
+		
+		results = []
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			3.times do
+				results << client.wait_writable
+			end
+		end
+		
+		scheduler.run
+		
+		expect(results.size).to be == 3
+		results.each do |result|
+			expect(result).to be_truthy
+		end
+	ensure
+		Fiber.set_scheduler(nil)
+		client&.close
+		server&.close
+		server_socket&.close
+	end
+	
+	it "can wait for readability when the peer closes" do
+		server_socket, client, server = make_socket_pair
+		
+		result = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			result = client.wait_readable
+		end
+		
+		Fiber.schedule do
+			server.close
+		end
+		
+		scheduler.run
+		
+		expect(result).to be_truthy
+	ensure
+		Fiber.set_scheduler(nil)
+		client&.close
+		server&.close unless server&.closed?
+		server_socket&.close
+	end
+	
+	it "can read and write using scheduler hooks" do
+		server_socket, client, server = make_socket_pair
+		
+		result = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			result = client.read(5)
+		end
+		
+		Fiber.schedule do
+			server.write("Hello")
+			server.flush
+		end
+		
+		scheduler.run
+		
+		expect(result).to be == "Hello"
+	ensure
+		Fiber.set_scheduler(nil)
+		client&.close
+		server&.close
+		server_socket&.close
+	end
+	
 	it "can read and write data" do
 		chunk_size = 1024*6
 		buffer_size = 1024*64
