@@ -1328,15 +1328,6 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 
 	// Non-blocking pass first (like kqueue/epoll do).
 	int result = process_completions(selector, 0);
-	if (timeout_ms >= 1000) {
-		fprintf(stderr, "[iocp] select preblock selector=%p timeout=%lu ready=%d result=%d backend_ready=%d pending=%ld selecting=%ld blocked=%ld\n",
-		    (void *)selector, (unsigned long)timeout_ms, ready, result,
-		    selector->backend.ready ? 1 : 0,
-		    InterlockedCompareExchange(&selector->wakeup_pending, 0, 0),
-		    InterlockedCompareExchange(&selector->selecting, 1, 1),
-		    InterlockedCompareExchange(&selector->blocked, 1, 1));
-		fflush(stderr);
-	}
 
 	if (!ready && !result && !selector->backend.ready) {
 		if (timeout_ms != 0 &&
@@ -1350,12 +1341,6 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 
-			if (timeout_ms >= 1000) {
-				fprintf(stderr, "[iocp] select blocking selector=%p timeout=%lu\n",
-				    (void *)selector, (unsigned long)timeout_ms);
-				fflush(stderr);
-			}
-
 			InterlockedExchange(&selector->blocked, 1);
 			rb_thread_call_without_gvl(select_internal, &args,
 			                           select_ubf, selector);
@@ -1367,17 +1352,6 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 			                      &selector->idle_duration);
 
 			result = args.result;
-			if (timeout_ms >= 1000) {
-				fprintf(stderr, "[iocp] select unblocked selector=%p result=%d pending=%ld\n",
-				    (void *)selector, result,
-				    InterlockedCompareExchange(&selector->wakeup_pending, 0, 0));
-				fflush(stderr);
-			}
-		} else if (timeout_ms >= 1000) {
-			fprintf(stderr, "[iocp] select skipped block selector=%p pending=%ld\n",
-			    (void *)selector,
-			    InterlockedCompareExchange(&selector->wakeup_pending, 0, 0));
-			fflush(stderr);
 		}
 	}
 
@@ -1397,21 +1371,13 @@ IO_Event_Selector_IOCP_wakeup(VALUE self)
 	                     &IO_Event_Selector_IOCP_Type, selector);
 
 	LONG selecting = InterlockedCompareExchange(&selector->selecting, 1, 1);
-	LONG blocked = InterlockedCompareExchange(&selector->blocked, 1, 1);
 	if (selecting) {
 		InterlockedExchange(&selector->wakeup_pending, 1);
 		// NULL overlapped is the wakeup sentinel recognised in process_completions.
-		BOOL posted = PostQueuedCompletionStatus(selector->port, 0, 0, NULL);
-		fprintf(stderr, "[iocp] wakeup selector=%p selecting=%ld blocked=%ld posted=%d error=%lu\n",
-		    (void *)selector, selecting, blocked, posted ? 1 : 0,
-		    posted ? 0UL : (unsigned long)GetLastError());
-		fflush(stderr);
+		PostQueuedCompletionStatus(selector->port, 0, 0, NULL);
 		return Qtrue;
 	}
 
-	fprintf(stderr, "[iocp] wakeup ignored selector=%p selecting=%ld blocked=%ld\n",
-	    (void *)selector, selecting, blocked);
-	fflush(stderr);
 	return Qfalse;
 }
 
