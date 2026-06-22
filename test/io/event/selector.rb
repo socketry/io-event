@@ -69,6 +69,8 @@ Selector = Sus::Shared("a selector") do
 	
 	with "#wakeup" do
 		it "can wakeup selector from different thread" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			thread = Thread.new do
 				sleep 0.001
 				selector.wakeup
@@ -82,6 +84,8 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can wakeup selector from different thread twice in a row" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			2.times do
 				thread = Thread.new do
 					sleep 0.001

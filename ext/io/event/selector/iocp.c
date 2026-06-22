@@ -63,6 +63,10 @@ struct IO_Event_Selector_IOCP_Completion {
 	// until process_completions receives the queued completion.
 	int pending;
 	int detached;
+
+	// For io_wait operations, any non-cancelled completion means the requested
+	// readiness was observed, including EOF/hangup style completions.
+	int readiness;
 };
 
 // Stack-allocated per-operation state.  Lives in the suspended fiber's stack
@@ -220,6 +224,7 @@ IO_Event_Selector_IOCP_Completion_initialize(void *element)
 	c->aux     = NULL;
 	c->pending = 0;
 	c->detached = 0;
+	c->readiness = 0;
 }
 
 static void
@@ -251,6 +256,7 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	c->aux     = NULL;
 	c->pending = 0;
 	c->detached = 0;
+	c->readiness = 0;
 	waiting->completion = c;
 
 	return c;
@@ -285,6 +291,7 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 
 	c->waiting = NULL;
 	c->aux     = NULL;
+	c->readiness = 0;
 	IO_Event_List_prepend(&selector->free_list, &c->list);
 }
 
@@ -762,6 +769,8 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	if (requested & IO_EVENT_READABLE) {
 		// Zero-byte overlapped read: completes when data is available.
 		// Works for both sockets (WSARecv) and overlapped-capable files.
+		c->readiness = IO_EVENT_READABLE;
+
 		if (is_socket) {
 			ensure_associated(selector, (HANDLE)sock);
 			WSABUF wsabuf = {0, NULL};
@@ -1224,6 +1233,8 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 		               "process_completions:GetQueuedCompletionStatusEx");
 	}
 
+	int handled = 0;
+
 	for (ULONG i = 0; i < count; i++) {
 		OVERLAPPED_ENTRY *e = &entries[i];
 
@@ -1254,6 +1265,8 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 			} else if (e->lpCompletionKey == IOCP_KEY_NOTIFY) {
 				// Notify-based (process or writable): bytes carries the event.
 				waiting->result = (bytes > 0) ? (int)bytes : 0;
+			} else if (c->readiness) {
+				waiting->result = c->readiness;
 			} else {
 				waiting->result = iocp_result(status, bytes);
 			}
@@ -1261,15 +1274,17 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 			VALUE fiber = waiting->fiber;
 			completion_release(selector, c);
 
-			if (fiber)
+			if (fiber) {
+				handled += 1;
 				IO_Event_Selector_loop_resume(&selector->backend, fiber, 0, NULL);
+			}
 		} else {
 			// Cancelled operation whose ensure already ran: just release slot.
 			completion_release(selector, c);
 		}
 	}
 
-	return (int)count;
+	return handled;
 }
 
 // Unblocking function: called by Ruby from another thread when it needs
