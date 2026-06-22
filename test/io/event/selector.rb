@@ -72,12 +72,15 @@ Selector = Sus::Shared("a selector") do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			
 			if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+				ready = Thread::Queue.new
 				thread = Thread.new do
 					Thread.current.report_on_exception = false
+					ready.push(true)
 					selector.select(1)
 				end
 				
-				sleep(0.001) until thread.status == "sleep" || !thread.alive?
+				ready.pop
+				sleep(0.01)
 				expect(selector.wakeup).to be == true
 				
 				expect do
@@ -102,12 +105,15 @@ Selector = Sus::Shared("a selector") do
 			
 			2.times do
 				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+					ready = Thread::Queue.new
 					thread = Thread.new do
 						Thread.current.report_on_exception = false
+						ready.push(true)
 						selector.select(1)
 					end
 					
-					sleep(0.001) until thread.status == "sleep" || !thread.alive?
+					ready.pop
+					sleep(0.01)
 					expect(selector.wakeup).to be == true
 					
 					expect do
@@ -137,12 +143,15 @@ Selector = Sus::Shared("a selector") do
 			
 			10.times do |i|
 				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/ && subject != IO::Event::Selector::Select
+					ready = Thread::Queue.new
 					thread = Thread.new do
 						Thread.current.report_on_exception = false
+						ready.push(true)
 						selector.select(1.0)
 					end
 					
-					sleep(0.001) until thread.status == "sleep" || !thread.alive?
+					ready.pop
+					sleep(0.01)
 					selector.push(fiber)
 					selector.wakeup
 					
