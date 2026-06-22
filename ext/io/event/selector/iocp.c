@@ -77,6 +77,7 @@ struct IO_Event_Selector_IOCP_Notify {
 	volatile LONG    posted;      // 1 once PostQueuedCompletionStatus is called
 	HANDLE           process;     // non-NULL for process_wait
 	WSAEVENT         wsa_event;   // non-NULL for io_wait-writable
+	SOCKET           socket;      // socket associated with wsa_event
 	HANDLE           wait_handle; // from RegisterWaitForSingleObject
 };
 
@@ -219,6 +220,9 @@ static void
 completion_release(struct IO_Event_Selector_IOCP *selector,
                    struct IO_Event_Selector_IOCP_Completion *c)
 {
+	if (c->waiting && c->waiting->completion == c)
+		c->waiting->completion = NULL;
+
 	c->waiting = NULL;
 	c->aux     = NULL;
 	IO_Event_List_prepend(&selector->free_list, &c->list);
@@ -232,6 +236,16 @@ waiting_cancel(struct IO_Event_Selector_IOCP_Waiting *waiting)
 		waiting->completion = NULL;
 	}
 	waiting->fiber = 0;
+}
+
+static void
+completion_cancel(struct IO_Event_Selector_IOCP *selector,
+                  struct IO_Event_Selector_IOCP_Waiting *waiting)
+{
+	struct IO_Event_Selector_IOCP_Completion *c = waiting->completion;
+	if (c)
+		completion_release(selector, c);
+	waiting_cancel(waiting);
 }
 
 // ─── Handle helpers ───────────────────────────────────────────────────────────
@@ -251,6 +265,22 @@ ensure_associated(struct IO_Event_Selector_IOCP *selector, HANDLE h)
 		if (err != ERROR_INVALID_PARAMETER)
 			rb_syserr_fail((int)rb_w32_map_errno(err),
 			               "ensure_associated:CreateIoCompletionPort");
+	}
+}
+
+static void
+notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
+{
+	WSAEVENT wsa_event = (WSAEVENT)InterlockedExchangePointer(
+	    (PVOID volatile *)&notify->wsa_event, NULL);
+
+	if (wsa_event) {
+		if (notify->socket != INVALID_SOCKET) {
+			WSAEventSelect(notify->socket, NULL, 0);
+			notify->socket = INVALID_SOCKET;
+		}
+
+		WSACloseEvent(wsa_event);
 	}
 }
 
@@ -312,10 +342,9 @@ IO_Event_Selector_IOCP_allocate(VALUE self)
 	selector->completions.element_free =
 	    IO_Event_Selector_IOCP_Completion_free_element;
 
-	if (IO_Event_Array_initialize(&selector->completions,
-	                               IO_EVENT_ARRAY_DEFAULT_COUNT,
-	                               sizeof(struct IO_Event_Selector_IOCP_Completion)) < 0)
-		rb_sys_fail("IO_Event_Selector_IOCP_allocate:IO_Event_Array_initialize");
+	IO_Event_Array_initialize(&selector->completions,
+	                          IO_EVENT_ARRAY_DEFAULT_COUNT,
+	                          sizeof(struct IO_Event_Selector_IOCP_Completion));
 
 	return instance;
 }
@@ -512,6 +541,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	    malloc(sizeof(struct IO_Event_Selector_IOCP_Notify));
 	if (!notify) {
 		CloseHandle(process);
+		completion_cancel(selector, &waiting);
 		rb_memerror();
 	}
 	notify->port        = selector->port;
@@ -519,6 +549,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	notify->posted      = 0;
 	notify->process     = process;
 	notify->wsa_event   = NULL;
+	notify->socket      = INVALID_SOCKET;
 	notify->wait_handle = NULL;
 	c->aux = notify;
 
@@ -528,7 +559,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 		free(notify);
 		c->aux = NULL;
 		CloseHandle(process);
-		waiting_cancel(&waiting);
+		completion_cancel(selector, &waiting);
 		rb_sys_fail("IO_Event_Selector_IOCP_process_wait:"
 		            "RegisterWaitForSingleObject");
 	}
@@ -603,10 +634,7 @@ io_wait_writable_callback(PVOID param, BOOLEAN timer)
 	(void)timer;
 	struct IO_Event_Selector_IOCP_Notify *notify = param;
 
-	if (notify->wsa_event) {
-		WSACloseEvent(notify->wsa_event);
-		notify->wsa_event = NULL;
-	}
+	notify_close_wsa_event(notify);
 
 	if (InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
 		PostQueuedCompletionStatus(notify->port, IO_EVENT_WRITABLE,
@@ -653,7 +681,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			if (rc == SOCKET_ERROR) {
 				int err = WSAGetLastError();
 				if (err != WSA_IO_PENDING) {
-					waiting_cancel(&waiting);
+					completion_cancel(selector, &waiting);
 					rb_syserr_fail(rb_w32_map_errno(err),
 					               "io_wait:WSARecv");
 				}
@@ -665,7 +693,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			if (!ReadFile((HANDLE)sock, NULL, 0, &bytes, &c->overlapped)) {
 				DWORD err = GetLastError();
 				if (err != ERROR_IO_PENDING) {
-					waiting_cancel(&waiting);
+					completion_cancel(selector, &waiting);
 					rb_syserr_fail(rb_w32_map_errno(err),
 					               "io_wait:ReadFile");
 				}
@@ -686,22 +714,26 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			// not a raw SOCKET handle, which would produce wrong results.
 			WSAEVENT wsa_ev = WSACreateEvent();
 			if (wsa_ev == WSA_INVALID_EVENT) {
-				waiting_cancel(&waiting);
-				completion_release(selector, c);
+				completion_cancel(selector, &waiting);
 				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
 				               "io_wait:WSACreateEvent");
 			}
 
 			// FD_WRITE fires when previously-blocked send becomes possible;
 			// FD_CONNECT fires when an async connect completes.
-			WSAEventSelect(sock, wsa_ev, FD_WRITE | FD_CONNECT);
+			if (WSAEventSelect(sock, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
+				WSACloseEvent(wsa_ev);
+				completion_cancel(selector, &waiting);
+				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
+				               "io_wait:WSAEventSelect");
+			}
 
 			struct IO_Event_Selector_IOCP_Notify *notify =
 			    malloc(sizeof(*notify));
 			if (!notify) {
+				WSAEventSelect(sock, NULL, 0);
 				WSACloseEvent(wsa_ev);
-				waiting_cancel(&waiting);
-				completion_release(selector, c);
+				completion_cancel(selector, &waiting);
 				rb_memerror();
 			}
 			notify->port        = selector->port;
@@ -709,6 +741,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			notify->posted      = 0;
 			notify->process     = NULL;
 			notify->wsa_event   = wsa_ev;
+			notify->socket      = sock;
 			notify->wait_handle = NULL;
 			c->aux = notify;
 
@@ -716,11 +749,11 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			                                 io_wait_writable_callback,
 			                                 notify, INFINITE,
 			                                 WT_EXECUTEONLYONCE)) {
+				WSAEventSelect(sock, NULL, 0);
 				WSACloseEvent(wsa_ev);
 				free(notify);
 				c->aux = NULL;
-				waiting_cancel(&waiting);
-				completion_release(selector, c);
+				completion_cancel(selector, &waiting);
 				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
 			}
 
@@ -730,8 +763,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 			// writable; enqueue as ready and let io_write handle backpressure.
 			waiting.result = IO_EVENT_WRITABLE;
 			IO_Event_Selector_ready_push(&selector->backend, fiber);
-			waiting_cancel(&waiting);
-			completion_release(selector, c);
+			completion_cancel(selector, &waiting);
 			IO_Event_Selector_loop_yield(&selector->backend);
 			return RB_INT2NUM(IO_EVENT_WRITABLE);
 		}
@@ -791,6 +823,9 @@ static VALUE
 io_read_submit(VALUE _arguments)
 {
 	struct io_read_arguments *args = (struct io_read_arguments *)_arguments;
+
+	IO_Event_Selector_loop_yield(&args->selector->backend);
+
 	return RB_INT2NUM(args->waiting->result);
 }
 
@@ -824,7 +859,7 @@ do_read(struct IO_Event_Selector_IOCP *selector,
 	int submit_result = submit_read(selector, &waiting, is_socket, sock,
 	                                base, len);
 	if (submit_result < 0) {
-		waiting_cancel(&waiting);
+		completion_cancel(selector, &waiting);
 		return submit_result;
 	}
 
@@ -838,10 +873,6 @@ do_read(struct IO_Event_Selector_IOCP *selector,
 		.is_socket  = is_socket,
 	};
 
-	IO_Event_Selector_loop_yield(&selector->backend);
-
-	// ensure always runs; call it manually here via rb_ensure pattern.
-	// (We use rb_ensure so exceptions are handled properly.)
 	VALUE rv = rb_ensure(io_read_submit, (VALUE)&args,
 	                     io_read_ensure,  (VALUE)&args);
 	return RB_NUM2INT(rv);
@@ -921,6 +952,9 @@ static VALUE
 io_write_submit(VALUE _arguments)
 {
 	struct io_write_arguments *args = (struct io_write_arguments *)_arguments;
+
+	IO_Event_Selector_loop_yield(&args->selector->backend);
+
 	return RB_INT2NUM(args->waiting->result);
 }
 
@@ -984,14 +1018,12 @@ do_write(struct IO_Event_Selector_IOCP *selector,
 	int submit_result = submit_write(selector, &waiting, is_socket, sock,
 	                                 base, len);
 	if (submit_result < 0) {
-		waiting_cancel(&waiting);
+		completion_cancel(selector, &waiting);
 		return submit_result;
 	}
 
 	struct io_write_arguments args = {.selector = selector,
 	                                  .waiting  = &waiting};
-
-	IO_Event_Selector_loop_yield(&selector->backend);
 
 	VALUE rv = rb_ensure(io_write_submit, (VALUE)&args,
 	                     io_write_ensure,  (VALUE)&args);
@@ -1103,8 +1135,8 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 		// Free aux data (process/WSAEvent handles) if present.
 		if (c->aux) {
 			struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
-			if (notify->process)    CloseHandle(notify->process);
-			if (notify->wsa_event)  WSACloseEvent(notify->wsa_event);
+			if (notify->process) CloseHandle(notify->process);
+			notify_close_wsa_event(notify);
 			free(notify);
 			c->aux = NULL;
 		}
