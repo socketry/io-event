@@ -41,6 +41,14 @@ enum {
 
 // ─── Data structures ─────────────────────────────────────────────────────────
 
+enum IO_Event_Selector_IOCP_Completion_State {
+	IOCP_COMPLETION_IDLE = 0,
+	IOCP_COMPLETION_SUBMITTED,
+	IOCP_COMPLETION_DETACHED,
+};
+
+struct IO_Event_Selector_IOCP_Notify;
+
 // Pool entry.  OVERLAPPED *must* be the first field so that we can cast
 // between (LPOVERLAPPED) and (struct IO_Event_Selector_IOCP_Completion *).
 // This is the pointer that travels through the IOCP queue; the stack-allocated
@@ -54,15 +62,15 @@ struct IO_Event_Selector_IOCP_Completion {
 	// a dangling pointer.
 	struct IO_Event_Selector_IOCP_Waiting *waiting;
 
-	// Opaque auxiliary data (e.g. process / WSAEvent handles for notify-based
-	// operations).  Always freed by process_completions, never by ensure.
-	void *aux;
+	// Notify state for RegisterWaitForSingleObject-based completions. Present
+	// only for IOCP_KEY_NOTIFY operations and always freed by
+	// process_completions, never by ensure.
+	struct IO_Event_Selector_IOCP_Notify *notify;
 
 	// Once an operation has been submitted, the completion slot and its
 	// OVERLAPPED storage are owned by the kernel or a notification callback
 	// until process_completions receives the queued completion.
-	int pending;
-	int detached;
+	enum IO_Event_Selector_IOCP_Completion_State state;
 
 	// For io_wait operations, any non-cancelled completion means the requested
 	// readiness was observed, including EOF/hangup style completions.
@@ -79,8 +87,8 @@ struct IO_Event_Selector_IOCP_Waiting {
 	HANDLE handle;   // file/socket handle, for CancelIoEx
 };
 
-// Per-operation auxiliary state for RegisterWaitForSingleObject-based waits
-// (process_wait and io_wait-writable).  Heap-allocated; always freed in
+// Per-operation state for RegisterWaitForSingleObject-based waits
+// (process_wait and io_wait-writable). Heap-allocated; always freed in
 // process_completions so it outlives any cancellation in ensure.
 struct IO_Event_Selector_IOCP_Notify {
 	HANDLE           port;        // back-pointer to the IOCP
@@ -104,7 +112,7 @@ struct IO_Event_Selector_IOCP {
 
 	struct IO_Event_Array completions; // pool of IO_Event_Selector_IOCP_Completion
 	struct IO_Event_List  free_list;
-	int pending_count;
+	int submitted_count;
 	int detached_count;
 
 	// Reusable dequeue buffer — kept here (in heap-allocated TypedData) rather
@@ -120,6 +128,11 @@ completion_from_list(struct IO_Event_List *list)
 	return (struct IO_Event_Selector_IOCP_Completion *)((char *)list -
 	    offsetof(struct IO_Event_Selector_IOCP_Completion, list));
 }
+
+static void
+completion_cancel(struct IO_Event_Selector_IOCP *selector,
+                  struct IO_Event_Selector_IOCP_Waiting *waiting);
+
 // ─── GC support ──────────────────────────────────────────────────────────────
 
 static void
@@ -223,9 +236,8 @@ IO_Event_Selector_IOCP_Completion_initialize(void *element)
 	memset(&c->overlapped, 0, sizeof(c->overlapped));
 	IO_Event_List_clear(&c->list);
 	c->waiting = NULL;
-	c->aux     = NULL;
-	c->pending = 0;
-	c->detached = 0;
+	c->notify  = NULL;
+	c->state   = IOCP_COMPLETION_IDLE;
 	c->readiness = 0;
 }
 
@@ -248,7 +260,7 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	if (!IO_Event_List_empty(&selector->free_list)) {
 		c = completion_from_list(selector->free_list.tail);
 		IO_Event_List_pop(&c->list);
-		if (c->pending || c->detached || c->waiting)
+		if (c->state != IOCP_COMPLETION_IDLE || c->waiting)
 			rb_bug("IOCP completion acquired while still in use");
 	} else {
 		c = IO_Event_Array_push(&selector->completions);
@@ -257,9 +269,8 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 
 	memset(&c->overlapped, 0, sizeof(c->overlapped));
 	c->waiting = waiting;
-	c->aux     = NULL;
-	c->pending = 0;
-	c->detached = 0;
+	c->notify  = NULL;
+	c->state   = IOCP_COMPLETION_IDLE;
 	c->readiness = 0;
 	waiting->completion = c;
 
@@ -272,12 +283,12 @@ completion_submit(struct IO_Event_Selector_IOCP *selector,
 {
 	// Once submitted, the OVERLAPPED storage belongs to the kernel or a
 	// notification callback until the queued completion is processed.
-	if (c->detached)
+	if (c->state == IOCP_COMPLETION_DETACHED)
 		rb_bug("IOCP detached completion submitted again");
 
-	if (!c->pending) {
-		c->pending = 1;
-		selector->pending_count += 1;
+	if (c->state == IOCP_COMPLETION_IDLE) {
+		c->state = IOCP_COMPLETION_SUBMITTED;
+		selector->submitted_count += 1;
 	}
 }
 
@@ -288,22 +299,24 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 	if (c->waiting && c->waiting->completion == c)
 		c->waiting->completion = NULL;
 
-	if (c->pending) {
-		c->pending = 0;
-		if (selector->pending_count <= 0)
-			rb_bug("IOCP pending completion count underflow");
-		selector->pending_count -= 1;
-	}
-
-	if (c->detached) {
-		c->detached = 0;
+	switch (c->state) {
+	case IOCP_COMPLETION_IDLE:
+		break;
+	case IOCP_COMPLETION_SUBMITTED:
+		if (selector->submitted_count <= 0)
+			rb_bug("IOCP submitted completion count underflow");
+		selector->submitted_count -= 1;
+		break;
+	case IOCP_COMPLETION_DETACHED:
 		if (selector->detached_count <= 0)
 			rb_bug("IOCP detached completion count underflow");
 		selector->detached_count -= 1;
+		break;
 	}
 
 	c->waiting = NULL;
-	c->aux     = NULL;
+	c->notify  = NULL;
+	c->state   = IOCP_COMPLETION_IDLE;
 	c->readiness = 0;
 	IO_Event_List_prepend(&selector->free_list, &c->list);
 }
@@ -319,8 +332,11 @@ completion_detach(struct IO_Event_Selector_IOCP *selector,
 		// clears the back-pointer before that stack frame can unwind; any late
 		// completion will simply release the slot without resuming a fiber.
 		c->waiting = NULL;
-		if (c->pending && !c->detached) {
-			c->detached = 1;
+		if (c->state == IOCP_COMPLETION_SUBMITTED) {
+			if (selector->submitted_count <= 0)
+				rb_bug("IOCP submitted completion count underflow");
+			selector->submitted_count -= 1;
+			c->state = IOCP_COMPLETION_DETACHED;
 			selector->detached_count += 1;
 		}
 		waiting->completion = NULL;
@@ -334,13 +350,63 @@ completion_drain(struct IO_Event_Selector_IOCP *selector,
 {
 	int attempts = 100;
 
-	while (c->pending && attempts-- > 0) {
+	while (c->state != IOCP_COMPLETION_IDLE && attempts-- > 0) {
 		process_completions(selector, 10);
 	}
 
-	if (c->pending) {
+	if (c->state != IOCP_COMPLETION_IDLE) {
 		rb_warn("IOCP completion cancellation did not drain before reuse");
 	}
+}
+
+static void
+completion_cancel_notify(struct IO_Event_Selector_IOCP *selector,
+                         struct IO_Event_Selector_IOCP_Completion *c)
+{
+	struct IO_Event_Selector_IOCP_Notify *notify = c->notify;
+
+	c->waiting = NULL;
+
+	// Ensure exactly one completion arrives so process_completions can free
+	// the notify struct and release the completion slot.
+	if (notify && InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
+		PostQueuedCompletionStatus(selector->port, 0,
+		                           IOCP_KEY_NOTIFY, &c->overlapped);
+	}
+
+	// Non-blocking unregister — the callback may have already fired.
+	if (notify && notify->wait_handle)
+		UnregisterWait(notify->wait_handle);
+}
+
+static void
+completion_cancel_overlapped(struct IO_Event_Selector_IOCP_Waiting *waiting,
+                             struct IO_Event_Selector_IOCP_Completion *c)
+{
+	c->waiting = NULL;
+	CancelIoEx(waiting->handle, &c->overlapped);
+}
+
+static void
+completion_cancel_submitted(struct IO_Event_Selector_IOCP *selector,
+                            struct IO_Event_Selector_IOCP_Waiting *waiting)
+{
+	struct IO_Event_Selector_IOCP_Completion *c = waiting->completion;
+
+	if (c) {
+		if (c->state == IOCP_COMPLETION_IDLE) {
+			completion_cancel(selector, waiting);
+			return;
+		} else if (c->notify) {
+			completion_cancel_notify(selector, c);
+		} else {
+			completion_cancel_overlapped(waiting, c);
+		}
+	}
+
+	completion_detach(selector, waiting);
+	if (c)
+		completion_drain(selector, c);
 }
 
 static void
@@ -360,7 +426,9 @@ completion_cancel(struct IO_Event_Selector_IOCP *selector,
 // ERROR_INVALID_PARAMETER when a handle is already associated with a completion
 // port; it does not give us a useful way to distinguish "already ours" from
 // "owned by another port" here. In normal use Ruby-created sockets are not
-// shared with another IOCP, so we treat that case as already associated.
+// shared with another IOCP, so we treat that case as already associated. If a
+// handle is associated with another IOCP, behaviour is outside this selector's
+// supported contract.
 static void
 ensure_associated(struct IO_Event_Selector_IOCP *selector, HANDLE h)
 {
@@ -538,7 +606,7 @@ IO_Event_Selector_IOCP_allocate(VALUE self)
 	selector->selecting = 0;
 	selector->blocked = 0;
 	selector->wakeup_pending = 0;
-	selector->pending_count = 0;
+	selector->submitted_count = 0;
 	selector->detached_count = 0;
 
 	IO_Event_List_initialize(&selector->free_list);
@@ -696,30 +764,8 @@ process_wait_ensure(VALUE _arguments)
 {
 	struct process_wait_arguments *args =
 	    (struct process_wait_arguments *)_arguments;
-	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
 
-	if (c) {
-		struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
-
-		// Disconnect the stack waiting so process_completions won't try to
-		// resume a dead fiber.
-		c->waiting = NULL;
-
-		// Ensure exactly one completion arrives so process_completions can
-		// free the notify struct and release the completion slot.
-		if (notify && InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
-			PostQueuedCompletionStatus(args->selector->port, 0,
-			                           IOCP_KEY_NOTIFY, &c->overlapped);
-		}
-
-		// Non-blocking unregister — the callback may have already fired.
-		if (notify && notify->wait_handle)
-			UnregisterWait(notify->wait_handle);
-	}
-
-	completion_detach(args->selector, args->waiting);
-	if (c)
-		completion_drain(args->selector, c);
+	completion_cancel_submitted(args->selector, args->waiting);
 	return Qnil;
 }
 
@@ -759,7 +805,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	notify->wsa_event   = NULL;
 	notify->socket      = INVALID_SOCKET;
 	notify->wait_handle = NULL;
-	c->aux = notify;
+	c->notify = notify;
 
 	completion_submit(selector, c);
 
@@ -767,7 +813,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	                                 process_exit_callback, notify,
 	                                 INFINITE, WT_EXECUTEONLYONCE)) {
 		free(notify);
-		c->aux = NULL;
+		c->notify = NULL;
 		CloseHandle(process);
 		completion_cancel(selector, &waiting);
 		rb_sys_fail("IO_Event_Selector_IOCP_process_wait:"
@@ -797,30 +843,8 @@ io_wait_ensure(VALUE _arguments)
 {
 	struct io_wait_arguments *args =
 	    (struct io_wait_arguments *)_arguments;
-	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
 
-	if (c) {
-		// Cancel any in-flight overlapped read (readable wait) or
-		// force-flush a notify-based write wait.
-		if (c->aux) {
-			// Notify-based (io_wait writable): same pattern as process_wait.
-			struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
-			c->waiting = NULL;
-			if (InterlockedCompareExchange(&notify->posted, 1, 0) == 0)
-				PostQueuedCompletionStatus(args->selector->port, 0,
-				                           IOCP_KEY_NOTIFY, &c->overlapped);
-			if (notify->wait_handle)
-				UnregisterWait(notify->wait_handle);
-		} else {
-			// Overlapped-IO based (io_wait readable): cancel via CancelIoEx.
-			c->waiting = NULL;
-			CancelIoEx(args->waiting->handle, &c->overlapped);
-		}
-	}
-
-	completion_detach(args->selector, args->waiting);
-	if (c)
-		completion_drain(args->selector, c);
+	completion_cancel_submitted(args->selector, args->waiting);
 	return Qnil;
 }
 
@@ -853,6 +877,115 @@ io_wait_writable_callback(PVOID param, BOOLEAN timer)
 	}
 }
 
+static VALUE
+io_wait_ready(struct IO_Event_Selector_IOCP *selector, VALUE fiber, int events)
+{
+	IO_Event_Selector_ready_push(&selector->backend, fiber);
+	IO_Event_Selector_loop_yield(&selector->backend);
+	return RB_INT2NUM(events);
+}
+
+static void
+io_wait_register_readable(struct IO_Event_Selector_IOCP *selector,
+                          struct IO_Event_Selector_IOCP_Waiting *waiting,
+                          struct IO_Event_Selector_IOCP_Completion *c,
+                          int is_socket, HANDLE handle, SOCKET socket)
+{
+	// Zero-byte overlapped read: completes when data is available.
+	// Works for sockets (WSARecv) and overlapped-capable non-disk handles.
+	// Disk files are handled by handle_ready_immediately because Windows does
+	// not expose useful readiness semantics for them.
+	c->readiness = IO_EVENT_READABLE;
+
+	ensure_associated(selector, handle);
+	completion_submit(selector, c);
+
+	if (is_socket) {
+		WSABUF wsabuf = {0, NULL};
+		DWORD  bytes = 0, wsa_flags = 0;
+		int rc = WSARecv(socket, &wsabuf, 1, &bytes, &wsa_flags,
+		                 &c->overlapped, NULL);
+		if (rc == SOCKET_ERROR) {
+			int err = WSAGetLastError();
+			if (err != WSA_IO_PENDING) {
+				completion_cancel(selector, waiting);
+				rb_syserr_fail(rb_w32_map_errno(err),
+				               "io_wait:WSARecv");
+			}
+		}
+	} else {
+		// Zero-byte ReadFile: pends until data is available on a pipe.
+		DWORD bytes = 0;
+		if (!ReadFile(handle, NULL, 0, &bytes, &c->overlapped)) {
+			DWORD err = GetLastError();
+			if (err != ERROR_IO_PENDING) {
+				completion_cancel(selector, waiting);
+				rb_syserr_fail(rb_w32_map_errno(err),
+				               "io_wait:ReadFile");
+			}
+		}
+	}
+}
+
+static void
+io_wait_register_writable_socket(struct IO_Event_Selector_IOCP *selector,
+                                 struct IO_Event_Selector_IOCP_Waiting *waiting,
+                                 struct IO_Event_Selector_IOCP_Completion *c,
+                                 SOCKET socket)
+{
+	// Use WSAEventSelect + OS thread pool for writable detection.
+	// FD_WRITE fires immediately for freshly-connected sockets and after
+	// WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
+	// We avoid select()+FD_SET here because ruby/win32.h redefines FD_SET to
+	// call _get_osfhandle(descriptor) expecting a CRT integer descriptor, not
+	// a raw SOCKET handle, which would produce wrong results.
+	WSAEVENT wsa_event = WSACreateEvent();
+	if (wsa_event == WSA_INVALID_EVENT) {
+		completion_cancel(selector, waiting);
+		rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
+		               "io_wait:WSACreateEvent");
+	}
+
+	// FD_WRITE fires when previously-blocked send becomes possible;
+	// FD_CONNECT fires when an async connect completes.
+	if (WSAEventSelect(socket, wsa_event, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
+		WSACloseEvent(wsa_event);
+		completion_cancel(selector, waiting);
+		rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
+		               "io_wait:WSAEventSelect");
+	}
+
+	struct IO_Event_Selector_IOCP_Notify *notify = malloc(sizeof(*notify));
+	if (!notify) {
+		socket_event_select_cancel(socket);
+		WSACloseEvent(wsa_event);
+		completion_cancel(selector, waiting);
+		rb_memerror();
+	}
+	notify->port        = selector->port;
+	notify->overlapped  = &c->overlapped;
+	notify->posted      = 0;
+	notify->process     = NULL;
+	notify->wsa_event   = wsa_event;
+	notify->socket      = socket;
+	notify->wait_handle = NULL;
+	c->notify = notify;
+
+	completion_submit(selector, c);
+
+	if (!RegisterWaitForSingleObject(&notify->wait_handle, wsa_event,
+	                                 io_wait_writable_callback,
+	                                 notify, INFINITE,
+	                                 WT_EXECUTEONLYONCE)) {
+		socket_event_select_cancel(socket);
+		WSACloseEvent(wsa_event);
+		free(notify);
+		c->notify = NULL;
+		completion_cancel(selector, waiting);
+		rb_sys_fail("io_wait:RegisterWaitForSingleObject");
+	}
+}
+
 VALUE
 IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 {
@@ -878,13 +1011,10 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	// return any immediately-ready writable/error state first; otherwise arm
 	// the readable wait below.
 	int ready = io_wait_ready_immediately(is_socket, handle, socket, requested);
-	if (ready > 0) {
-		IO_Event_Selector_ready_push(&selector->backend, fiber);
-		IO_Event_Selector_loop_yield(&selector->backend);
-		return RB_INT2NUM(ready);
-	} else if (ready < 0) {
+	if (ready > 0)
+		return io_wait_ready(selector, fiber, ready);
+	else if (ready < 0)
 		rb_syserr_fail(rb_w32_map_errno(-ready), "io_wait:select");
-	}
 
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
@@ -902,99 +1032,11 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	};
 
 	if (requested & IO_EVENT_READABLE) {
-		// Zero-byte overlapped read: completes when data is available.
-		// Works for sockets (WSARecv) and overlapped-capable non-disk handles.
-		// Disk files are handled by handle_ready_immediately above because
-		// Windows does not expose useful readiness semantics for them.
-		c->readiness = IO_EVENT_READABLE;
-
-		if (is_socket) {
-			ensure_associated(selector, handle);
-			WSABUF wsabuf = {0, NULL};
-			DWORD  bytes = 0, wsa_flags = 0;
-			completion_submit(selector, c);
-			int rc = WSARecv(socket, &wsabuf, 1, &bytes, &wsa_flags,
-			                 &c->overlapped, NULL);
-			if (rc == SOCKET_ERROR) {
-				int err = WSAGetLastError();
-				if (err != WSA_IO_PENDING) {
-					completion_cancel(selector, &waiting);
-					rb_syserr_fail(rb_w32_map_errno(err),
-					               "io_wait:WSARecv");
-				}
-			}
-		} else {
-			ensure_associated(selector, handle);
-			// Zero-byte ReadFile: pends until data is available on a pipe.
-			DWORD bytes = 0;
-			completion_submit(selector, c);
-			if (!ReadFile(handle, NULL, 0, &bytes, &c->overlapped)) {
-				DWORD err = GetLastError();
-				if (err != ERROR_IO_PENDING) {
-					completion_cancel(selector, &waiting);
-					rb_syserr_fail(rb_w32_map_errno(err),
-					               "io_wait:ReadFile");
-				}
-			}
-		}
-
+		io_wait_register_readable(selector, &waiting, c,
+		                          is_socket, handle, socket);
 	} else if (requested & IO_EVENT_WRITABLE) {
-		if (is_socket) {
-			// Use WSAEventSelect + OS thread pool for writable detection.
-			// FD_WRITE fires immediately for freshly-connected sockets and
-			// after WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
-			// We avoid select()+FD_SET here because ruby/win32.h redefines
-			// FD_SET to call _get_osfhandle(descriptor) expecting a CRT
-			// integer descriptor, not a raw SOCKET handle, which would
-			// produce wrong results.
-			WSAEVENT wsa_ev = WSACreateEvent();
-			if (wsa_ev == WSA_INVALID_EVENT) {
-				completion_cancel(selector, &waiting);
-				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
-				               "io_wait:WSACreateEvent");
-			}
-
-			// FD_WRITE fires when previously-blocked send becomes possible;
-			// FD_CONNECT fires when an async connect completes.
-			if (WSAEventSelect(socket, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
-				WSACloseEvent(wsa_ev);
-				completion_cancel(selector, &waiting);
-				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
-				               "io_wait:WSAEventSelect");
-			}
-
-			struct IO_Event_Selector_IOCP_Notify *notify =
-			    malloc(sizeof(*notify));
-			if (!notify) {
-				socket_event_select_cancel(socket);
-				WSACloseEvent(wsa_ev);
-				completion_cancel(selector, &waiting);
-				rb_memerror();
-			}
-			notify->port        = selector->port;
-			notify->overlapped  = &c->overlapped;
-			notify->posted      = 0;
-			notify->process     = NULL;
-			notify->wsa_event   = wsa_ev;
-			notify->socket      = socket;
-			notify->wait_handle = NULL;
-			c->aux = notify;
-
-			completion_submit(selector, c);
-
-			if (!RegisterWaitForSingleObject(&notify->wait_handle, wsa_ev,
-			                                 io_wait_writable_callback,
-			                                 notify, INFINITE,
-			                                 WT_EXECUTEONLYONCE)) {
-				socket_event_select_cancel(socket);
-				WSACloseEvent(wsa_ev);
-				free(notify);
-				c->aux = NULL;
-				completion_cancel(selector, &waiting);
-				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
-			}
-
-		}
+		if (is_socket)
+			io_wait_register_writable_socket(selector, &waiting, c, socket);
 	}
 
 	return rb_ensure(io_wait_transfer, (VALUE)&args,
@@ -1058,14 +1100,8 @@ static VALUE
 io_read_ensure(VALUE _arguments)
 {
 	struct io_read_arguments *args = (struct io_read_arguments *)_arguments;
-	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
-	if (c) {
-		c->waiting = NULL;
-		CancelIoEx(args->waiting->handle, &c->overlapped);
-	}
-	completion_detach(args->selector, args->waiting);
-	if (c)
-		completion_drain(args->selector, c);
+
+	completion_cancel_submitted(args->selector, args->waiting);
 	return Qnil;
 }
 
@@ -1185,14 +1221,8 @@ static VALUE
 io_write_ensure(VALUE _arguments)
 {
 	struct io_write_arguments *args = (struct io_write_arguments *)_arguments;
-	struct IO_Event_Selector_IOCP_Completion *c = args->waiting->completion;
-	if (c) {
-		c->waiting = NULL;
-		CancelIoEx(args->waiting->handle, &c->overlapped);
-	}
-	completion_detach(args->selector, args->waiting);
-	if (c)
-		completion_drain(args->selector, c);
+
+	completion_cancel_submitted(args->selector, args->waiting);
 	return Qnil;
 }
 
@@ -1362,13 +1392,13 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 		struct IO_Event_Selector_IOCP_Completion *c =
 		    (struct IO_Event_Selector_IOCP_Completion *)e->lpOverlapped;
 
-		// Free aux data (process/WSAEvent handles) if present.
-		if (c->aux) {
-			struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
+		// Free notify data (process/WSAEvent handles) if present.
+		if (c->notify) {
+			struct IO_Event_Selector_IOCP_Notify *notify = c->notify;
 			if (notify->process) CloseHandle(notify->process);
 			notify_close_wsa_event(notify);
 			free(notify);
-			c->aux = NULL;
+			c->notify = NULL;
 		}
 
 		ULONG_PTR status = e->Internal;
