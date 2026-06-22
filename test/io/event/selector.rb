@@ -107,6 +107,7 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "doesn't block when readying another fiber" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
 			
 			fiber = FakeFiber.new
