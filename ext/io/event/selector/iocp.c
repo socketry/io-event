@@ -424,6 +424,30 @@ socket_ready_select(SOCKET sock, int requested)
 	return ready & requested;
 }
 
+static int
+handle_ready_immediately(HANDLE handle, int requested)
+{
+	DWORD type = GetFileType(handle);
+
+	// Disk files do not have useful readiness semantics on Windows. Treat them
+	// as ready and let the actual read/write operation report any real error.
+	if (type == FILE_TYPE_DISK)
+		return requested & (IO_EVENT_READABLE | IO_EVENT_WRITABLE);
+
+	// Character devices are not IOCP-friendly in the general case. Reporting
+	// readiness here matches the pragmatic file behavior above.
+	if (type == FILE_TYPE_CHAR)
+		return requested & (IO_EVENT_READABLE | IO_EVENT_WRITABLE);
+
+	// There is no general non-socket writable readiness primitive for handles.
+	// Pipes are commonly writable until the following WriteFile proves
+	// otherwise, so keep this optimistic and avoid a fake wait.
+	if (requested & IO_EVENT_WRITABLE)
+		return IO_EVENT_WRITABLE;
+
+	return 0;
+}
+
 // ─── NTSTATUS → errno ────────────────────────────────────────────────────────
 
 typedef ULONG (WINAPI *RtlNtStatusToDosError_fn)(ULONG);
@@ -802,6 +826,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	int requested       = RB_NUM2INT(events);
 	SOCKET sock         = rb_w32_get_osfhandle(fd);
 	int    is_socket    = rb_w32_is_socket(fd);
+	HANDLE handle       = (HANDLE)sock;
 
 	if (is_socket && (requested & IO_EVENT_WRITABLE)) {
 		int ready = socket_ready_select(sock, requested);
@@ -814,10 +839,19 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 		}
 	}
 
+	if (!is_socket) {
+		int ready = handle_ready_immediately(handle, requested);
+		if (ready) {
+			IO_Event_Selector_ready_push(&selector->backend, fiber);
+			IO_Event_Selector_loop_yield(&selector->backend);
+			return RB_INT2NUM(ready);
+		}
+	}
+
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
 		.result = -EAGAIN,
-		.handle = (HANDLE)sock,
+		.handle = handle,
 	};
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
 
@@ -831,11 +865,13 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 	if (requested & IO_EVENT_READABLE) {
 		// Zero-byte overlapped read: completes when data is available.
-		// Works for both sockets (WSARecv) and overlapped-capable files.
+		// Works for sockets (WSARecv) and overlapped-capable non-disk handles.
+		// Disk files are handled by handle_ready_immediately above because
+		// Windows does not expose useful readiness semantics for them.
 		c->readiness = IO_EVENT_READABLE;
 
 		if (is_socket) {
-			ensure_associated(selector, (HANDLE)sock);
+			ensure_associated(selector, handle);
 			WSABUF wsabuf = {0, NULL};
 			DWORD  bytes = 0, wsa_flags = 0;
 			completion_submit(selector, c);
@@ -850,11 +886,11 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 				}
 			}
 		} else {
-			ensure_associated(selector, (HANDLE)sock);
+			ensure_associated(selector, handle);
 			// Zero-byte ReadFile: pends until data is available on a pipe.
 			DWORD bytes = 0;
 			completion_submit(selector, c);
-			if (!ReadFile((HANDLE)sock, NULL, 0, &bytes, &c->overlapped)) {
+			if (!ReadFile(handle, NULL, 0, &bytes, &c->overlapped)) {
 				DWORD err = GetLastError();
 				if (err != ERROR_IO_PENDING) {
 					completion_cancel(selector, &waiting);
@@ -919,14 +955,6 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
 			}
 
-		} else {
-			// Pipes opened with FILE_FLAG_OVERLAPPED are almost always
-			// writable; enqueue as ready and let io_write handle backpressure.
-			waiting.result = IO_EVENT_WRITABLE;
-			IO_Event_Selector_ready_push(&selector->backend, fiber);
-			completion_cancel(selector, &waiting);
-			IO_Event_Selector_loop_yield(&selector->backend);
-			return RB_INT2NUM(IO_EVENT_WRITABLE);
 		}
 	}
 

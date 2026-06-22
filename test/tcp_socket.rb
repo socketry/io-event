@@ -12,6 +12,66 @@ require "io/nonblock"
 describe TCPSocket do
 	let(:scheduler) {IO::Event::TestScheduler.new}
 	
+	def make_socket_pair
+		server_socket = TCPServer.new("localhost", 0)
+		port = server_socket.addr[1]
+		
+		client = TCPSocket.new("localhost", port)
+		server = server_socket.accept
+		
+		client.nonblock = true
+		server.nonblock = true
+		
+		return server_socket, client, server
+	end
+	
+	it "can wait for readability" do
+		server_socket, client, server = make_socket_pair
+		
+		result = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			result = client.wait_readable
+		end
+		
+		Fiber.schedule do
+			server.write("Hello")
+			server.flush
+		end
+		
+		scheduler.run
+		
+		expect(result).to be_truthy
+	ensure
+		Fiber.set_scheduler(nil)
+		client&.close
+		server&.close
+		server_socket&.close
+	end
+	
+	it "can wait for writability" do
+		server_socket, client, server = make_socket_pair
+		
+		result = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			result = client.wait_writable
+		end
+		
+		scheduler.run
+		
+		expect(result).to be_truthy
+	ensure
+		Fiber.set_scheduler(nil)
+		client&.close
+		server&.close
+		server_socket&.close
+	end
+	
 	it "can read and write data" do
 		chunk_size = 1024*6
 		buffer_size = 1024*64

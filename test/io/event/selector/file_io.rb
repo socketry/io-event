@@ -93,6 +93,24 @@ FileIO = Sus::Shared("file io") do
 			expect(wait_result).to be == IO::WRITABLE
 		end
 		
+		it "can wait for the file to become readable" do
+			file.write("Hello World")
+			file.flush
+			file.rewind
+			
+			wait_result = nil
+			
+			reader = Fiber.new do
+				wait_result = selector.io_wait(Fiber.current, file, IO::READABLE)
+			end
+			
+			reader.transfer
+			
+			selector.select(0)
+			
+			expect(wait_result).to be == IO::READABLE
+		end
+		
 		it "returns EINVAL when read offset exceeds buffer size" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
