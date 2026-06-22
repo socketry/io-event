@@ -25,12 +25,6 @@ enum {
 	IOCP_MAX_EVENTS = 64,
 };
 
-enum {
-	IOCP_AUX_NONE = 0,
-	IOCP_AUX_NOTIFY,
-	IOCP_AUX_SELECT,
-};
-
 // NTSTATUS codes stored in OVERLAPPED_ENTRY.Internal after a completion.
 // Defined here to avoid pulling in <ntstatus.h> which conflicts with
 // <windows.h> unless UMDF_USING_NTSTATUS is set.
@@ -63,7 +57,6 @@ struct IO_Event_Selector_IOCP_Completion {
 	// Opaque auxiliary data (e.g. process / WSAEvent handles for notify-based
 	// operations).  Always freed by process_completions, never by ensure.
 	void *aux;
-	int aux_type;
 
 	// Once an operation has been submitted, the completion slot and its
 	// OVERLAPPED storage are owned by the kernel or a notification callback
@@ -98,21 +91,6 @@ struct IO_Event_Selector_IOCP_Notify {
 	SOCKET           socket;      // socket associated with wsa_event
 	HANDLE           wait_handle; // from RegisterWaitForSingleObject
 };
-
-struct IO_Event_Selector_IOCP_Select {
-	HANDLE        port;
-	OVERLAPPED  *overlapped;
-	SOCKET       socket;
-	int          events;
-	volatile LONG posted;
-	volatile LONG cancelled;
-	volatile LONG references;
-};
-
-typedef struct IO_Event_Selector_IOCP_Single_FD_Set {
-	unsigned int fd_count;
-	SOCKET fd_array[1];
-} IO_Event_Selector_IOCP_Single_FD_Set;
 
 struct IO_Event_Selector_IOCP {
 	struct IO_Event_Selector backend;
@@ -246,7 +224,6 @@ IO_Event_Selector_IOCP_Completion_initialize(void *element)
 	IO_Event_List_clear(&c->list);
 	c->waiting = NULL;
 	c->aux     = NULL;
-	c->aux_type = IOCP_AUX_NONE;
 	c->pending = 0;
 	c->detached = 0;
 	c->readiness = 0;
@@ -279,7 +256,6 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	memset(&c->overlapped, 0, sizeof(c->overlapped));
 	c->waiting = waiting;
 	c->aux     = NULL;
-	c->aux_type = IOCP_AUX_NONE;
 	c->pending = 0;
 	c->detached = 0;
 	c->readiness = 0;
@@ -317,7 +293,6 @@ completion_release(struct IO_Event_Selector_IOCP *selector,
 
 	c->waiting = NULL;
 	c->aux     = NULL;
-	c->aux_type = IOCP_AUX_NONE;
 	c->readiness = 0;
 	IO_Event_List_prepend(&selector->free_list, &c->list);
 }
@@ -398,13 +373,6 @@ notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
 
 		WSACloseEvent(wsa_event);
 	}
-}
-
-static void
-select_release(struct IO_Event_Selector_IOCP_Select *poll)
-{
-	if (InterlockedDecrement(&poll->references) == 0)
-		free(poll);
 }
 
 // ─── NTSTATUS → errno ────────────────────────────────────────────────────────
@@ -681,7 +649,6 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	notify->socket      = INVALID_SOCKET;
 	notify->wait_handle = NULL;
 	c->aux = notify;
-	c->aux_type = IOCP_AUX_NOTIFY;
 
 	completion_submit(selector, c);
 
@@ -724,15 +691,9 @@ io_wait_ensure(VALUE _arguments)
 
 	if (c) {
 		// Cancel any in-flight overlapped read (readable wait) or
-		// force-flush a notify-based wait.
-		if (c->aux_type == IOCP_AUX_SELECT) {
-			struct IO_Event_Selector_IOCP_Select *poll = c->aux;
-			c->waiting = NULL;
-			InterlockedExchange(&poll->cancelled, 1);
-			if (InterlockedCompareExchange(&poll->posted, 1, 0) == 0)
-				PostQueuedCompletionStatus(args->selector->port, 0,
-				                           IOCP_KEY_NOTIFY, &c->overlapped);
-		} else if (c->aux) {
+		// force-flush a notify-based write wait.
+		if (c->aux) {
+			// Notify-based (io_wait writable): same pattern as process_wait.
 			struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
 			c->waiting = NULL;
 			if (InterlockedCompareExchange(&notify->posted, 1, 0) == 0)
@@ -767,91 +728,19 @@ io_wait_transfer(VALUE _arguments)
 	return Qfalse;
 }
 
-static DWORD WINAPI
-io_wait_select_worker(void *_select)
+// Callback for WSAEventSelect-based writable wait.
+static VOID CALLBACK
+io_wait_writable_callback(PVOID param, BOOLEAN timer)
 {
-	struct IO_Event_Selector_IOCP_Select *poll =
-	    (struct IO_Event_Selector_IOCP_Select *)_select;
-	int completed = 0;
-	int result = 0;
+	(void)timer;
+	struct IO_Event_Selector_IOCP_Notify *notify = param;
 
-	while (!InterlockedCompareExchange(&poll->cancelled, 0, 0)) {
-		IO_Event_Selector_IOCP_Single_FD_Set rfds = {0};
-		IO_Event_Selector_IOCP_Single_FD_Set wfds = {0};
-		IO_Event_Selector_IOCP_Single_FD_Set efds = {0};
+	notify_close_wsa_event(notify);
 
-		if (poll->events & IO_EVENT_READABLE) {
-			rfds.fd_count = 1;
-			rfds.fd_array[0] = poll->socket;
-		}
-
-		if (poll->events & IO_EVENT_WRITABLE) {
-			wfds.fd_count = 1;
-			wfds.fd_array[0] = poll->socket;
-			efds.fd_count = 1;
-			efds.fd_array[0] = poll->socket;
-		}
-
-		struct timeval timeout = {0, 100000};
-		int rc = select(1, (fd_set *)&rfds, (fd_set *)&wfds,
-		    (fd_set *)&efds, &timeout);
-
-		if (rc == SOCKET_ERROR) {
-			completed = 1;
-			break;
-		}
-
-		if (rc > 0) {
-			if (rfds.fd_count > 0)
-				result |= IO_EVENT_READABLE;
-			if (wfds.fd_count > 0 || efds.fd_count > 0)
-				result |= IO_EVENT_WRITABLE;
-			completed = 1;
-			break;
-		}
+	if (InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
+		PostQueuedCompletionStatus(notify->port, IO_EVENT_WRITABLE,
+		                           IOCP_KEY_NOTIFY, notify->overlapped);
 	}
-
-	if (completed &&
-	    InterlockedCompareExchange(&poll->posted, 1, 0) == 0) {
-		PostQueuedCompletionStatus(poll->port, (DWORD)result,
-		                           IOCP_KEY_NOTIFY, poll->overlapped);
-	}
-
-	select_release(poll);
-	return 0;
-}
-
-static int
-io_wait_select_submit(struct IO_Event_Selector_IOCP *selector,
-                      struct IO_Event_Selector_IOCP_Completion *c,
-                      SOCKET sock, int events)
-{
-	struct IO_Event_Selector_IOCP_Select *select = malloc(sizeof(*select));
-	if (!select)
-		return -ENOMEM;
-
-	select->port       = selector->port;
-	select->overlapped = &c->overlapped;
-	select->socket     = sock;
-	select->events     = events;
-	select->posted     = 0;
-	select->cancelled  = 0;
-	select->references = 2;
-
-	c->aux = select;
-	c->aux_type = IOCP_AUX_SELECT;
-	completion_submit(selector, c);
-
-	if (!QueueUserWorkItem(io_wait_select_worker, select, WT_EXECUTELONGFUNCTION)) {
-		c->aux = NULL;
-		c->aux_type = IOCP_AUX_NONE;
-		completion_cancel(selector, c->waiting);
-		select_release(select);
-		select_release(select);
-		return -(int)rb_w32_map_errno(GetLastError());
-	}
-
-	return 0;
 }
 
 VALUE
@@ -883,16 +772,26 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	};
 
 	if (requested & IO_EVENT_READABLE) {
+		// Zero-byte overlapped read: completes when data is available.
+		// Works for both sockets (WSARecv) and overlapped-capable files.
+		c->readiness = IO_EVENT_READABLE;
+
 		if (is_socket) {
-			int result = io_wait_select_submit(selector, c, sock,
-			    requested & (IO_EVENT_READABLE | IO_EVENT_WRITABLE));
-			if (result < 0) {
-				completion_cancel(selector, &waiting);
-				rb_syserr_fail(-result, "io_wait:select");
+			ensure_associated(selector, (HANDLE)sock);
+			WSABUF wsabuf = {0, NULL};
+			DWORD  bytes = 0, wsa_flags = 0;
+			completion_submit(selector, c);
+			int rc = WSARecv(sock, &wsabuf, 1, &bytes, &wsa_flags,
+			                 &c->overlapped, NULL);
+			if (rc == SOCKET_ERROR) {
+				int err = WSAGetLastError();
+				if (err != WSA_IO_PENDING) {
+					completion_cancel(selector, &waiting);
+					rb_syserr_fail(rb_w32_map_errno(err),
+					               "io_wait:WSARecv");
+				}
 			}
 		} else {
-			// Zero-byte overlapped read: completes when data is available.
-			c->readiness = IO_EVENT_READABLE;
 			ensure_associated(selector, (HANDLE)sock);
 			// Zero-byte ReadFile: pends until data is available on a pipe.
 			DWORD bytes = 0;
@@ -909,11 +808,57 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 	} else if (requested & IO_EVENT_WRITABLE) {
 		if (is_socket) {
-			int result = io_wait_select_submit(selector, c, sock,
-			    IO_EVENT_WRITABLE);
-			if (result < 0) {
+			// Use WSAEventSelect + OS thread pool for writable detection.
+			// FD_WRITE fires immediately for freshly-connected sockets and
+			// after WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
+			// We avoid select()+FD_SET here because ruby/win32.h redefines
+			// FD_SET to call _get_osfhandle(fd) expecting a CRT integer fd,
+			// not a raw SOCKET handle, which would produce wrong results.
+			WSAEVENT wsa_ev = WSACreateEvent();
+			if (wsa_ev == WSA_INVALID_EVENT) {
 				completion_cancel(selector, &waiting);
-				rb_syserr_fail(-result, "io_wait:select");
+				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
+				               "io_wait:WSACreateEvent");
+			}
+
+			// FD_WRITE fires when previously-blocked send becomes possible;
+			// FD_CONNECT fires when an async connect completes.
+			if (WSAEventSelect(sock, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
+				WSACloseEvent(wsa_ev);
+				completion_cancel(selector, &waiting);
+				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
+				               "io_wait:WSAEventSelect");
+			}
+
+			struct IO_Event_Selector_IOCP_Notify *notify =
+			    malloc(sizeof(*notify));
+			if (!notify) {
+				WSAEventSelect(sock, NULL, 0);
+				WSACloseEvent(wsa_ev);
+				completion_cancel(selector, &waiting);
+				rb_memerror();
+			}
+			notify->port        = selector->port;
+			notify->overlapped  = &c->overlapped;
+			notify->posted      = 0;
+			notify->process     = NULL;
+			notify->wsa_event   = wsa_ev;
+			notify->socket      = sock;
+			notify->wait_handle = NULL;
+			c->aux = notify;
+
+			completion_submit(selector, c);
+
+			if (!RegisterWaitForSingleObject(&notify->wait_handle, wsa_ev,
+			                                 io_wait_writable_callback,
+			                                 notify, INFINITE,
+			                                 WT_EXECUTEONLYONCE)) {
+				WSAEventSelect(sock, NULL, 0);
+				WSACloseEvent(wsa_ev);
+				free(notify);
+				c->aux = NULL;
+				completion_cancel(selector, &waiting);
+				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
 			}
 
 		} else {
@@ -1300,19 +1245,13 @@ process_completions(struct IO_Event_Selector_IOCP *selector, DWORD timeout_ms)
 		struct IO_Event_Selector_IOCP_Completion *c =
 		    (struct IO_Event_Selector_IOCP_Completion *)e->lpOverlapped;
 
-		// Free aux data (process/WSAEvent/select handles) if present.
-		if (c->aux_type == IOCP_AUX_SELECT) {
-			struct IO_Event_Selector_IOCP_Select *poll = c->aux;
-			select_release(poll);
-			c->aux = NULL;
-			c->aux_type = IOCP_AUX_NONE;
-		} else if (c->aux) {
+		// Free aux data (process/WSAEvent handles) if present.
+		if (c->aux) {
 			struct IO_Event_Selector_IOCP_Notify *notify = c->aux;
 			if (notify->process) CloseHandle(notify->process);
 			notify_close_wsa_event(notify);
 			free(notify);
 			c->aux = NULL;
-			c->aux_type = IOCP_AUX_NONE;
 		}
 
 		ULONG_PTR status = e->Internal;

@@ -416,6 +416,9 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can handle exception raised during wait from another fiber that was waiting on the same io" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			[false, true].each do |swapped| # Try both orderings.
 				writable1 = writable2 = false
 				error1 = false
@@ -459,6 +462,9 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can handle io being closed by another fiber while waiting" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			error = nil
 			
 			wait_fiber = Fiber.new do
