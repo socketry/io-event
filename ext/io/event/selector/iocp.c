@@ -375,6 +375,56 @@ notify_close_wsa_event(struct IO_Event_Selector_IOCP_Notify *notify)
 	}
 }
 
+static int
+socket_in_fd_set(fd_set *set, SOCKET sock)
+{
+	for (u_int i = 0; i < set->fd_count; i++) {
+		if (set->fd_array[i] == sock)
+			return 1;
+	}
+
+	return 0;
+}
+
+static int
+socket_ready_select(SOCKET sock, int requested)
+{
+	fd_set read_fds, write_fds, except_fds;
+	fd_set *read_ptr = NULL, *write_ptr = NULL;
+	struct timeval timeout = {0, 0};
+
+	except_fds.fd_count = 0;
+	except_fds.fd_array[except_fds.fd_count++] = sock;
+
+	if (requested & IO_EVENT_READABLE) {
+		read_fds.fd_count = 0;
+		read_fds.fd_array[read_fds.fd_count++] = sock;
+		read_ptr = &read_fds;
+	}
+
+	if (requested & IO_EVENT_WRITABLE) {
+		write_fds.fd_count = 0;
+		write_fds.fd_array[write_fds.fd_count++] = sock;
+		write_ptr = &write_fds;
+	}
+
+	// Do not use FD_SET here: ruby/win32.h redefines it to work with CRT file
+	// descriptors, while Winsock select() expects raw SOCKET handles.
+	int rc = select(0, read_ptr, write_ptr, &except_fds, &timeout);
+	if (rc == SOCKET_ERROR)
+		return -WSAGetLastError();
+
+	int ready = 0;
+	if (read_ptr && socket_in_fd_set(read_ptr, sock))
+		ready |= IO_EVENT_READABLE;
+	if (write_ptr && socket_in_fd_set(write_ptr, sock))
+		ready |= IO_EVENT_WRITABLE;
+	if (socket_in_fd_set(&except_fds, sock))
+		ready |= requested;
+
+	return ready & requested;
+}
+
 // ─── NTSTATUS → errno ────────────────────────────────────────────────────────
 
 typedef ULONG (WINAPI *RtlNtStatusToDosError_fn)(ULONG);
@@ -754,6 +804,17 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	int requested       = RB_NUM2INT(events);
 	SOCKET sock         = rb_w32_get_osfhandle(fd);
 	int    is_socket    = rb_w32_is_socket(fd);
+
+	if (is_socket && (requested & IO_EVENT_WRITABLE)) {
+		int ready = socket_ready_select(sock, requested);
+		if (ready > 0) {
+			IO_Event_Selector_ready_push(&selector->backend, fiber);
+			IO_Event_Selector_loop_yield(&selector->backend);
+			return RB_INT2NUM(ready);
+		} else if (ready < 0) {
+			rb_syserr_fail(rb_w32_map_errno(-ready), "io_wait:select");
+		}
+	}
 
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
