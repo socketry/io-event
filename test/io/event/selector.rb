@@ -71,6 +71,7 @@ Selector = Sus::Shared("a selector") do
 		it "can wakeup selector from different thread" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
 			
 			thread = Thread.new do
 				sleep 0.001
@@ -87,6 +88,7 @@ Selector = Sus::Shared("a selector") do
 		it "can wakeup selector from different thread twice in a row" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
 			
 			2.times do
 				thread = Thread.new do
@@ -109,6 +111,7 @@ Selector = Sus::Shared("a selector") do
 		it "doesn't block when readying another fiber" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
 			
 			fiber = FakeFiber.new
 			
