@@ -75,7 +75,8 @@ have_header("ruby/io/buffer.h")
 # Feature detection for blocking operation support
 if have_func("rb_fiber_scheduler_blocking_operation_extract")
 	# Feature detection for pthread support (needed for WorkerPool)
-	if have_header("pthread.h")
+	# The WorkerPool uses POSIX pthread semantics and is not supported on Windows.
+	if have_header("pthread.h") && !(/mingw|mswin/ =~ RUBY_PLATFORM)
 		append_cflags(["-DHAVE_IO_EVENT_WORKER_POOL"])
 		$srcs << "io/event/worker_pool.c"
 		$srcs << "io/event/worker_pool_test.c"
