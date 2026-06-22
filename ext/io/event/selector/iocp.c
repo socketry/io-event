@@ -17,6 +17,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 
+#include <stddef.h>
 #include <time.h>
 
 enum {
@@ -151,6 +152,13 @@ completion_debug_result(const char *event,
 	fflush(stderr);
 }
 
+static struct IO_Event_Selector_IOCP_Completion *
+completion_from_list(struct IO_Event_List *list)
+{
+	return (struct IO_Event_Selector_IOCP_Completion *)((char *)list -
+	    offsetof(struct IO_Event_Selector_IOCP_Completion, list));
+}
+
 // ─── GC support ──────────────────────────────────────────────────────────────
 
 static void
@@ -276,7 +284,7 @@ completion_acquire(struct IO_Event_Selector_IOCP *selector,
 	struct IO_Event_Selector_IOCP_Completion *c;
 
 	if (!IO_Event_List_empty(&selector->free_list)) {
-		c = (struct IO_Event_Selector_IOCP_Completion *)selector->free_list.tail;
+		c = completion_from_list(selector->free_list.tail);
 		IO_Event_List_pop(&c->list);
 	} else {
 		c = IO_Event_Array_push(&selector->completions);
