@@ -96,7 +96,9 @@ struct IO_Event_Selector_IOCP {
 	struct IO_Event_Selector backend;
 
 	HANDLE port;      // I/O Completion Port
-	int    blocked;   // 1 while sleeping in GetQueuedCompletionStatusEx
+	volatile LONG selecting; // 1 while a select call is active.
+	volatile LONG blocked;   // 1 while sleeping in GetQueuedCompletionStatusEx.
+	volatile LONG wakeup_pending;
 
 	struct timespec idle_duration;
 
@@ -422,7 +424,9 @@ IO_Event_Selector_IOCP_allocate(VALUE self)
 
 	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->port    = INVALID_HANDLE_VALUE;
+	selector->selecting = 0;
 	selector->blocked = 0;
+	selector->wakeup_pending = 0;
 	selector->pending_count = 0;
 	selector->detached_count = 0;
 
@@ -1321,14 +1325,17 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 	selector->idle_duration.tv_sec  = 0;
 	selector->idle_duration.tv_nsec = 0;
 
+	DWORD timeout_ms = make_timeout_ms(duration);
 	int ready = IO_Event_Selector_ready_flush(&selector->backend);
+	InterlockedExchange(&selector->selecting, 1);
+	InterlockedExchange(&selector->wakeup_pending, 0);
 
 	// Non-blocking pass first (like kqueue/epoll do).
 	int result = process_completions(selector, 0);
 
 	if (!ready && !result && !selector->backend.ready) {
-		DWORD timeout_ms = make_timeout_ms(duration);
-		if (timeout_ms != 0) {
+		if (timeout_ms != 0 &&
+		    InterlockedCompareExchange(&selector->wakeup_pending, 0, 0) == 0) {
 			struct select_arguments args = {
 				.selector   = selector,
 				.timeout_ms = timeout_ms,
@@ -1338,10 +1345,10 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 
-			selector->blocked = 1;
+			InterlockedExchange(&selector->blocked, 1);
 			rb_thread_call_without_gvl(select_internal, &args,
 			                           select_ubf, selector);
-			selector->blocked = 0;
+			InterlockedExchange(&selector->blocked, 0);
 
 			struct timespec end_time;
 			IO_Event_Time_current(&end_time);
@@ -1351,6 +1358,9 @@ IO_Event_Selector_IOCP_select(VALUE self, VALUE duration)
 			result = args.result;
 		}
 	}
+
+	InterlockedExchange(&selector->wakeup_pending, 0);
+	InterlockedExchange(&selector->selecting, 0);
 
 	return RB_INT2NUM(result);
 }
@@ -1364,7 +1374,8 @@ IO_Event_Selector_IOCP_wakeup(VALUE self)
 	TypedData_Get_Struct(self, struct IO_Event_Selector_IOCP,
 	                     &IO_Event_Selector_IOCP_Type, selector);
 
-	if (selector->blocked) {
+	if (InterlockedCompareExchange(&selector->selecting, 1, 1)) {
+		InterlockedExchange(&selector->wakeup_pending, 1);
 		// NULL overlapped is the wakeup sentinel recognised in process_completions.
 		PostQueuedCompletionStatus(selector->port, 0, 0, NULL);
 		return Qtrue;
