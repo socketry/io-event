@@ -619,6 +619,8 @@ Selector = Sus::Shared("a selector") do
 	
 	with "#process_wait" do
 		it "can wait for a process which has terminated already" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result = nil
 			events = []
 			
@@ -640,6 +642,8 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can wait for a process to terminate" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result = nil
 			events = []
 			
@@ -661,6 +665,8 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can wait for two processes sequentially" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result1 = result2 = nil
 			events = []
 			
