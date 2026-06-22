@@ -757,6 +757,7 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 	struct IO_Event_Selector_IOCP_Waiting waiting = {
 		.fiber  = fiber,
+		.result = -EAGAIN,
 		.handle = (HANDLE)sock,
 	};
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -804,10 +805,6 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 				}
 			}
 		}
-
-		// Set result to indicate what we're waiting for; overwritten by
-		// process_completions on actual completion.
-		waiting.result = IO_EVENT_READABLE;
 
 	} else if (requested & IO_EVENT_WRITABLE) {
 		if (is_socket) {
@@ -864,7 +861,6 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
 			}
 
-			waiting.result = IO_EVENT_WRITABLE;
 		} else {
 			// Pipes opened with FILE_FLAG_OVERLAPPED are almost always
 			// writable; enqueue as ready and let io_write handle backpressure.
