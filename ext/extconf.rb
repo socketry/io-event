@@ -52,11 +52,6 @@ if /mingw|mswin/ =~ RUBY_PLATFORM
 	mingw_lib = "#{ENV.fetch('MINGW_PREFIX', '/ucrt64')}/lib"
 	$LDFLAGS << " -L#{mingw_lib}" if File.directory?(mingw_lib)
 	have_library("ws2_32", "WSARecv", "winsock2.h")
-	# On some MinGW-w64 UCRT64 configurations the SSP symbols
-	# (__stack_chk_fail / __stack_chk_guard) are not automatically linked
-	# into shared DLLs.  Disable SSP for Windows to avoid the issue.
-	# (The rest of the extension is protected by the OS and Ruby itself.)
-	append_cflags("-fno-stack-protector")
 end
 
 have_header("sys/wait.h")

@@ -341,18 +341,17 @@ completion_cancel(struct IO_Event_Selector_IOCP *selector,
 
 // ─── Handle helpers ───────────────────────────────────────────────────────────
 
-// Lazily associate a handle with our IOCP.  Safe to call multiple times on the
-// same handle: if it is already associated with *this* port the call succeeds
-// and is a no-op; if it belongs to another port we get ERROR_INVALID_PARAMETER
-// which we surface as a Ruby exception.
+// Lazily associate a handle with our IOCP. Windows reports
+// ERROR_INVALID_PARAMETER when a handle is already associated with a completion
+// port; it does not give us a useful way to distinguish "already ours" from
+// "owned by another port" here. In normal use Ruby-created sockets are not
+// shared with another IOCP, so we treat that case as already associated.
 static void
 ensure_associated(struct IO_Event_Selector_IOCP *selector, HANDLE h)
 {
 	HANDLE result = CreateIoCompletionPort(h, selector->port, IOCP_KEY_IO, 0);
 	if (result == NULL) {
 		DWORD err = GetLastError();
-		// ERROR_INVALID_PARAMETER can mean "already associated with this port"
-		// on some Windows versions — treat it as success.
 		if (err != ERROR_INVALID_PARAMETER)
 			rb_syserr_fail((int)rb_w32_map_errno(err),
 			               "ensure_associated:CreateIoCompletionPort");
@@ -729,7 +728,6 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 struct io_wait_arguments {
 	struct IO_Event_Selector_IOCP         *selector;
 	struct IO_Event_Selector_IOCP_Waiting *waiting;
-	int requested_events;
 };
 
 static VALUE
@@ -827,9 +825,8 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	    completion_acquire(selector, &waiting);
 
 	struct io_wait_arguments args = {
-		.selector         = selector,
-		.waiting          = &waiting,
-		.requested_events = requested,
+		.selector = selector,
+		.waiting  = &waiting,
 	};
 
 	if (requested & IO_EVENT_READABLE) {
@@ -944,11 +941,6 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 struct io_read_arguments {
 	struct IO_Event_Selector_IOCP         *selector;
 	struct IO_Event_Selector_IOCP_Waiting *waiting;
-	VALUE self;
-	VALUE fiber;
-	VALUE io;
-	int   descriptor;
-	int   is_socket;
 };
 
 static int
@@ -1032,13 +1024,8 @@ do_read(struct IO_Event_Selector_IOCP *selector,
 	}
 
 	struct io_read_arguments args = {
-		.selector   = selector,
-		.waiting    = &waiting,
-		.self       = self,
-		.fiber      = fiber,
-		.io         = io,
-		.descriptor = (int)(SOCKET)sock,
-		.is_socket  = is_socket,
+		.selector = selector,
+		.waiting  = &waiting,
 	};
 
 	VALUE rv = rb_ensure(io_read_submit, (VALUE)&args,
