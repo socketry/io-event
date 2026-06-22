@@ -71,22 +71,19 @@ Selector = Sus::Shared("a selector") do
 		it "can wakeup selector from different thread" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
 			
-			thread = Thread.new do
-				sleep 0.001
-				selector.wakeup
-			end
-			
-			expect do
-				selector.select(1)
-			end.to have_duration(be < 1)
-		ensure
-			thread.join
-		end
-		
-		it "can wakeup selector from different thread twice in a row" do
-			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
-			
-			2.times do
+			if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+				thread = Thread.new do
+					Thread.current.report_on_exception = false
+					selector.select(1)
+				end
+				
+				sleep(0.001) until thread.status == "sleep" || !thread.alive?
+				expect(selector.wakeup).to be == true
+				
+				expect do
+					thread.join
+				end.to have_duration(be < 1)
+			else
 				thread = Thread.new do
 					sleep 0.001
 					selector.wakeup
@@ -95,6 +92,37 @@ Selector = Sus::Shared("a selector") do
 				expect do
 					selector.select(1)
 				end.to have_duration(be < 1)
+			end
+		ensure
+			thread.join
+		end
+		
+		it "can wakeup selector from different thread twice in a row" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
+			2.times do
+				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/
+					thread = Thread.new do
+						Thread.current.report_on_exception = false
+						selector.select(1)
+					end
+					
+					sleep(0.001) until thread.status == "sleep" || !thread.alive?
+					expect(selector.wakeup).to be == true
+					
+					expect do
+						thread.join
+					end.to have_duration(be < 1)
+				else
+					thread = Thread.new do
+						sleep 0.001
+						selector.wakeup
+					end
+					
+					expect do
+						selector.select(1)
+					end.to have_duration(be < 1)
+				end
 			ensure
 				thread.join
 			end
@@ -108,15 +136,32 @@ Selector = Sus::Shared("a selector") do
 			fiber = FakeFiber.new
 			
 			10.times do |i|
-				thread = Thread.new do
-					sleep(i / 10000.0)
+				if RUBY_PLATFORM =~ /mswin|mingw|cygwin/ && subject != IO::Event::Selector::Select
+					thread = Thread.new do
+						Thread.current.report_on_exception = false
+						selector.select(1.0)
+					end
+					
+					sleep(0.001) until thread.status == "sleep" || !thread.alive?
 					selector.push(fiber)
 					selector.wakeup
+					
+					expect do
+						thread.join
+					end.to have_duration(be < 1.0)
+					
+					selector.select(0)
+				else
+					thread = Thread.new do
+						sleep(i / 10000.0)
+						selector.push(fiber)
+						selector.wakeup
+					end
+					
+					expect do
+						selector.select(1.0)
+					end.to have_duration(be < 1.0)
 				end
-				
-				expect do
-					selector.select(1.0)
-				end.to have_duration(be < 1.0)
 			ensure
 				thread.join
 			end
