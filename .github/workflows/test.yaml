@@ -48,8 +48,14 @@ jobs:
       run: sudo apt-get install -y liburing-dev
     
     - name: Run tests
+      if: matrix.os != 'windows'
+      timeout-minutes: 15
+      run: bundle exec bake test
+    
+    - name: Run tests (Windows)
+      if: matrix.os == 'windows'
       timeout-minutes: 15
       # Use bash on Windows so the MSYS2/UCRT64 toolchain is on PATH and
       # shared-library linking against ws2_32 resolves correctly.
       shell: bash
-      run: bundle exec bake test
+      run: bundle exec bake build && bundle exec sus --verbose
