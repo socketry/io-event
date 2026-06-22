@@ -90,6 +90,7 @@ struct IO_Event_Selector_IOCP_Notify {
 	WSAEVENT         wsa_event;   // non-NULL for io_wait-writable
 	SOCKET           socket;      // socket associated with wsa_event
 	HANDLE           wait_handle; // from RegisterWaitForSingleObject
+	int              events;      // IO_EVENT_* value posted on readiness.
 };
 
 struct IO_Event_Selector_IOCP {
@@ -648,6 +649,7 @@ IO_Event_Selector_IOCP_process_wait(VALUE self, VALUE fiber,
 	notify->wsa_event   = NULL;
 	notify->socket      = INVALID_SOCKET;
 	notify->wait_handle = NULL;
+	notify->events      = 0;
 	c->aux = notify;
 
 	completion_submit(selector, c);
@@ -728,9 +730,9 @@ io_wait_transfer(VALUE _arguments)
 	return Qfalse;
 }
 
-// Callback for WSAEventSelect-based writable wait.
+// Callback for WSAEventSelect-based socket readiness waits.
 static VOID CALLBACK
-io_wait_writable_callback(PVOID param, BOOLEAN timer)
+io_wait_socket_callback(PVOID param, BOOLEAN timer)
 {
 	(void)timer;
 	struct IO_Event_Selector_IOCP_Notify *notify = param;
@@ -738,9 +740,59 @@ io_wait_writable_callback(PVOID param, BOOLEAN timer)
 	notify_close_wsa_event(notify);
 
 	if (InterlockedCompareExchange(&notify->posted, 1, 0) == 0) {
-		PostQueuedCompletionStatus(notify->port, IO_EVENT_WRITABLE,
+		PostQueuedCompletionStatus(notify->port, notify->events,
 		                           IOCP_KEY_NOTIFY, notify->overlapped);
 	}
+}
+
+static int
+io_wait_socket_submit(struct IO_Event_Selector_IOCP *selector,
+                      struct IO_Event_Selector_IOCP_Waiting *waiting,
+                      struct IO_Event_Selector_IOCP_Completion *c,
+                      SOCKET sock, long network_events, int events)
+{
+	WSAEVENT wsa_ev = WSACreateEvent();
+	if (wsa_ev == WSA_INVALID_EVENT)
+		return -(int)rb_w32_map_errno(WSAGetLastError());
+
+	if (WSAEventSelect(sock, wsa_ev, network_events) == SOCKET_ERROR) {
+		int err = WSAGetLastError();
+		WSACloseEvent(wsa_ev);
+		return -(int)rb_w32_map_errno(err);
+	}
+
+	struct IO_Event_Selector_IOCP_Notify *notify = malloc(sizeof(*notify));
+	if (!notify) {
+		WSAEventSelect(sock, NULL, 0);
+		WSACloseEvent(wsa_ev);
+		completion_cancel(selector, waiting);
+		rb_memerror();
+	}
+
+	notify->port        = selector->port;
+	notify->overlapped  = &c->overlapped;
+	notify->posted      = 0;
+	notify->process     = NULL;
+	notify->wsa_event   = wsa_ev;
+	notify->socket      = sock;
+	notify->wait_handle = NULL;
+	notify->events      = events;
+	c->aux = notify;
+
+	completion_submit(selector, c);
+
+	if (!RegisterWaitForSingleObject(&notify->wait_handle, wsa_ev,
+	                                 io_wait_socket_callback,
+	                                 notify, INFINITE,
+	                                 WT_EXECUTEONLYONCE)) {
+		WSAEventSelect(sock, NULL, 0);
+		WSACloseEvent(wsa_ev);
+		free(notify);
+		c->aux = NULL;
+		return -(int)rb_w32_map_errno(GetLastError());
+	}
+
+	return 0;
 }
 
 VALUE
@@ -772,28 +824,18 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 	};
 
 	if (requested & IO_EVENT_READABLE) {
-		// Zero-byte overlapped read: completes when data is available.
-		// Works for both sockets (WSARecv) and overlapped-capable files.
 		c->readiness = IO_EVENT_READABLE;
-
+	
 		if (is_socket) {
-			ensure_associated(selector, (HANDLE)sock);
-			WSABUF wsabuf = {0, NULL};
-			DWORD  bytes = 0, wsa_flags = 0;
-			completion_submit(selector, c);
-			int rc = WSARecv(sock, &wsabuf, 1, &bytes, &wsa_flags,
-			                 &c->overlapped, NULL);
-			if (rc == SOCKET_ERROR) {
-				int err = WSAGetLastError();
-				if (err != WSA_IO_PENDING) {
-					completion_cancel(selector, &waiting);
-					rb_syserr_fail(rb_w32_map_errno(err),
-					               "io_wait:WSARecv");
-				}
+			int result = io_wait_socket_submit(selector, &waiting, c, sock,
+			    FD_READ | FD_ACCEPT | FD_CLOSE, IO_EVENT_READABLE);
+			if (result < 0) {
+				completion_cancel(selector, &waiting);
+				rb_syserr_fail(-result, "io_wait:WSAEventSelect");
 			}
 		} else {
-			ensure_associated(selector, (HANDLE)sock);
 			// Zero-byte ReadFile: pends until data is available on a pipe.
+			ensure_associated(selector, (HANDLE)sock);
 			DWORD bytes = 0;
 			completion_submit(selector, c);
 			if (!ReadFile((HANDLE)sock, NULL, 0, &bytes, &c->overlapped)) {
@@ -808,57 +850,13 @@ IO_Event_Selector_IOCP_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE events)
 
 	} else if (requested & IO_EVENT_WRITABLE) {
 		if (is_socket) {
-			// Use WSAEventSelect + OS thread pool for writable detection.
-			// FD_WRITE fires immediately for freshly-connected sockets and
-			// after WSAEWOULDBLOCK on send; FD_CONNECT fires on async connect.
-			// We avoid select()+FD_SET here because ruby/win32.h redefines
-			// FD_SET to call _get_osfhandle(fd) expecting a CRT integer fd,
-			// not a raw SOCKET handle, which would produce wrong results.
-			WSAEVENT wsa_ev = WSACreateEvent();
-			if (wsa_ev == WSA_INVALID_EVENT) {
-				completion_cancel(selector, &waiting);
-				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
-				               "io_wait:WSACreateEvent");
-			}
-
 			// FD_WRITE fires when previously-blocked send becomes possible;
 			// FD_CONNECT fires when an async connect completes.
-			if (WSAEventSelect(sock, wsa_ev, FD_WRITE | FD_CONNECT) == SOCKET_ERROR) {
-				WSACloseEvent(wsa_ev);
+			int result = io_wait_socket_submit(selector, &waiting, c, sock,
+			    FD_WRITE | FD_CONNECT | FD_CLOSE, IO_EVENT_WRITABLE);
+			if (result < 0) {
 				completion_cancel(selector, &waiting);
-				rb_syserr_fail(rb_w32_map_errno(WSAGetLastError()),
-				               "io_wait:WSAEventSelect");
-			}
-
-			struct IO_Event_Selector_IOCP_Notify *notify =
-			    malloc(sizeof(*notify));
-			if (!notify) {
-				WSAEventSelect(sock, NULL, 0);
-				WSACloseEvent(wsa_ev);
-				completion_cancel(selector, &waiting);
-				rb_memerror();
-			}
-			notify->port        = selector->port;
-			notify->overlapped  = &c->overlapped;
-			notify->posted      = 0;
-			notify->process     = NULL;
-			notify->wsa_event   = wsa_ev;
-			notify->socket      = sock;
-			notify->wait_handle = NULL;
-			c->aux = notify;
-
-			completion_submit(selector, c);
-
-			if (!RegisterWaitForSingleObject(&notify->wait_handle, wsa_ev,
-			                                 io_wait_writable_callback,
-			                                 notify, INFINITE,
-			                                 WT_EXECUTEONLYONCE)) {
-				WSAEventSelect(sock, NULL, 0);
-				WSACloseEvent(wsa_ev);
-				free(notify);
-				c->aux = NULL;
-				completion_cancel(selector, &waiting);
-				rb_sys_fail("io_wait:RegisterWaitForSingleObject");
+				rb_syserr_fail(-result, "io_wait:WSAEventSelect");
 			}
 
 		} else {
