@@ -69,6 +69,10 @@ Selector = Sus::Shared("a selector") do
 	
 	with "#wakeup" do
 		it "can wakeup selector from different thread" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			thread = Thread.new do
 				sleep 0.001
 				selector.wakeup
@@ -78,10 +82,14 @@ Selector = Sus::Shared("a selector") do
 				selector.select(1)
 			end.to have_duration(be < 1)
 		ensure
-			thread.join
+			thread&.join
 		end
 		
 		it "can wakeup selector from different thread twice in a row" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			2.times do
 				thread = Thread.new do
 					sleep 0.001
@@ -92,7 +100,7 @@ Selector = Sus::Shared("a selector") do
 					selector.select(1)
 				end.to have_duration(be < 1)
 			ensure
-				thread.join
+				thread&.join
 			end
 		end
 		
@@ -101,6 +109,10 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "doesn't block when readying another fiber" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			fiber = FakeFiber.new
 			
 			10.times do |i|
@@ -114,7 +126,7 @@ Selector = Sus::Shared("a selector") do
 					selector.select(1.0)
 				end.to have_duration(be < 1.0)
 			ensure
-				thread.join
+				thread&.join
 			end
 		end
 	end
@@ -404,6 +416,9 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can handle exception raised during wait from another fiber that was waiting on the same io" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			[false, true].each do |swapped| # Try both orderings.
 				writable1 = writable2 = false
 				error1 = false
@@ -447,6 +462,9 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can handle io being closed by another fiber while waiting" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject.name == "IO::Event::Selector::IOCP"
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Debug::Selector
+			
 			error = nil
 			
 			wait_fiber = Fiber.new do
@@ -610,6 +628,8 @@ Selector = Sus::Shared("a selector") do
 	
 	with "#process_wait" do
 		it "can wait for a process which has terminated already" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result = nil
 			events = []
 			
@@ -631,6 +651,8 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can wait for a process to terminate" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result = nil
 			events = []
 			
@@ -652,6 +674,8 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "can wait for two processes sequentially" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/) if subject == IO::Event::Selector::Select
+			
 			result1 = result2 = nil
 			events = []
 			
