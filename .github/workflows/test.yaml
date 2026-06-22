@@ -58,4 +58,4 @@ jobs:
       # Use bash on Windows so the MSYS2/UCRT64 toolchain is on PATH and
       # shared-library linking against ws2_32 resolves correctly.
       shell: bash
-      run: bundle exec bake build && bundle exec sus --verbose
+      run: bundle exec bake build && timeout 120s bundle exec sus --verbose
