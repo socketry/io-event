@@ -357,8 +357,13 @@ module IO::Event
 			# @parameter flags [Integer] Flags to pass to Process::Status.wait.
 			# @returns [Process::Status] The status of the waited process.
 			def process_wait(fiber, pid, flags)
+				dump_state($stderr, label: "process_wait pid=#{pid} flags=#{flags}") if ENV["IO_EVENT_DIAGNOSTICS"]
+				
 				Thread.new do
 					Process::Status.wait(pid, flags)
+				rescue Exception => error
+					$stderr.puts "process_wait helper thread failed pid=#{pid} flags=#{flags}: #{error.class}: #{error.message}" if ENV["IO_EVENT_DIAGNOSTICS"]
+					raise
 				end.value
 			end
 			
