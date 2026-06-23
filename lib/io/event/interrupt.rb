@@ -38,7 +38,7 @@ module IO::Event
 			# This path must not enter blocking IO. `IO#write` is a blocking operation and may
 			# release the GVL or interact with scheduler/blocking-operation machinery. A wakeup
 			# byte is best-effort, so use `write_nonblock` and ignore closed/full pipe errors.
-			@output.write_nonblock(".") rescue nil
+			@output.write(".") rescue nil
 		end
 		
 		def close
