@@ -4,8 +4,7 @@
 # Copyright, 2026, by Samuel Williams.
 
 require "io/event/interrupt"
-require "io/event/selector/select"
-require "io/event/test_scheduler"
+require "io/nonblock"
 
 describe IO::Event.const_get(:Interrupt) do
 	let(:loop) {Fiber.current}
@@ -38,52 +37,43 @@ describe IO::Event.const_get(:Interrupt) do
 	end
 	
 	with "#signal" do
-		it "does not use blocking IO when waking a thread joiner" do
-			selector = IO::Event::Selector::Select.new(Fiber.current)
-			scheduler = IO::Event::TestScheduler.new(selector: selector)
-			
-			interrupt = selector.instance_variable_get(:@interrupt)
+		it "does not block when the interrupt pipe is full" do
+			interrupt = subject.new(selector)
 			output = interrupt.instance_variable_get(:@output)
-			error_class = Class.new(Exception)
 			
-			# CRuby's `Thread#join` with a fiber scheduler blocks the joining fiber
-			# with `scheduler.block`. When the target thread exits, CRuby wakes the
-			# joiner by calling `scheduler.unblock` from the exiting thread. In the
-			# test scheduler, that becomes:
-			#
-			#   TestScheduler#unblock -> Select#wakeup -> Interrupt#signal
-			#
-			# If `Interrupt#signal` uses blocking `IO#write`, an exception or other
-			# blocking-IO side effect can propagate through the target thread and show
-			# up as a `Thread#join` failure. `write_nonblock` avoids that path.
-			output.define_singleton_method(:write) do |*|
-				raise error_class, "blocking write used"
+			begin
+				output.nonblock = true
+				
+				while true
+					output.write_nonblock("." * 4096)
+				end
+			rescue IO::WaitWritable
+				output.nonblock = false
 			end
 			
-			Fiber.set_scheduler(scheduler)
-			
-			thread = nil
-			joined = nil
 			error = nil
+			completed = false
 			
-			Fiber.schedule do
-				thread = Thread.new do
-					sleep 0.01
-				end
-				
+			thread = Thread.new do
 				begin
-					joined = thread.join(0.05)
+					interrupt.signal
+					completed = true
 				rescue Exception => exception
 					error = exception
 				end
 			end
 			
-			scheduler.run
+			thread.join(0.1)
 			
+			# If `Interrupt#signal` uses blocking `IO#write`, this thread remains
+			# blocked in the write until `Interrupt#close` closes the output pipe.
+			# CRuby then interrupts the blocking write with `IOError: stream closed
+			# in another thread`. `write_nonblock` returns immediately instead.
 			expect(error).to be_nil
-			expect(joined).to be == thread
+			expect(completed).to be == true
 		ensure
-			Fiber.set_scheduler(nil)
+			interrupt&.close
+			thread&.join
 		end
 	end
 end
