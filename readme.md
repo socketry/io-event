@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.16.3
+
+  - Handle `IOError` raised while shutting down the pure Ruby interrupt pipe, so `IO::Event::Interrupt#close` does not leak expected shutdown errors from the interrupt fiber.
+
 ### v1.16.2
 
   - Improve timer heap performance by batching scheduled timer insertion, compacting cancelled timers during flush, and avoiding unnecessary heap rebuilds for small incremental inserts.
@@ -59,10 +63,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.11.2
 
   - Fix Windows build.
-
-### v1.11.1
-
-  - Fix `read_nonblock` when using the `URing` selector, which was not handling zero-length reads correctly. This allows reading available data without blocking.
 
 ## Contributing
 

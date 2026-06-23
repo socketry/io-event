@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.16.3
 
   - Handle `IOError` raised while shutting down the pure Ruby interrupt pipe, so `IO::Event::Interrupt#close` does not leak expected shutdown errors from the interrupt fiber.
 
