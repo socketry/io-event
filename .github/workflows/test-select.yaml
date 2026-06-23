@@ -19,16 +19,16 @@ jobs:
         include:
           - name: interrupt fork baseline
             command: |
-              for i in $(seq 1 20); do
+              for i in $(seq 1 100); do
                 echo "::group::interrupt fork baseline iteration $i"
-                IO_EVENT_FORK_ITERATIONS=100 timeout 60s bundle exec sus test/io/event/interrupt_fork.rb
+                IO_EVENT_FORK_ITERATIONS=100 timeout 90s bundle exec sus test/io/event/interrupt_fork.rb
                 echo "::endgroup::"
               done
           - name: interrupt fork diagnostics
             command: |
-              for i in $(seq 1 20); do
+              for i in $(seq 1 100); do
                 echo "::group::interrupt fork diagnostics iteration $i"
-                IO_EVENT_DIAGNOSTICS=1 IO_EVENT_FORK_ITERATIONS=100 timeout 60s bundle exec sus test/io/event/interrupt_fork.rb
+                IO_EVENT_DIAGNOSTICS=1 IO_EVENT_FORK_ITERATIONS=100 timeout 90s bundle exec sus test/io/event/interrupt_fork.rb
                 echo "::endgroup::"
               done
     
@@ -40,5 +40,5 @@ jobs:
         bundler-cache: true
     
     - name: Run selected tests
-      timeout-minutes: 10
+      timeout-minutes: 15
       run: ${{matrix.command}}
