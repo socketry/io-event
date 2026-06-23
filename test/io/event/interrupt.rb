@@ -49,6 +49,8 @@ describe IO::Event.const_get(:Interrupt) do
 					Fiber.set_scheduler(scheduler)
 					
 					Fiber.schedule do
+						selector.dump_state($stderr, label: "interrupt fork before fork") if ENV["IO_EVENT_DIAGNOSTICS"]
+						
 						pid = Process.fork do
 							# Child process:
 							w.write("hello")

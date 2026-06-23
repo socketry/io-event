@@ -1,0 +1,44 @@
+name: Test Select
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+env:
+  IO_EVENT_SELECTOR: Select
+
+jobs:
+  test:
+    name: ${{matrix.name}} on ubuntu / ruby-head / IO_EVENT_SELECTOR=Select
+    runs-on: ubuntu-latest
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: interrupt fork baseline
+            command: |
+              for i in $(seq 1 20); do
+                echo "::group::interrupt fork baseline iteration $i"
+                IO_EVENT_FORK_ITERATIONS=100 timeout 60s bundle exec sus test/io/event/interrupt_fork.rb
+                echo "::endgroup::"
+              done
+          - name: interrupt fork diagnostics
+            command: |
+              for i in $(seq 1 20); do
+                echo "::group::interrupt fork diagnostics iteration $i"
+                IO_EVENT_DIAGNOSTICS=1 IO_EVENT_FORK_ITERATIONS=100 timeout 60s bundle exec sus test/io/event/interrupt_fork.rb
+                echo "::endgroup::"
+              done
+    
+    steps:
+    - uses: actions/checkout@v6
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: head
+        bundler-cache: true
+    
+    - name: Run selected tests
+      timeout-minutes: 10
+      run: ${{matrix.command}}

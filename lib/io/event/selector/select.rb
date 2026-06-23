@@ -115,6 +115,16 @@ module IO::Event
 				!@ready.empty?
 			end
 			
+			# Dump internal selector state for diagnosing stale waits.
+			def dump_state(output = $stderr, label: nil)
+				output.puts "=== io-event selector diagnostics#{": #{label}" if label} ==="
+				output.puts "selector object_id=#{object_id} blocked=#{@blocked.inspect} ready_size=#{safe{@ready.size}.inspect} waiting_ios=#{safe{@waiting&.size}.inspect}"
+				dump_fiber(output, "loop", @loop)
+				dump_interrupt(output)
+				dump_waiting(output)
+				output.puts "=== end io-event selector diagnostics#{": #{label}" if label} ==="
+			end
+			
 			# A linked list node used to track fibers waiting for IO events.
 			Waiter = Struct.new(:fiber, :events, :tail) do
 				# @returns [Boolean | Nil] Whether the waiting fiber is still alive.
@@ -157,6 +167,85 @@ module IO::Event
 					
 					self.tail&.each(&block)
 				end
+			end
+			
+			private def dump_interrupt(output)
+				interrupt = @interrupt
+				output.puts "interrupt object_id=#{interrupt&.object_id.inspect}"
+				
+				return unless interrupt
+				
+				input = interrupt.instance_variable_get(:@input)
+				output_io = interrupt.instance_variable_get(:@output)
+				fiber = interrupt.instance_variable_get(:@fiber)
+				
+				dump_io(output, "interrupt.input", input)
+				dump_io(output, "interrupt.output", output_io)
+				dump_fiber(output, "interrupt.fiber", fiber)
+			end
+			
+			private def dump_waiting(output)
+				waiting = @waiting
+				
+				unless waiting
+					output.puts "waiting=nil"
+					return
+				end
+				
+				waiting.each do |io, waiter|
+					dump_io(output, "waiting.io", io)
+					
+					index = 0
+					while waiter
+						fiber = waiter.fiber
+						output.puts "  waiter[#{index}] object_id=#{waiter.object_id} events=#{event_names(waiter.events).inspect} active=#{!fiber.nil?}"
+						dump_fiber(output, "  waiter[#{index}].fiber", fiber) if fiber
+						
+						waiter = waiter.tail
+						index += 1
+					end
+				end
+			end
+			
+			private def dump_io(output, name, io)
+				unless io
+					output.puts "#{name}=nil"
+					return
+				end
+				
+				output.puts "#{name} object_id=#{io.object_id} class=#{io.class} closed=#{safe{io.closed?}.inspect} fileno=#{safe{io.fileno}.inspect} inspect=#{safe{io.inspect}.inspect}"
+			end
+			
+			private def dump_fiber(output, name, fiber)
+				unless fiber
+					output.puts "#{name}=nil"
+					return
+				end
+				
+				output.puts "#{name} object_id=#{fiber.object_id} current=#{fiber == Fiber.current} alive=#{safe{fiber.alive?}.inspect} blocking=#{fiber.respond_to?(:blocking?) ? safe{fiber.blocking?}.inspect : nil}"
+				
+				backtrace = safe{fiber.backtrace}
+				if backtrace.is_a?(Array) && !backtrace.empty?
+					backtrace.first(8).each do |frame|
+						output.puts "  #{frame}"
+					end
+				else
+					output.puts "  backtrace=#{backtrace.inspect}"
+				end
+			end
+			
+			private def event_names(events)
+				names = []
+				names << :readable if (events & IO::READABLE) > 0
+				names << :writable if (events & IO::WRITABLE) > 0
+				names << :priority if (events & IO::PRIORITY) > 0
+				names
+			end
+			
+			private def safe
+				yield
+			rescue => error
+				"#{error.class}: #{error.message}"
 			end
 			
 			# Wait for the given IO to become readable or writable.
