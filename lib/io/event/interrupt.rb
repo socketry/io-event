@@ -20,6 +20,8 @@ module IO::Event
 						@input.read_nonblock(1)
 					end
 				end
+			rescue IOError
+				# This is expected on shutdown.
 			end
 			
 			@fiber.transfer
@@ -34,9 +36,8 @@ module IO::Event
 		end
 		
 		def close
-			@fiber.kill rescue nil
-			@input.close rescue nil
-			@output.close rescue nil
+			@input.close
+			@output.close
 		end
 	end
 	
