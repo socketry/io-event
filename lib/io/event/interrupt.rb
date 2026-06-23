@@ -34,9 +34,9 @@ module IO::Event
 		end
 		
 		def close
+			@fiber.kill
 			@input.close
 			@output.close
-			# @fiber.raise(::Interrupt)
 		end
 	end
 	
