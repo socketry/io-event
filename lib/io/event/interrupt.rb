@@ -29,8 +29,15 @@ module IO::Event
 			@fiber.transfer
 		end
 		
-		# Send a sigle byte interrupt.
+		# Send a single byte interrupt.
 		def signal
+			# `signal` may be called while CRuby is waking a fiber blocked in `Thread#join`:
+			#
+			#   rb_fiber_scheduler_unblock -> TestScheduler#unblock -> Select#wakeup -> Interrupt#signal
+			#
+			# This path must not enter blocking IO. `IO#write` is a blocking operation and may
+			# release the GVL or interact with scheduler/blocking-operation machinery. A wakeup
+			# byte is best-effort, so use `write_nonblock` and ignore closed/full pipe errors.
 			@output.write_nonblock(".") rescue nil
 		end
 		
