@@ -36,6 +36,32 @@ describe IO::Event.const_get(:Interrupt) do
 		end
 	end
 	
+	with "test scheduler" do
+		let(:selector) {IO::Event::Selector::Select.new(Fiber.current)}
+		let(:scheduler) {IO::Event::TestScheduler.new(selector: selector)}
+		
+		it "can be used to wake up a fiber blocked in `Thread#join`" do
+			r, w = IO.pipe
+			
+			Thread.new do
+				Fiber.set_scheduler(scheduler)
+				
+				Fiber.schedule do
+					pid = Process.fork do
+						# Child process:
+						w.write("hello")
+					end
+					
+					# Parent process:
+					w.close
+					expect(r.read).to be == "hello"
+				ensure
+					Process.waitpid(pid) if pid
+				end
+			end
+		end
+	end
+	
 	with "#signal" do
 		it "does not block when the interrupt pipe is full" do
 			interrupt = subject.new(selector)
