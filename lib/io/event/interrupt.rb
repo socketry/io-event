@@ -34,9 +34,9 @@ module IO::Event
 		end
 		
 		def close
-			@fiber.kill
-			@input.close
-			@output.close
+			@fiber.kill rescue nil
+			@input.close rescue nil
+			@output.close rescue nil
 		end
 	end
 	
