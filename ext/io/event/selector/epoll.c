@@ -12,6 +12,7 @@
 
 #include "pidfd.c"
 #include "../interrupt.h"
+#include "process_wait_signalfd.c"
 
 enum {
 	DEBUG = 0,
@@ -468,43 +469,118 @@ VALUE process_wait_ensure(VALUE _arguments) {
 
 struct IO_Event_List_Type IO_Event_Selector_EPoll_process_wait_list_type = {};
 
+#ifdef HAVE_SYS_SIGNALFD_H
+struct process_wait_signalfd_arguments {
+	struct IO_Event_Selector_EPoll *selector;
+	struct IO_Event_Selector_EPoll_Waiting waiting;
+	pid_t pid;
+	int flags;
+	int descriptor;
+	VALUE fiber;
+	sigset_t old_mask;
+};
+
+static
+VALUE process_wait_signalfd_transfer(VALUE _arguments) {
+	struct process_wait_signalfd_arguments *arguments = (struct process_wait_signalfd_arguments *)_arguments;
+
+	while (1) {
+		arguments->waiting = (struct IO_Event_Selector_EPoll_Waiting){
+			.list = {.type = &IO_Event_Selector_EPoll_process_wait_list_type},
+			.fiber = arguments->fiber,
+			.events = IO_EVENT_READABLE,
+		};
+
+		int result = IO_Event_Selector_EPoll_Waiting_register(arguments->selector, PIDT2NUM(arguments->pid), arguments->descriptor, &arguments->waiting);
+		if (result == -1) {
+			rb_sys_fail("process_wait_signalfd:IO_Event_Selector_EPoll_Waiting_register");
+		}
+
+		IO_Event_Selector_loop_yield(&arguments->selector->backend);
+
+		IO_Event_Selector_EPoll_Waiting_cancel(&arguments->waiting);
+
+		if (!arguments->waiting.ready) return Qfalse;
+
+		VALUE status = process_wait_signalfd_check(arguments->descriptor, arguments->pid, arguments->flags);
+		if (status != Qnil) return status;
+	}
+}
+
+static
+VALUE process_wait_signalfd_ensure(VALUE _arguments) {
+	struct process_wait_signalfd_arguments *arguments = (struct process_wait_signalfd_arguments *)_arguments;
+
+	IO_Event_List_free(&arguments->waiting.list);
+	arguments->waiting.fiber = 0;
+
+	process_wait_signalfd_close(arguments->descriptor, &arguments->old_mask);
+
+	return Qnil;
+}
+#endif
+
 VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, VALUE _flags) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
-	
+
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
-	
+
 	int descriptor = pidfd_open(pid, 0);
-	
+
 	if (descriptor == -1) {
+#ifdef HAVE_SYS_SIGNALFD_H
+		if (errno == EPERM) {
+			// pidfd_open can fail with EPERM inside confined environments (e.g. snap).
+			// Fall back to signalfd with SIGCHLD:
+			VALUE status;
+			sigset_t old_mask;
+			int signalfd_descriptor = process_wait_signalfd_open(pid, flags, &old_mask, &status);
+			if (signalfd_descriptor < 0) return status;
+
+			struct process_wait_signalfd_arguments signalfd_arguments = {
+				.selector = selector,
+				.waiting = {},
+				.pid = pid,
+				.flags = flags,
+				.descriptor = signalfd_descriptor,
+				.fiber = fiber,
+				.old_mask = old_mask,
+			};
+
+			RB_OBJ_WRITTEN(self, Qundef, fiber);
+
+			return rb_ensure(process_wait_signalfd_transfer, (VALUE)&signalfd_arguments, process_wait_signalfd_ensure, (VALUE)&signalfd_arguments);
+		}
+#endif
 		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:pidfd_open");
 	}
-	
+
 	rb_update_max_fd(descriptor);
-	
+
 	// `pidfd_open` (above) may be edge triggered, so we need to check if the process is already exited, and if so, return immediately, otherwise we will block indefinitely.
 	VALUE status = IO_Event_Selector_process_status_wait(pid, flags);
 	if (status != Qnil) {
 		close(descriptor);
 		return status;
 	}
-	
+
 	struct IO_Event_Selector_EPoll_Waiting waiting = {
 		.list = {.type = &IO_Event_Selector_EPoll_process_wait_list_type},
 		.fiber = fiber,
 		.events = IO_EVENT_READABLE,
 	};
-	
+
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
-	
+
 	int result = IO_Event_Selector_EPoll_Waiting_register(selector, _pid, descriptor, &waiting);
-	
+
 	if (result == -1) {
 		close(descriptor);
 		rb_sys_fail("IO_Event_Selector_EPoll_process_wait:IO_Event_Selector_EPoll_Waiting_register");
 	}
-	
+
 	struct process_wait_arguments process_wait_arguments = {
 		.selector = selector,
 		.pid = pid,
@@ -512,7 +588,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.descriptor = descriptor,
 		.waiting = &waiting,
 	};
-	
+
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 

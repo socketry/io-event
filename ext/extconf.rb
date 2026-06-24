@@ -49,6 +49,7 @@ end
 have_header("sys/wait.h")
 
 have_header("sys/eventfd.h")
+have_header("sys/signalfd.h")
 $srcs << "io/event/interrupt.c"
 
 have_func("rb_io_descriptor")
