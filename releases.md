@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.16.4
 
   - Correctly implement `Interrupt#signal` so that it is robust enough to be called by `Scheduler#unblock`.
 
