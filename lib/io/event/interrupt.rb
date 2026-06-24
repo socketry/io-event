@@ -32,11 +32,15 @@ module IO::Event
 		# Send a single byte interrupt.
 		def signal
 			# This must not block or enter blocking operations or raise an exception.
-			@output.write_nonblock(".", exception: false)
+			# Note that `Scheduler#unblock` defers exceptions, so `IOError` will not be raised by `@output.close` until later.
+			@output.write_nonblock(".", exception: false) rescue nil
 		end
 		
 		def close
+			# In principle, this should cause the fiber to exit:
 			@input.close
+			
+			# This may cause `signal` to raise an exception:
 			@output.close
 		end
 	end
