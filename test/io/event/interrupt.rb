@@ -3,7 +3,10 @@
 # Released under the MIT License.
 # Copyright, 2026, by Samuel Williams.
 
+require "io/event"
 require "io/event/interrupt"
+require "io/event/test_scheduler"
+require "io/nonblock"
 
 describe IO::Event.const_get(:Interrupt) do
 	let(:loop) {Fiber.current}
@@ -32,6 +35,37 @@ describe IO::Event.const_get(:Interrupt) do
 			end.not.to raise_exception(IOError)
 			
 			expect(fiber).not.to be(:alive?)
+		end
+	end
+	
+	with "test scheduler" do
+		it "can be used to wake up a fiber blocked in `Thread#join`" do
+			skip_unless_method_defined(:fork, Process.singleton_class)
+			
+			10.times do
+				r, w = IO.pipe
+				
+				Thread.new do
+					selector = IO::Event::Selector::Select.new(Fiber.current)
+					scheduler = IO::Event::TestScheduler.new(selector: selector)
+					Fiber.set_scheduler(scheduler)
+					
+					Fiber.schedule do
+						selector.dump_state($stderr, label: "interrupt fork before fork") if ENV["IO_EVENT_DIAGNOSTICS"]
+						
+						pid = Process.fork do
+							# Child process:
+							w.write("hello")
+						end
+						
+						# Parent process:
+						w.close
+						expect(r.read).to be == "hello"
+					ensure
+						Process.waitpid(pid) if pid
+					end
+				end.join
+			end
 		end
 	end
 end

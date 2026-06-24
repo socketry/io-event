@@ -159,6 +159,13 @@ module IO::Event
 			timer&.cancel!
 		end
 		
+		def process_wait(pid, flags)
+			@blocked += 1
+			@selector.process_wait(Fiber.current, pid, flags)
+		ensure
+			@blocked -= 1
+		end
+		
 		def kernel_sleep(duration = nil)
 			if duration
 				self.block(nil, duration)

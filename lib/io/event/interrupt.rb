@@ -14,6 +14,8 @@ module IO::Event
 			@selector = selector
 			@input, @output = ::IO.pipe
 			
+			@output.sync = true
+			
 			@fiber = Fiber.new do
 				while true
 					if @selector.io_wait(@fiber, @input, IO::READABLE)
@@ -27,12 +29,10 @@ module IO::Event
 			@fiber.transfer
 		end
 		
-		# Send a sigle byte interrupt.
+		# Send a single byte interrupt.
 		def signal
-			@output.write(".")
-			@output.flush
-		rescue IOError
-			# Ignore.
+			# This must not block or enter blocking operations or raise an exception.
+			@output.write_nonblock(".", exception: false)
 		end
 		
 		def close
