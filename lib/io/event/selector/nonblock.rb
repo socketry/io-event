@@ -14,7 +14,7 @@ module IO::Event
 		def self.nonblock(io, &block)
 			previous = io.nonblock?
 			io.nonblock = true
-		rescue Errno::EBADF
+		rescue Errno::EBADF, NotImplementedError
 			# Windows.
 			yield
 		else

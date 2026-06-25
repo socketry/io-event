@@ -269,7 +269,7 @@ module IO::Event
 				return total
 			end
 			
-			unless IO::Buffer.method_defined?(:read) and IO::Buffer.method_defined?(:write)
+			unless defined?(IO::Buffer) and IO::Buffer.method_defined?(:read) and IO::Buffer.method_defined?(:write)
 				private def buffer_read(io, buffer, offset)
 					string = io.read_nonblock(buffer.size - offset)
 					buffer.set_string(string, offset)
