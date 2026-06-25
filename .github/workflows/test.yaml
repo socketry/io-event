@@ -49,5 +49,17 @@ jobs:
       run: sudo apt-get install -y liburing-dev
     
     - name: Run tests
+      if: matrix.ruby != 'jruby'
       timeout-minutes: 10
       run: bundle exec bake test
+    
+    - name: Run tests (JRuby)
+      if: matrix.ruby == 'jruby'
+      timeout-minutes: 10
+      run: |
+        bundle exec bake before_test
+        for file in $(find test -name '*.rb' | sort); do
+          echo "::group::$file"
+          timeout 60s bundle exec sus --verbose "$file"
+          echo "::endgroup::"
+        done
