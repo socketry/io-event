@@ -40,6 +40,8 @@ describe IO::Event.const_get(:Interrupt) do
 	
 	with "test scheduler" do
 		it "can be used to wake up a fiber blocked in `Thread#join`" do
+			skip "Process.fork is not available on JRuby" if RUBY_ENGINE == "jruby"
+			
 			100.times do
 				r, w = IO.pipe
 				

@@ -10,6 +10,8 @@ require "io/event/test_scheduler"
 describe IO::Event.const_get(:Interrupt) do
 	with "test scheduler fork diagnostics" do
 		it "can be used to wake up a fiber blocked in `Thread#join` after fork" do
+			skip "Process.fork is not available on JRuby" if RUBY_ENGINE == "jruby"
+			
 			iterations = Integer(ENV.fetch("IO_EVENT_FORK_ITERATIONS", "100"))
 			
 			iterations.times do |iteration|
