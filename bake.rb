@@ -9,7 +9,7 @@ def build
 	
 	Dir.chdir(ext_path) do
 		system("ruby ./extconf.rb")
-		system("make")
+		system("make") if File.exist?("Makefile")
 	end
 end
 
@@ -17,7 +17,7 @@ def clean
 	ext_path = File.expand_path("ext", __dir__)
 	
 	Dir.chdir(ext_path) do
-		system("make clean")
+		system("make clean") if File.exist?("Makefile")
 	end
 end
 

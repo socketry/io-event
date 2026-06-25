@@ -173,6 +173,8 @@ Queue = Sus::Shared("queue") do
 		end
 		
 		it "can yield from resumed fiber" do
+			skip "JRuby does not support this nested Fiber#resume/#transfer interaction" if RUBY_ENGINE == "jruby"
+			
 			sequence = []
 			
 			child = Fiber.new do |argument|

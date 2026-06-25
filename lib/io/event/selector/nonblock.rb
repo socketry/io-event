@@ -12,10 +12,17 @@ module IO::Event
 		# @parameter io [IO] The IO object to operate on.
 		# @yields {...} The block to execute.
 		def self.nonblock(io, &block)
-			io.nonblock(&block)
+			previous = io.nonblock?
+			io.nonblock = true
 		rescue Errno::EBADF
 			# Windows.
 			yield
+		else
+			begin
+				yield
+			ensure
+				io.nonblock = previous
+			end
 		end
 	end
 end

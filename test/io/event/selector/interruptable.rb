@@ -26,7 +26,12 @@ Interruptable = Sus::Shared("interruptable") do
 		thread.raise(::Interrupt)
 		
 		expect{thread.join}.to raise_exception(::Interrupt)
-		expect(result).to be == 0
+		
+		# JRuby interrupts the selector, but does not defer the same-thread re-raise
+		# from within the selector until after this assignment completes.
+		unless RUBY_ENGINE == "jruby"
+			expect(result).to be == 0
+		end
 	end
 	
 	with "pipe" do
