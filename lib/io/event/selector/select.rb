@@ -269,37 +269,53 @@ module IO::Event
 				return total
 			end
 			
-			private def buffer_read(io, buffer, offset)
-				if RUBY_ENGINE == "jruby"
+			unless IO::Buffer.method_defined?(:read) and IO::Buffer.method_defined?(:write)
+				private def buffer_read(io, buffer, offset)
 					string = io.read_nonblock(buffer.size - offset)
 					buffer.set_string(string, offset)
 					return string.bytesize
-				else
-					Fiber.blocking{buffer.read(io, 0, offset)}
+				rescue EOFError
+					return 0
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue IO::WaitReadable
+					return EAGAIN
+				rescue SystemCallError => error
+					return -error.errno
 				end
-			rescue EOFError
-				return 0
-			rescue IOError
-				return -Errno::EBADF::Errno
-			rescue IO::WaitReadable
-				return EAGAIN
-			rescue SystemCallError => error
-				return -error.errno
-			end
-			
-			private def buffer_write(io, buffer, offset)
-				if RUBY_ENGINE == "jruby"
+				
+				private def buffer_write(io, buffer, offset)
 					string = buffer.get_string(offset, buffer.size - offset)
 					return io.write_nonblock(string)
-				else
-					Fiber.blocking{buffer.write(io, 0, offset)}
+				rescue IO::WaitWritable
+					return EAGAIN
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
 				end
-			rescue IO::WaitWritable
-				return EAGAIN
-			rescue IOError
-				return -Errno::EBADF::Errno
-			rescue SystemCallError => error
-				return -error.errno
+			else
+				private def buffer_read(io, buffer, offset)
+					Fiber.blocking{buffer.read(io, 0, offset)}
+				rescue EOFError
+					return 0
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue IO::WaitReadable
+					return EAGAIN
+				rescue SystemCallError => error
+					return -error.errno
+				end
+				
+				private def buffer_write(io, buffer, offset)
+					Fiber.blocking{buffer.write(io, 0, offset)}
+				rescue IO::WaitWritable
+					return EAGAIN
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
+				end
 			end
 			
 			# Wait for a process to change state.
