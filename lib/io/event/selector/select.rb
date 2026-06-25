@@ -199,6 +199,8 @@ module IO::Event
 				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
 				if offset > buffer.size
 					return -Errno::EINVAL::Errno
+				elsif offset == buffer.size
+					return 0
 				end
 				
 				total = 0
@@ -234,6 +236,8 @@ module IO::Event
 				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
 				if offset > buffer.size
 					return -Errno::EINVAL::Errno
+				elsif offset == buffer.size
+					return 0
 				end
 				
 				total = 0

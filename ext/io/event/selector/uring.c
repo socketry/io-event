@@ -757,8 +757,6 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
@@ -766,12 +764,16 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
-	off_t from = io_seekable(descriptor);
 	
 	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
 	}
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
+	off_t from = io_seekable(descriptor);
 	
 	size_t maximum_size = size - offset;
 	
@@ -827,8 +829,6 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
@@ -841,7 +841,11 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
 	}
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
@@ -945,8 +949,6 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
@@ -954,7 +956,6 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
 	size_t total = 0;
-	off_t from = io_seekable(descriptor);
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -963,8 +964,13 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
 	}
-
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
+	off_t from = io_seekable(descriptor);
+	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
@@ -1005,8 +1011,6 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
@@ -1023,8 +1027,12 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
 	}
-
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
+	
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
