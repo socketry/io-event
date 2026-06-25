@@ -133,6 +133,19 @@ BufferedIO = Sus::Shared("buffered io") do
 			selector.select(0)
 		end
 		
+		it "returns zero when read offset equals buffer size" do
+			input.close
+			buffer = IO::Buffer.new(64)
+			
+			reader = Fiber.new do
+				result = selector.io_read(Fiber.current, input, buffer, 1, 64)
+				expect(result).to be == 0
+			end
+			
+			reader.transfer
+			selector.select(0)
+		end
+		
 		it "returns EINVAL when write offset exceeds buffer size" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
@@ -142,6 +155,19 @@ BufferedIO = Sus::Shared("buffered io") do
 				# Offset 128 exceeds buffer size of 64
 				result = selector.io_write(Fiber.current, output, buffer, 1, 128)
 				expect(result).to be == -Errno::EINVAL::Errno
+			end
+			
+			writer.transfer
+			selector.select(0)
+		end
+		
+		it "returns zero when write offset equals buffer size" do
+			output.close
+			buffer = IO::Buffer.new(64)
+			
+			writer = Fiber.new do
+				result = selector.io_write(Fiber.current, output, buffer, 1, 64)
+				expect(result).to be == 0
 			end
 			
 			writer.transfer
