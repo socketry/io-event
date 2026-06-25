@@ -578,40 +578,33 @@ struct io_read_arguments {
 	
 	int descriptor;
 	
-	VALUE buffer;
+	// The remaining writable buffer region after applying the requested offset.
+	void *base;
+	size_t size;
+	
+	// The minimum number of bytes requested by the caller.
 	size_t length;
-	size_t offset;
 };
 
 static
 VALUE io_read_loop(VALUE _arguments) {
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	
-	void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_writing(arguments->buffer, &base, &size);
-	
 	size_t length = arguments->length;
-	size_t offset = arguments->offset;
 	size_t total = 0;
 	
 	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	}
-	
-	size_t maximum_size = size - offset;
+	size_t maximum_size = arguments->size;
 	while (maximum_size) {
-		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, offset, maximum_size);
-		ssize_t result = read(arguments->descriptor, (char*)base+offset, maximum_size);
-		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
+		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, total, maximum_size);
+		ssize_t result = read(arguments->descriptor, (char*)arguments->base+total, maximum_size);
+		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, total, maximum_size, result);
 		
 		if (result > 0) {
 			total += result;
-			offset += result;
 			if ((size_t)result >= length) break;
+			maximum_size -= result;
 			length -= result;
 		} else if (result == 0) {
 			break;
@@ -622,11 +615,9 @@ VALUE io_read_loop(VALUE _arguments) {
 			if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
-		
-		maximum_size = size - offset;
 	}
 	
-	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
+	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, total);
 	return rb_fiber_scheduler_io_result(total, 0);
 }
 
@@ -643,10 +634,23 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
+	
+	void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
+	
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	base = (char*)base + offset;
+	size -= offset;
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_read_arguments io_read_arguments = {
 		.self = self,
@@ -655,9 +659,9 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
-		.buffer = buffer,
+		.base = base,
+		.size = size,
 		.length = length,
-		.offset = offset,
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -687,44 +691,33 @@ struct io_write_arguments {
 	
 	int descriptor;
 	
-	VALUE buffer;
+	// The remaining readable buffer region after applying the requested offset.
+	const void *base;
+	size_t size;
+	
+	// The minimum number of bytes requested by the caller.
 	size_t length;
-	size_t offset;
 };
 
 static
 VALUE io_write_loop(VALUE _arguments) {
 	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
 	
-	const void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_reading(arguments->buffer, &base, &size);
-	
 	size_t length = arguments->length;
-	size_t offset = arguments->offset;
 	size_t total = 0;
-	
-	if (length > size) {
-		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
-	}
 	
 	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
 	
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	}
-	
-	size_t maximum_size = size - offset;
+	size_t maximum_size = arguments->size;
 	while (maximum_size) {
-		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, offset, maximum_size, length);
-		ssize_t result = write(arguments->descriptor, (char*)base+offset, maximum_size);
-		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, offset, maximum_size, result);
+		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, total, maximum_size, length);
+		ssize_t result = write(arguments->descriptor, (char*)arguments->base+total, maximum_size);
+		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, total, maximum_size, result);
 		
 		if (result > 0) {
 			total += result;
-			offset += result;
 			if ((size_t)result >= length) break;
+			maximum_size -= result;
 			length -= result;
 		} else if (result == 0) {
 			break;
@@ -735,11 +728,9 @@ VALUE io_write_loop(VALUE _arguments) {
 			if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
 			return rb_fiber_scheduler_io_result(-1, errno);
 		}
-		
-		maximum_size = size - offset;
 	}
 	
-	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, offset);
+	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, total);
 	return rb_fiber_scheduler_io_result(total, 0);
 };
 
@@ -756,10 +747,27 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
 	size_t length = NUM2SIZET(_length);
 	size_t offset = NUM2SIZET(_offset);
+	
+	const void *base;
+	size_t size;
+	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
+	
+	if (length > size) {
+		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
+	}
+	
+	if (offset > size) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (offset == size) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	base = (const char*)base + offset;
+	size -= offset;
+	
+	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_write_arguments io_write_arguments = {
 		.self = self,
@@ -768,9 +776,9 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
-		.buffer = buffer,
+		.base = base,
+		.size = size,
 		.length = length,
-		.offset = offset,
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
