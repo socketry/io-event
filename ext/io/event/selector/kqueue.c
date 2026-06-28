@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <unistd.h>
 
 #include "../interrupt.h"
 
@@ -47,6 +48,7 @@ struct IO_Event_Selector_KQueue
 {
 	struct IO_Event_Selector backend;
 	int descriptor;
+	pid_t owner;
 	
 	// Flag indicating whether the selector is currently blocked in a system call.
 	// Set to 1 when blocked in kevent() without GVL, 0 otherwise.
@@ -132,7 +134,14 @@ static
 void close_internal(struct IO_Event_Selector_KQueue *selector)
 {
 	if (selector->descriptor >= 0) {
-		close(selector->descriptor);
+		if (selector->owner == getpid()) {
+			close(selector->descriptor);
+			
+#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
+			IO_Event_Interrupt_close(&selector->interrupt);
+#endif
+		}
+		
 		selector->descriptor = -1;
 	}
 }
@@ -289,6 +298,7 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	
 	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->descriptor = -1;
+	selector->owner = 0;
 	selector->blocked = 0;
 	
 	selector->descriptors.element_initialize = IO_Event_Selector_KQueue_Descriptor_initialize;
@@ -331,6 +341,7 @@ VALUE IO_Event_Selector_KQueue_initialize(VALUE self, VALUE loop) {
 		ioctl(result, FIOCLEX);
 		
 		selector->descriptor = result;
+		selector->owner = getpid();
 		
 		rb_update_max_fd(selector->descriptor);
 	}
@@ -365,11 +376,14 @@ VALUE IO_Event_Selector_KQueue_close(VALUE self) {
 	
 	close_internal(selector);
 	
-#ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
-	IO_Event_Interrupt_close(&selector->interrupt);
-#endif
-	
 	return Qnil;
+}
+
+VALUE IO_Event_Selector_KQueue_closed_p(VALUE self) {
+	struct IO_Event_Selector_KQueue *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
+	
+	return selector->descriptor < 0 || selector->owner != getpid() ? Qtrue : Qfalse;
 }
 
 VALUE IO_Event_Selector_KQueue_transfer(VALUE self)
@@ -1098,6 +1112,7 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_KQueue, "select", IO_Event_Selector_KQueue_select, 1);
 	rb_define_method(IO_Event_Selector_KQueue, "wakeup", IO_Event_Selector_KQueue_wakeup, 0);
 	rb_define_method(IO_Event_Selector_KQueue, "close", IO_Event_Selector_KQueue_close, 0);
+	rb_define_method(IO_Event_Selector_KQueue, "closed?", IO_Event_Selector_KQueue_closed_p, 0);
 	
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);
 	

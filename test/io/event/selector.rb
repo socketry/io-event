@@ -788,6 +788,31 @@ IO::Event::Selector.constants.each do |name|
 				
 				selectors.each(&:close)
 			end
+			
+			it "is closed in a forked child" do
+				skip_unless_method_defined(:fork, Process.singleton_class)
+				
+				begin
+					inherited_selector = subject.new(loop)
+					waited = false
+					
+					expect(inherited_selector).not.to be(:closed?)
+					
+					pid = Process.fork do
+						exit!(inherited_selector.closed? ? 0 : 1)
+					end
+					
+					Process.wait(pid)
+					waited = true
+					expect($?).to be(:success?)
+				ensure
+					inherited_selector&.close
+					
+					if pid and !waited
+						Process.wait(pid)
+					end
+				end
+			end
 		end
 		
 		with "an instance" do

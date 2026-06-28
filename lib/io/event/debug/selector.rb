@@ -111,6 +111,11 @@ module IO::Event
 				@log&.flush
 			end
 			
+			# @returns [Boolean] Whether the wrapped selector is closed.
+			def closed?
+				@selector.nil? || @selector.closed?
+			end
+			
 			# Transfer from the calling fiber to the selector.
 			def transfer
 				log("Transfering to event loop")

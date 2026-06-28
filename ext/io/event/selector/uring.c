@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "../interrupt.h"
 
@@ -32,6 +33,7 @@ struct IO_Event_Selector_URing
 {
 	struct IO_Event_Selector backend;
 	struct io_uring ring;
+	pid_t owner;
 	
 	// Flag indicating whether the selector is currently blocked in a system call.
 	// Set to 1 when blocked in io_uring_wait_cqe_timeout() without GVL, 0 otherwise.
@@ -115,14 +117,20 @@ void IO_Event_Selector_URing_Type_compact(void *_selector)
 static
 void close_internal(struct IO_Event_Selector_URing *selector)
 {
-	if (selector->interrupt.descriptor >= 0) {
-		IO_Event_Interrupt_close(&selector->interrupt);
+	if (selector->owner == getpid()) {
+		if (selector->interrupt.descriptor >= 0) {
+			IO_Event_Interrupt_close(&selector->interrupt);
+			selector->interrupt.descriptor = -1;
+			selector->wakeup_registered = 0;
+		}
+		
+		if (selector->ring.ring_fd >= 0) {
+			io_uring_queue_exit(&selector->ring);
+			selector->ring.ring_fd = -1;
+		}
+	} else {
 		selector->interrupt.descriptor = -1;
 		selector->wakeup_registered = 0;
-	}
-	
-	if (selector->ring.ring_fd >= 0) {
-		io_uring_queue_exit(&selector->ring);
 		selector->ring.ring_fd = -1;
 	}
 }
@@ -237,6 +245,7 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	
 	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->ring.ring_fd = -1;
+	selector->owner = 0;
 	
 	selector->blocked = 0;
 	selector->interrupt.descriptor = -1;
@@ -299,6 +308,8 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 		rb_syserr_fail(-result, "IO_Event_Selector_URing_initialize:io_uring_queue_init");
 	}
 	
+	selector->owner = getpid();
+	
 	rb_update_max_fd(selector->ring.ring_fd);
 	
 	// Interrupt for cross-thread wakeup: another thread calls signal(); the owner
@@ -337,6 +348,13 @@ VALUE IO_Event_Selector_URing_close(VALUE self) {
 	close_internal(selector);
 	
 	return Qnil;
+}
+
+VALUE IO_Event_Selector_URing_closed_p(VALUE self) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	return selector->ring.ring_fd < 0 || selector->owner != getpid() ? Qtrue : Qfalse;
 }
 
 VALUE IO_Event_Selector_URing_transfer(VALUE self)
@@ -1378,6 +1396,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "select", IO_Event_Selector_URing_select, 1);
 	rb_define_method(IO_Event_Selector_URing, "wakeup", IO_Event_Selector_URing_wakeup, 0);
 	rb_define_method(IO_Event_Selector_URing, "close", IO_Event_Selector_URing_close, 0);
+	rb_define_method(IO_Event_Selector_URing, "closed?", IO_Event_Selector_URing_closed_p, 0);
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
