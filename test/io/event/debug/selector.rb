@@ -32,6 +32,10 @@ class FakeSelector
 		@closed = true
 	end
 	
+	def closed?
+		@closed
+	end
+	
 	def transfer
 		:calls_transfer
 	end
@@ -136,6 +140,7 @@ describe IO::Event::Debug::Selector do
 		expect(selector.push(fiber)).to be == :calls_push
 		expect(selector.raise(fiber, "Boom")).to be == :calls_raise
 		expect(selector.ready?).to be == false
+		expect(selector.closed?).to be == false
 		expect(selector.blocking_operation_wait(:operation)).to be == :calls_blocking_operation_wait
 		expect(selector.process_wait(123, 0)).to be == :calls_process_wait
 		expect(selector.io_wait(fiber, input, IO::READABLE)).to be == :calls_io_wait

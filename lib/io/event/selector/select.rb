@@ -13,6 +13,7 @@ module IO::Event
 			# Initialize the selector with the given event loop fiber.
 			def initialize(loop)
 				@loop = loop
+				@owner = Process.pid
 				
 				@waiting = Hash.new.compare_by_identity
 				
@@ -50,6 +51,11 @@ module IO::Event
 				
 				@loop = nil
 				@waiting = nil
+			end
+			
+			# @returns [Boolean] Whether the selector is closed or belongs to a different process.
+			def closed?
+				@loop.nil? || @owner != Process.pid
 			end
 			
 			# An optional reference to a fiber which can be cleared before it is resumed.

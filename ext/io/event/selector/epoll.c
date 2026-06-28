@@ -9,6 +9,7 @@
 #include <sys/epoll.h>
 #include <time.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "pidfd.c"
 #include "../interrupt.h"
@@ -38,6 +39,7 @@ struct IO_Event_Selector_EPoll
 {
 	struct IO_Event_Selector backend;
 	int descriptor;
+	pid_t owner;
 	
 	// Flag indicating whether the selector is currently blocked in a system call.
 	// Set to 1 when blocked in epoll_wait() without GVL, 0 otherwise.
@@ -131,10 +133,12 @@ static
 void close_internal(struct IO_Event_Selector_EPoll *selector)
 {
 	if (selector->descriptor >= 0) {
-		close(selector->descriptor);
-		selector->descriptor = -1;
+		if (selector->owner == getpid()) {
+			close(selector->descriptor);
+			IO_Event_Interrupt_close(&selector->interrupt);
+		}
 		
-		IO_Event_Interrupt_close(&selector->interrupt);
+		selector->descriptor = -1;
 	}
 }
 
@@ -315,6 +319,7 @@ VALUE IO_Event_Selector_EPoll_allocate(VALUE self) {
 	
 	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->descriptor = -1;
+	selector->owner = 0;
 	selector->blocked = 0;
 	
 	selector->descriptors.element_initialize = IO_Event_Selector_EPoll_Descriptor_initialize;
@@ -350,6 +355,7 @@ VALUE IO_Event_Selector_EPoll_initialize(VALUE self, VALUE loop) {
 		rb_sys_fail("IO_Event_Selector_EPoll_initialize:epoll_create");
 	} else {
 		selector->descriptor = result;
+		selector->owner = getpid();
 		
 		rb_update_max_fd(selector->descriptor);
 	}
@@ -383,6 +389,13 @@ VALUE IO_Event_Selector_EPoll_close(VALUE self) {
 	close_internal(selector);
 	
 	return Qnil;
+}
+
+VALUE IO_Event_Selector_EPoll_closed_p(VALUE self) {
+	struct IO_Event_Selector_EPoll *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
+	
+	return selector->descriptor < 0 || selector->owner != getpid() ? Qtrue : Qfalse;
 }
 
 VALUE IO_Event_Selector_EPoll_transfer(VALUE self)
@@ -1087,6 +1100,7 @@ void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_EPoll, "select", IO_Event_Selector_EPoll_select, 1);
 	rb_define_method(IO_Event_Selector_EPoll, "wakeup", IO_Event_Selector_EPoll_wakeup, 0);
 	rb_define_method(IO_Event_Selector_EPoll, "close", IO_Event_Selector_EPoll_close, 0);
+	rb_define_method(IO_Event_Selector_EPoll, "closed?", IO_Event_Selector_EPoll_closed_p, 0);
 	
 	rb_define_method(IO_Event_Selector_EPoll, "io_wait", IO_Event_Selector_EPoll_io_wait, 3);
 	

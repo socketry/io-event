@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
+
 ## v1.16.4
 
   - Correctly implement `Interrupt#signal` so that it is robust enough to be called by `Scheduler#unblock`.
