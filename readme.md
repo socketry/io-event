@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.17.0
+
+  - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
+
 ### v1.16.4
 
   - Correctly implement `Interrupt#signal` so that it is robust enough to be called by `Scheduler#unblock`.
@@ -59,10 +63,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.14.3
 
   - Fix several implementation bugs that could cause deadlocks on blocking writes.
-
-### v1.14.0
-
-  - [Enhanced `IO::Event::PriorityHeap` with deletion and bulk insertion methods](https://socketry.github.io/io-event/releases/index#enhanced-io::event::priorityheap-with-deletion-and-bulk-insertion-methods)
 
 ## Contributing
 

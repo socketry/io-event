@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.17.0
 
   - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
 
