@@ -29,6 +29,35 @@ Interruptable = Sus::Shared("interruptable") do
 		expect(result).to be == 0
 	end
 	
+	it "does not block when interrupt is already pending" do
+		selector = subject.new(Fiber.current)
+		timeout = false
+		
+		thread = Thread.new do
+			Thread.current.report_on_exception = false
+			
+			Thread.handle_interrupt(::SignalException => :never) do
+				Thread.current.raise(::Interrupt)
+				selector.select(nil)
+			end
+		end
+		
+		watchdog = Thread.new do
+			sleep(0.1)
+			
+			if thread.alive?
+				timeout = true
+				selector.wakeup
+			end
+		end
+		
+		expect{thread.join}.to raise_exception(::Interrupt)
+		expect(timeout).to be == false
+	ensure
+		watchdog&.kill
+		thread&.kill
+	end
+	
 	with "pipe" do
 		let(:pipe) {IO.pipe}
 		let(:input) {pipe.first}

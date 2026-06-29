@@ -1016,15 +1016,19 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
-			struct timespec start_time;
-			IO_Event_Time_current(&start_time);
-			
-			// Wait for events to occur:
-			select_internal_without_gvl(&arguments);
-			
-			struct timespec end_time;
-			IO_Event_Time_current(&end_time);
-			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
+			if (IO_Event_Selector_pending_interrupt()) {
+				arguments.count = 0;
+			} else {
+				struct timespec start_time;
+				IO_Event_Time_current(&start_time);
+				
+				// Wait for events to occur:
+				select_internal_without_gvl(&arguments);
+				
+				struct timespec end_time;
+				IO_Event_Time_current(&end_time);
+				IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
+			}
 		}
 	}
 	

@@ -1282,19 +1282,23 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!selector->backend.ready && !timeout_nonblocking(arguments.timeout)) {
-			struct timespec start_time;
-			IO_Event_Time_current(&start_time);
-			
-			// This is a blocking operation, we wait for events:
-			result = select_internal_without_gvl(&arguments);
-			
-			struct timespec end_time;
-			IO_Event_Time_current(&end_time);
-			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
-			
-			// After waiting/flushing the SQ, check if there are any completions:
-			if (result > 0) {
-				result = select_process_completions(selector);
+			if (IO_Event_Selector_pending_interrupt()) {
+				result = 0;
+			} else {
+				struct timespec start_time;
+				IO_Event_Time_current(&start_time);
+				
+				// This is a blocking operation, we wait for events:
+				result = select_internal_without_gvl(&arguments);
+				
+				struct timespec end_time;
+				IO_Event_Time_current(&end_time);
+				IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
+				
+				// After waiting/flushing the SQ, check if there are any completions:
+				if (result > 0) {
+					result = select_process_completions(selector);
+				}
 			}
 		}
 	}

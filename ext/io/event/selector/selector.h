@@ -40,6 +40,16 @@ static inline int IO_Event_try_again(int error) {
 	return error == EAGAIN || error == EWOULDBLOCK;
 }
 
+static inline int IO_Event_Selector_pending_interrupt(void) {
+	static ID pending_interrupt = 0;
+	
+	if (!pending_interrupt) {
+		pending_interrupt = rb_intern("pending_interrupt?");
+	}
+	
+	return RTEST(rb_funcall(rb_cThread, pending_interrupt, 0));
+}
+
 #ifdef HAVE_RB_IO_DESCRIPTOR
 #define IO_Event_Selector_io_descriptor(io) rb_io_descriptor(io)
 #else

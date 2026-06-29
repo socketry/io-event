@@ -41,6 +41,8 @@ describe IO::Event.const_get(:Interrupt) do
 	with "test scheduler" do
 		it "can be used to wake up a fiber blocked in `Thread#join`" do
 			skip_unless_method_defined(:fork, Process.singleton_class)
+			skip "Process.fork is not available on JRuby." if RUBY_ENGINE == "jruby"
+			skip "Fiber.set_scheduler is not available." unless Fiber.respond_to?(:set_scheduler)
 			
 			10.times do
 				r, w = IO.pipe
