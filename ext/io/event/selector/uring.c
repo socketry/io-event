@@ -15,9 +15,18 @@
 
 #include "../interrupt.h"
 
-#include "pidfd.c"
-
 #include <linux/version.h>
+
+// `io_uring` support for `IORING_OP_WAITID` was introduced in Linux 6.7. When
+// available, we use it to wait for process exit directly in the ring, instead
+// of polling on a pidfd.
+#if defined(HAVE_IO_URING_PREP_WAITID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
+#define IO_EVENT_SELECTOR_URING_USE_WAITID
+#endif
+
+#ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
+#include "pidfd.c"
+#endif
 
 enum {
 	DEBUG = 0,
@@ -500,17 +509,28 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 
 #pragma mark - Process.wait
 
-#if defined(HAVE_IO_URING_PREP_WAITID) && defined(HAVE__RB_PROCESS_STATUS_NEW)
-#define USE_WAITID
-
-inline idtype_t waitid_type(int pid) {
-	switch (pid) {
-		case -1:
-			return P_ALL;
-		case 0:
-			return P_PGID;
-		default:
-			return P_PID;
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+// Translate a Ruby/`waitpid`-style pid into the `waitid(2)` idtype and id,
+// mirroring the semantics of `waitpid(2)`:
+//
+//   pid == -1  -> any child                                  (P_ALL)
+//   pid ==  0  -> any child in the caller's process group    (P_PGID, id 0; Linux >= 5.4)
+//   pid <  -1  -> any child in process group |pid|           (P_PGID)
+//   pid >   0  -> the specific child                         (P_PID)
+//
+static inline idtype_t process_waitid_type(pid_t pid, id_t *id) {
+	if (pid == -1) {
+		*id = 0;
+		return P_ALL;
+	} else if (pid == 0) {
+		*id = 0;
+		return P_PGID;
+	} else if (pid < -1) {
+		*id = (id_t)(-pid);
+		return P_PGID;
+	} else {
+		*id = (id_t)pid;
+		return P_PID;
 	}
 }
 #endif
@@ -521,12 +541,12 @@ struct process_wait_arguments {
 	
 	pid_t pid;
 	int flags;
-
-	#ifdef USE_WAITID
-	siginfo_t infop;
-	#else
+	
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+	siginfo_t siginfo;
+#else
 	int descriptor;
-	#endif
+#endif
 };
 
 static
@@ -535,29 +555,34 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
-	#ifdef USE_WAITID
-	if (DEBUG) printf("waitid result: %d pid: %d status: %d\n", 
-		arguments->waiting->result,
-		arguments->infop.si_pid,
-		arguments->infop.si_status
-	);
-	return rb_process_status_new(arguments->infop.si_pid, arguments->infop.si_status, 0);
-	#else
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+	int32_t result = arguments->waiting->result;
+	if (result < 0) {
+		rb_syserr_fail(-result, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid");
+	}
+	
+	if (DEBUG) fprintf(stderr, "waitid result=%d pid=%d code=%d status=%d\n", result, arguments->siginfo.si_pid, arguments->siginfo.si_code, arguments->siginfo.si_status);
+	
+	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid`
+	// tells us exactly which child changed state (important when waiting for any
+	// child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
+	return IO_Event_Selector_process_status_wait(arguments->siginfo.si_pid, arguments->flags);
+#else
 	if (arguments->waiting->result) {
 		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
-	#endif
+#endif
 }
 
 static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
-	#ifndef USE_WAITID
+#ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
 	close(arguments->descriptor);
-	#endif
+#endif
 	
 	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
 	
@@ -571,13 +596,13 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
 	
-	#ifndef USE_WAITID
+#ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
 	int descriptor = pidfd_open(pid, 0);
 	if (descriptor < 0) {
 		rb_syserr_fail(errno, "IO_Event_Selector_URing_process_wait:pidfd_open");
 	}
 	rb_update_max_fd(descriptor);
-	#endif
+#endif
 	
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
@@ -592,23 +617,26 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 		.waiting = &waiting,
 		.pid = pid,
 		.flags = flags,
-		#ifdef USE_WAITID
-		.infop = { .si_pid = 0, .si_status = 0 }
-		#else
-		.descriptor = descriptor
-		#endif
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+		.siginfo = {0},
+#else
+		.descriptor = descriptor,
+#endif
 	};
 	
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
-
-	#ifdef USE_WAITID
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid(%p)\n", (void*)fiber);
-	if (DEBUG) printf("waitid pid: %d flags: %d\n", pid, flags);
-	io_uring_prep_waitid(sqe, waitid_type(pid), pid, &process_wait_arguments.infop, WEXITED, 0);
-	#else
+	
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+	id_t id;
+	idtype_t idtype = process_waitid_type(pid, &id);
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid(fiber=%p, idtype=%d, id=%d, flags=%d)\n", (void*)fiber, idtype, (int)id, flags);
+	// `WNOWAIT` leaves the child in a waitable state so we can reap it with
+	// `rb_process_status_wait` afterwards and build a correct `Process::Status`:
+	io_uring_prep_waitid(sqe, idtype, id, &process_wait_arguments.siginfo, WEXITED | WNOWAIT, 0);
+#else
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
-	#endif
+#endif
 	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
 	
