@@ -45,6 +45,14 @@ if have_header("sys/event.h")
 	$srcs << "io/event/selector/kqueue.c"
 end
 
+if /mingw|mswin/ =~ RUBY_PLATFORM
+	$srcs << "io/event/selector/iocp.c"
+	# Ensure the MinGW import-library path is in the linker search path.
+	mingw_lib = "#{ENV.fetch('MINGW_PREFIX', '/ucrt64')}/lib"
+	$LDFLAGS << " -L#{mingw_lib}" if File.directory?(mingw_lib)
+	have_library("ws2_32", "WSARecv", "winsock2.h")
+end
+
 have_header("sys/wait.h")
 
 have_header("sys/eventfd.h")
@@ -61,7 +69,8 @@ have_header("ruby/io/buffer.h")
 # Feature detection for blocking operation support
 if have_func("rb_fiber_scheduler_blocking_operation_extract")
 	# Feature detection for pthread support (needed for WorkerPool)
-	if have_header("pthread.h")
+	# The WorkerPool uses POSIX pthread semantics and is not supported on Windows.
+	if have_header("pthread.h") && !(/mingw|mswin/ =~ RUBY_PLATFORM)
 		append_cflags(["-DHAVE_IO_EVENT_WORKER_POOL"])
 		$srcs << "io/event/worker_pool.c"
 		$srcs << "io/event/worker_pool_test.c"
