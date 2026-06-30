@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.18.0
 
   - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.
 

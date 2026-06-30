@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.18.0
+
+  - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.
+
 ### v1.17.0
 
   - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
@@ -59,10 +63,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.14.4
 
   - Allow `epoll_pwait2` to be disabled via `--disable-epoll_pwait2`.
-
-### v1.14.3
-
-  - Fix several implementation bugs that could cause deadlocks on blocking writes.
 
 ## Contributing
 
