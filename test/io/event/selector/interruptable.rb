@@ -8,6 +8,35 @@ require "io/event/selector"
 require "socket"
 
 Interruptable = Sus::Shared("interruptable") do
+	it "does not block with pending interrupts" do
+		selector = subject.new(Fiber.current)
+		woken = false
+		
+		watchdog = Thread.new do
+			sleep(0.1)
+			woken = true
+			selector.wakeup
+		end
+		
+		result = nil
+		
+		begin
+			begin
+				Thread.handle_interrupt(::SignalException => :never) do
+					Thread.current.raise(::Interrupt)
+					result = selector.select(nil)
+				end
+			rescue ::Interrupt
+			end
+		ensure
+			watchdog.kill
+			watchdog.join
+		end
+		
+		expect(result).to be == 0
+		expect(woken).to be == false
+	end
+	
 	it "can interrupt sleeping selector" do
 		result = nil
 		

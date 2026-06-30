@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.
+
 ## v1.17.0
 
   - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
