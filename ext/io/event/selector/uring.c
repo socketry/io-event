@@ -1176,17 +1176,17 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	selector->blocked = 0;
 	
 	if (arguments->result == -ETIME) {
-		arguments->result = 0;
+		return 0;
 	} else if (arguments->result == -EINTR) {
-		arguments->result = 0;
+		return 0;
 	} else if (arguments->result < 0) {
 		rb_syserr_fail(-arguments->result, "select_internal_without_gvl:io_uring_wait_cqe_timeout");
 	} else {
 		// At least 1 event is waiting:
-		arguments->result = 1;
+		return 1;
 	}
 	
-	return arguments->result;
+	return 0;
 }
 
 static inline
@@ -1283,17 +1283,18 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	
 	int ready = IO_Event_Selector_ready_flush(&selector->backend);
 	
-	int result = select_process_completions(selector);
+	int completed = select_process_completions(selector);
 	
 	// If we:
 	// 1. Didn't process any ready fibers, and
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !result && !selector->backend.ready) {
+	if (!ready && !completed && !selector->backend.ready) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.selector = selector,
+			.result = 0,
 			.timeout = NULL,
 		};
 		
@@ -1304,7 +1305,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 			IO_Event_Time_current(&start_time);
 			
 			// This is a blocking operation, we wait for events:
-			result = select_internal_without_gvl(&arguments);
+			int result = select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
 			IO_Event_Time_current(&end_time);
@@ -1312,12 +1313,12 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 			
 			// After waiting/flushing the SQ, check if there are any completions:
 			if (result > 0) {
-				result = select_process_completions(selector);
+				completed = select_process_completions(selector);
 			}
 		}
 	}
 	
-	return RB_INT2NUM(result);
+	return RB_INT2NUM(completed);
 }
 
 VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
