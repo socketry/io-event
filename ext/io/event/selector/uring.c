@@ -554,11 +554,13 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 #ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
 	int32_t result = arguments->waiting->result;
-	if (result < 0) {
-		rb_syserr_fail(-result, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid");
-	}
 	
 	if (DEBUG) fprintf(stderr, "waitid result=%d pid=%d code=%d status=%d\n", result, arguments->siginfo.si_pid, arguments->siginfo.si_code, arguments->siginfo.si_status);
+	
+	if (result < 0) {
+		// The `waitid` failed (e.g. `ECHILD` when there are no children). Reproduce the failure as a `Process::Status` carrying the error, rather than raising, so callers like `Process.waitall` / `Process.detach` (which expect `waitpid` to report the error, not raise) behave correctly:
+		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
+	}
 	
 	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid` tells us exactly which child changed state (important when waiting for any child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
 	return IO_Event_Selector_process_status_reap(arguments->siginfo.si_pid, arguments->flags);
