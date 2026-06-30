@@ -508,8 +508,7 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 #pragma mark - Process.wait
 
 #ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
-// Translate a Ruby/`waitpid`-style pid into the `waitid(2)` idtype and id,
-// mirroring the semantics of `waitpid(2)`:
+// Translate a Ruby/`waitpid`-style pid into the `waitid(2)` idtype and id, mirroring the semantics of `waitpid(2)`:
 //
 //   pid == -1  -> any child                                  (P_ALL)
 //   pid ==  0  -> any child in the caller's process group    (P_PGID, id 0; Linux >= 5.4)
