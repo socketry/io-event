@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Use `io_uring_prep_waitid` for `process_wait` in the `URing` selector (Linux 6.7+), waiting for child exit directly in the ring instead of polling on a `pidfd`. The child is reaped via `rb_process_status_wait` (using `WEXITED | WNOWAIT`) to construct a correct `Process::Status`, and `process_wait(-1, ...)` / `process_wait(0, ...)` are now supported.
+
 ## v1.18.0
 
   - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.

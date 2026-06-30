@@ -32,9 +32,7 @@ have_func("rb_ext_ractor_safe")
 have_func("&rb_fiber_transfer")
 
 if have_library("uring") and have_header("liburing.h")
-	# We might want to consider using this in the future:
-	# have_func("io_uring_submit_and_wait_timeout", "liburing.h")
-	
+	have_func("io_uring_prep_waitid", "liburing.h")
 	$srcs << "io/event/selector/uring.c"
 end
 
