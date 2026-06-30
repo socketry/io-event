@@ -213,7 +213,9 @@ module IO::Event
 				
 				Selector.nonblock(io) do
 					while true
-						result = Fiber.blocking{buffer.read(io, 0, offset)}
+						break if offset >= buffer.size
+						
+						result = buffer_read(io, buffer, offset)
 						
 						if result < 0
 							if length > 0 and again?(result)
@@ -250,7 +252,9 @@ module IO::Event
 				
 				Selector.nonblock(io) do
 					while true
-						result = Fiber.blocking{buffer.write(io, 0, offset)}
+						break if offset >= buffer.size
+						
+						result = buffer_write(io, buffer, offset)
 						
 						if result < 0
 							if length > 0 and again?(result)
@@ -269,6 +273,55 @@ module IO::Event
 				end
 				
 				return total
+			end
+			
+			unless defined?(IO::Buffer) and IO::Buffer.method_defined?(:read) and IO::Buffer.method_defined?(:write)
+				private def buffer_read(io, buffer, offset)
+					string = io.read_nonblock(buffer.size - offset)
+					buffer.set_string(string, offset)
+					return string.bytesize
+				rescue EOFError
+					return 0
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue IO::WaitReadable
+					return EAGAIN
+				rescue SystemCallError => error
+					return -error.errno
+				end
+				
+				private def buffer_write(io, buffer, offset)
+					string = buffer.get_string(offset, buffer.size - offset)
+					return io.write_nonblock(string)
+				rescue IO::WaitWritable
+					return EAGAIN
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
+				end
+			else
+				private def buffer_read(io, buffer, offset)
+					Fiber.blocking{buffer.read(io, 0, offset)}
+				rescue EOFError
+					return 0
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue IO::WaitReadable
+					return EAGAIN
+				rescue SystemCallError => error
+					return -error.errno
+				end
+				
+				private def buffer_write(io, buffer, offset)
+					Fiber.blocking{buffer.write(io, 0, offset)}
+				rescue IO::WaitWritable
+					return EAGAIN
+				rescue IOError
+					return -Errno::EBADF::Errno
+				rescue SystemCallError => error
+					return -error.errno
+				end
 			end
 			
 			# Wait for a process to change state.
@@ -343,6 +396,7 @@ module IO::Event
 				# We need to handle interrupts on blocking IO. Every other implementation uses EINTR, but that doesn't work with `::IO.select` as it will retry the call on EINTR.
 				Thread.handle_interrupt(::Exception => :on_blocking) do
 					@blocked = true
+					duration = 0 unless @ready.empty?
 					readable, writable, priority = ::IO.select(readable, writable, priority, duration)
 				rescue ::Exception => error
 					# Requeue below...

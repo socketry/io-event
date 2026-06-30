@@ -17,8 +17,14 @@ WriteDeadlock = Sus::Shared("write deadlock") do
 			local, remote = UNIXSocket.pair(:STREAM)
 			
 			# Set small buffer to encourage EAGAIN
-			local.setsockopt(Socket::SOL_SOCKET, Socket::SO_SNDBUF, 4096)
-			remote.setsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF, 4096)
+			begin
+				local.setsockopt(Socket::SOL_SOCKET, Socket::SO_SNDBUF, 4096)
+				remote.setsockopt(Socket::SOL_SOCKET, Socket::SO_RCVBUF, 4096)
+			rescue Errno::ENOPROTOOPT
+				skip "JRuby does not support UNIXSocket buffer size options" if RUBY_ENGINE == "jruby"
+				
+				raise
+			end
 			
 			eagain_hit = false
 			write_completed = false

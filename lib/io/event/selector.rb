@@ -4,6 +4,7 @@
 # Copyright, 2021-2026, by Samuel Williams.
 
 require_relative "native"
+require_relative "selector/nonblock"
 require_relative "selector/select"
 require_relative "debug/selector"
 
