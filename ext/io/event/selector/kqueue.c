@@ -469,7 +469,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	if (arguments->waiting->ready) {
 		process_prewait(arguments->pid);
-		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
+		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -493,6 +493,11 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
 	
+	// `EVFILT_PROC` can only refer to a specific process, so waiting for any child or a process group (pid <= 0) is delegated to the threaded fallback:
+	if (pid <= 0) {
+		return IO_Event_Selector_process_wait(pid, flags);
+	}
+	
 	struct IO_Event_Selector_KQueue_Waiting waiting = {
 		.list = {.type = &IO_Event_Selector_KQueue_process_wait_list_type},
 		.fiber = fiber,
@@ -514,7 +519,7 @@ VALUE IO_Event_Selector_KQueue_process_wait(VALUE self, VALUE fiber, VALUE _pid,
 		if (errno == ESRCH) {
 			process_prewait(pid);
 			
-			return IO_Event_Selector_process_status_wait(pid, flags);
+			return IO_Event_Selector_process_status_reap(pid, flags);
 		}
 		
 		rb_sys_fail("IO_Event_Selector_KQueue_process_wait:IO_Event_Selector_KQueue_Waiting_register");

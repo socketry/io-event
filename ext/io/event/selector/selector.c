@@ -24,7 +24,7 @@ static VALUE rb_Process_Status = Qnil;
 
 VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags)
 {
-	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(flags | WNOHANG));
+	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(flags));
 }
 #endif
 
@@ -80,8 +80,20 @@ static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
 	return rb_ensure(rb_yield, io, IO_Event_Selector_nonblock_ensure, (VALUE)&arguments);
 }
 
+static VALUE rb_IO_Event_Selector = Qnil;
+static ID id_process_wait;
+
+// Wait for a process when the selector cannot do so natively (e.g. `pid <= 0`: any child, or a process group). Delegates to the pure-Ruby `IO::Event::Selector.process_wait`, which performs a blocking wait on a separate thread; joining it is fiber-scheduler aware, so the reactor keeps running.
+VALUE IO_Event_Selector_process_wait(rb_pid_t pid, int flags) {
+	return rb_funcall(rb_IO_Event_Selector, id_process_wait, 2, PIDT2NUM(pid), INT2NUM(flags));
+}
+
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	IO_Event_Selector_pending_interrupt_p_id = rb_intern("pending_interrupt?");
+	
+	rb_IO_Event_Selector = IO_Event_Selector;
+	rb_gc_register_mark_object(rb_IO_Event_Selector);
+	id_process_wait = rb_intern("process_wait");
 	
 #ifndef HAVE_RB_IO_DESCRIPTOR
 	id_fileno = rb_intern("fileno");

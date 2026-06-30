@@ -278,9 +278,7 @@ module IO::Event
 			# @parameter flags [Integer] Flags to pass to Process::Status.wait.
 			# @returns [Process::Status] The status of the waited process.
 			def process_wait(fiber, pid, flags)
-				Thread.new do
-					Process::Status.wait(pid, flags)
-				end.value
+				Selector.process_wait(pid, flags)
 			end
 			
 			private def pop_ready

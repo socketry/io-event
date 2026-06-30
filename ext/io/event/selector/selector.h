@@ -52,12 +52,20 @@ static inline int IO_Event_Selector_pending_interrupt(void) {
 int IO_Event_Selector_io_descriptor(VALUE io);
 #endif
 
-// Reap a process without hanging.
+// Wait for a process to change state. This blocks until the process changes state, unless `WNOHANG` is given in `flags`.
 #ifdef HAVE_RB_PROCESS_STATUS_WAIT
-#define IO_Event_Selector_process_status_wait(pid, flags) rb_process_status_wait(pid, flags | WNOHANG)
+#define IO_Event_Selector_process_status_wait(pid, flags) rb_process_status_wait(pid, flags)
 #else
 VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags);
 #endif
+
+// Reap a process that is known to have changed state (e.g. after a readiness event), without blocking.
+static inline VALUE IO_Event_Selector_process_status_reap(rb_pid_t pid, int flags) {
+	return IO_Event_Selector_process_status_wait(pid, flags | WNOHANG);
+}
+
+// Wait for a process the selector cannot represent natively (e.g. `pid <= 0`: any child, or a process group), using a fiber-scheduler aware blocking wait on a separate thread.
+VALUE IO_Event_Selector_process_wait(rb_pid_t pid, int flags);
 
 int IO_Event_Selector_nonblock_set(int file_descriptor);
 void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
