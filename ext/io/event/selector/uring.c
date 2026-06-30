@@ -563,9 +563,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	if (DEBUG) fprintf(stderr, "waitid result=%d pid=%d code=%d status=%d\n", result, arguments->siginfo.si_pid, arguments->siginfo.si_code, arguments->siginfo.si_status);
 	
-	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid`
-	// tells us exactly which child changed state (important when waiting for any
-	// child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
+	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid` tells us exactly which child changed state (important when waiting for any child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
 	return IO_Event_Selector_process_status_wait(arguments->siginfo.si_pid, arguments->flags);
 #else
 	if (arguments->waiting->result) {
