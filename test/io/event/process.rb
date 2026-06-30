@@ -35,6 +35,51 @@ ProcessWait = Sus::Shared("process wait") do
 		Fiber.set_scheduler(nil)
 	end
 	
+	it "can wait for all child processes" do
+		skip_if_ruby_platform(/mswin|mingw|cygwin/)
+		
+		statuses = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			3.times{Process.spawn("true")}
+			
+			# `Process.waitall` loops `Process.wait(-1)` until `ECHILD`, relying on the final wait reporting "no more children" rather than raising. The scheduler hook must surface that as a result, not an exception:
+			statuses = Process.waitall
+		end
+		
+		scheduler.run
+		
+		expect(statuses.size).to be == 3
+		statuses.each do |pid, status|
+			expect(status).to be(:success?)
+		end
+	ensure
+		Fiber.set_scheduler(nil)
+	end
+	
+	it "raises when waiting for any child process with no children" do
+		skip_if_ruby_platform(/mswin|mingw|cygwin/)
+		
+		error = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			Process.wait(-1)
+		rescue SystemCallError => exception
+			error = exception
+		end
+		
+		scheduler.run
+		
+		# Consistent with non-scheduler `Process.wait(-1)`: no children is `Errno::ECHILD`.
+		expect(error).to be_a(Errno::ECHILD)
+	ensure
+		Fiber.set_scheduler(nil)
+	end
+	
 	it "can interrupt a process wait" do
 		skip_if_ruby_platform(/mswin|mingw|cygwin/)
 		
