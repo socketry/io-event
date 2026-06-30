@@ -462,7 +462,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
 	if (arguments->waiting->ready) {
-		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
+		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -488,6 +488,11 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	pid_t pid = NUM2PIDT(_pid);
 	int flags = NUM2INT(_flags);
 	
+	// `pidfd_open` can only refer to a specific process, so waiting for any child or a process group (pid <= 0) is delegated to the threaded fallback:
+	if (pid <= 0) {
+		return IO_Event_Selector_process_wait(pid, flags);
+	}
+	
 	int descriptor = pidfd_open(pid, 0);
 	
 	if (descriptor == -1) {
@@ -497,7 +502,7 @@ VALUE IO_Event_Selector_EPoll_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	rb_update_max_fd(descriptor);
 	
 	// `pidfd_open` (above) may be edge triggered, so we need to check if the process is already exited, and if so, return immediately, otherwise we will block indefinitely.
-	VALUE status = IO_Event_Selector_process_status_wait(pid, flags);
+	VALUE status = IO_Event_Selector_process_status_reap(pid, flags);
 	if (status != Qnil) {
 		close(descriptor);
 		return status;

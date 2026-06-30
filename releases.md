@@ -3,6 +3,7 @@
 ## Unreleased
 
   - Use `io_uring_prep_waitid` for `process_wait` in the `URing` selector (Linux 6.7+), waiting for child exit directly in the ring instead of polling on a `pidfd`. The child is reaped via `rb_process_status_wait` (using `WEXITED | WNOWAIT`) to construct a correct `Process::Status`, and `process_wait(-1, ...)` / `process_wait(0, ...)` are now supported.
+  - Support waiting for any child or a process group (`pid <= 0`) on all selectors. The `EPoll` (`pidfd_open`) and `KQueue` (`EVFILT_PROC`) selectors can only watch a specific process, so these cases now fall back to a blocking wait on a dedicated thread; joining it is fiber-scheduler aware, so the reactor keeps running.
 
 ## v1.18.0
 

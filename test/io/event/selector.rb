@@ -676,6 +676,116 @@ Selector = Sus::Shared("a selector") do
 			expect(result1).to be(:success?)
 			expect(result2).to be(:success?)
 		end
+		
+		it "reports a non-zero exit status" do
+			result = nil
+			
+			fiber = Fiber.new do
+				pid = Process.spawn("exit 42", err: File::NULL)
+				result = selector.process_wait(Fiber.current, pid, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result).not.to be(:success?)
+			expect(result.exitstatus).to be == 42
+			expect(result).not.to be(:signaled?)
+		end
+		
+		it "reports termination by signal" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			result = nil
+			
+			fiber = Fiber.new do
+				pid = Process.spawn("sleep 10")
+				Process.kill(:KILL, pid)
+				result = selector.process_wait(Fiber.current, pid, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result).to be(:signaled?)
+			expect(result.termsig).to be == Signal.list.fetch("KILL")
+		end
+		
+		it "can wait for any child process" do
+			result1 = result2 = nil
+			pids = []
+			
+			fiber = Fiber.new do
+				pid1 = Process.spawn("sleep 0")
+				pid2 = Process.spawn("sleep 0")
+				pids << pid1 << pid2
+				
+				result1 = selector.process_wait(Fiber.current, -1, 0)
+				result2 = selector.process_wait(Fiber.current, -1, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result1).to be(:success?)
+			expect(result2).to be(:success?)
+			
+			result_pids = [result1.pid, result2.pid].sort
+			expect(result_pids).to be == pids.sort
+		end
+		
+		it "can wait for any process in the caller's process group" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			result = nil
+			pid = nil
+			
+			fiber = Fiber.new do
+				# Spawned in the caller's process group by default:
+				pid = Process.spawn("true")
+				result = selector.process_wait(Fiber.current, 0, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result).to be(:success?)
+			expect(result.pid).to be == pid
+		end
+		
+		it "can wait for any process in a specific process group" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
+			result = nil
+			pid = nil
+			
+			fiber = Fiber.new do
+				# `pgroup: true` makes the child a leader of a new process group, so its process group id equals its pid:
+				pid = Process.spawn("true", pgroup: true)
+				result = selector.process_wait(Fiber.current, -pid, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result).to be(:success?)
+			expect(result.pid).to be == pid
+		end
 	end
 	
 	with "#resume" do

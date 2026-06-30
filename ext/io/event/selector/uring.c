@@ -561,10 +561,10 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	if (DEBUG) fprintf(stderr, "waitid result=%d pid=%d code=%d status=%d\n", result, arguments->siginfo.si_pid, arguments->siginfo.si_code, arguments->siginfo.si_status);
 	
 	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid` tells us exactly which child changed state (important when waiting for any child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
-	return IO_Event_Selector_process_status_wait(arguments->siginfo.si_pid, arguments->flags);
+	return IO_Event_Selector_process_status_reap(arguments->siginfo.si_pid, arguments->flags);
 #else
 	if (arguments->waiting->result) {
-		return IO_Event_Selector_process_status_wait(arguments->pid, arguments->flags);
+		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
 	} else {
 		return Qfalse;
 	}
@@ -592,6 +592,11 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	int flags = NUM2INT(_flags);
 	
 #ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
+	// `pidfd_open` can only refer to a specific process, so waiting for any child or a process group (pid <= 0) is delegated to the threaded fallback:
+	if (pid <= 0) {
+		return IO_Event_Selector_process_wait(pid, flags);
+	}
+	
 	int descriptor = pidfd_open(pid, 0);
 	if (descriptor < 0) {
 		rb_syserr_fail(errno, "IO_Event_Selector_URing_process_wait:pidfd_open");
