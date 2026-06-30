@@ -1175,18 +1175,7 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	selector->blocked = 0;
 	
-	if (arguments->result == -ETIME) {
-		return 0;
-	} else if (arguments->result == -EINTR) {
-		return 0;
-	} else if (arguments->result < 0) {
-		rb_syserr_fail(-arguments->result, "select_internal_without_gvl:io_uring_wait_cqe_timeout");
-	} else {
-		// At least 1 event is waiting:
-		return 1;
-	}
-	
-	return 0;
+	return arguments->result;
 }
 
 static inline
@@ -1312,7 +1301,13 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
 			
 			// After waiting/flushing the SQ, check if there are any completions:
-			if (result > 0) {
+			if (result == -ETIME) {
+				// The timeout expired without any completions.
+			} else if (result == -EINTR) {
+				// The wait was interrupted.
+			} else if (result < 0) {
+				rb_syserr_fail(-result, "select_internal_without_gvl:io_uring_wait_cqe_timeout");
+			} else {
 				completed = select_process_completions(selector);
 			}
 		}

@@ -898,14 +898,6 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->selector->blocked = 0;
 	
-	if (arguments->result == -1) {
-		if (errno != EINTR) {
-			rb_sys_fail("select_internal_without_gvl:epoll_wait");
-		} else {
-			return 0;
-		}
-	}
-	
 	return arguments->result;
 }
 
@@ -1045,6 +1037,14 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 			struct timespec end_time;
 			IO_Event_Time_current(&end_time);
 			IO_Event_Time_elapsed(&start_time, &end_time, &selector->idle_duration);
+			
+			if (result == -1) {
+				if (errno != EINTR) {
+					rb_sys_fail("select_internal_without_gvl:epoll_wait");
+				} else {
+					result = 0;
+				}
+			}
 		}
 	}
 	
