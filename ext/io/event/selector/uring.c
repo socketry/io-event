@@ -17,9 +17,7 @@
 
 #include <linux/version.h>
 
-// `io_uring` support for `IORING_OP_WAITID` was introduced in Linux 6.7. When
-// available, we use it to wait for process exit directly in the ring, instead
-// of polling on a pidfd.
+// `io_uring` support for `IORING_OP_WAITID` was introduced in Linux 6.7. When available, we use it to wait for process exit directly in the ring, instead of polling on a pidfd.
 #if defined(HAVE_IO_URING_PREP_WAITID) && (LINUX_VERSION_CODE >= KERNEL_VERSION(6,7,0))
 #define IO_EVENT_SELECTOR_URING_USE_WAITID
 #endif
