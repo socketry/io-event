@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.19.1
 
   - Fix `Process.waitall` / `Process.detach` under the `URing` selector: when `io_uring`'s `waitid` reported an error (e.g. `ECHILD` when there are no more children), the `process_wait` hook raised instead of returning the error as a `Process::Status`, so callers that expect `waitpid` to *report* "no more children" rather than raise would fail.
 

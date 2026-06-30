@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.19.1
+
+  - Fix `Process.waitall` / `Process.detach` under the `URing` selector: when `io_uring`'s `waitid` reported an error (e.g. `ECHILD` when there are no more children), the `process_wait` hook raised instead of returning the error as a `Process::Status`, so callers that expect `waitpid` to *report* "no more children" rather than raise would fail.
+
 ### v1.19.0
 
   - Use `io_uring_prep_waitid` for `process_wait` in the `URing` selector (Linux 6.7+), waiting for child exit directly in the ring instead of polling on a `pidfd`. The child is reaped via `rb_process_status_wait` (using `WEXITED | WNOWAIT`) to construct a correct `Process::Status`, and `process_wait(-1, ...)` / `process_wait(0, ...)` are now supported.
@@ -60,10 +64,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.15.1
 
   - Simplify closed-IO handling in the `Select` selector: rely on Ruby 4's `rb_thread_io_close_interrupt` to wake fibers waiting on a descriptor that's been closed, removing a custom error-recovery path that could mis-attribute `IOError` / `Errno::EBADF` to the wrong waiter.
-
-### v1.15.0
-
-  - Add bounds checks, in the unlikely event of a user providing an invalid offset that exceeds the buffer size. This prevents potential memory corruption and ensures safe operation when using buffered IO methods.
 
 ## Contributing
 
