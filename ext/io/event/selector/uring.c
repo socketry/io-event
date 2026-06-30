@@ -625,8 +625,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	id_t id;
 	idtype_t idtype = process_waitid_type(pid, &id);
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid(fiber=%p, idtype=%d, id=%d, flags=%d)\n", (void*)fiber, idtype, (int)id, flags);
-	// `WNOWAIT` leaves the child in a waitable state so we can reap it with
-	// `rb_process_status_wait` afterwards and build a correct `Process::Status`:
+	// `WNOWAIT` leaves the child in a waitable state so we can reap it with `rb_process_status_wait` afterwards and build a correct `Process::Status`:
 	io_uring_prep_waitid(sqe, idtype, id, &process_wait_arguments.siginfo, WEXITED | WNOWAIT, 0);
 #else
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
