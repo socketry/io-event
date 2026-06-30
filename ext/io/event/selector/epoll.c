@@ -830,8 +830,26 @@ struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
 }
 
 static
-int timeout_nonblocking(struct timespec * timespec) {
+int timeout_is_nonblocking(struct timespec * timespec) {
 	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
+}
+
+// Return true when it is safe and useful to enter the blocking selector wait.
+static
+int select_blocking_allowed(struct timespec * timespec) {
+	// A `0` timeout is already a poll. The selector has already performed the immediate poll previously, so there is no useful blocking wait to enter here.
+	if (timeout_is_nonblocking(timespec)) {
+		return 0;
+	}
+	
+#ifndef RB_NOGVL_PENDING_INTERRUPT_FAIL
+	// On Rubies without `RB_NOGVL_PENDING_INTERRUPT_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
+	if (IO_Event_Selector_pending_interrupt()) {
+		return 0;
+	}
+#endif
+	
+	return 1;
 }
 
 struct select_arguments {
@@ -852,7 +870,7 @@ static int make_timeout_ms(struct timespec * timeout) {
 		return -1;
 	}
 	
-	if (timeout_nonblocking(timeout)) {
+	if (timeout_is_nonblocking(timeout)) {
 		return 0;
 	}
 	
@@ -894,12 +912,18 @@ void * select_internal(void *_arguments) {
 
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
+	arguments->result = -1;
 	arguments->selector->blocked = 1;
-	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+#ifdef RB_NOGVL_PENDING_INTERRUPT_FAIL
+	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTERRUPT_FAIL);
+#else
+	rb_thread_call_without_gvl2(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+#endif
 	arguments->selector->blocked = 0;
 	
 	if (arguments->result == -1) {
-		if (errno != EINTR) {
+		// If Ruby skips the native callback, the result sentinel can remain `-1`; `errno` may be `0` or `EINTR` depending on the Ruby implementation. Both cases mean the blocking wait did not produce any events.
+		if (errno != EINTR && errno != 0) {
 			rb_sys_fail("select_internal_without_gvl:epoll_wait");
 		} else {
 			return 0;
@@ -1035,7 +1059,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	if (!ready && !result && !selector->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!timeout_nonblocking(arguments.timeout)) {
+		if (select_blocking_allowed(arguments.timeout)) {
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 			

@@ -1130,9 +1130,22 @@ struct __kernel_timespec * make_timeout(VALUE duration, struct __kernel_timespec
 	return storage;
 }
 
+// Return true when it is safe and useful to enter the blocking selector wait.
 static
-int timeout_nonblocking(struct __kernel_timespec *timespec) {
-	return timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0;
+int select_blocking_allowed(struct __kernel_timespec *timespec) {
+	// A `0` timeout is already a poll. The selector has already performed the immediate poll previously, so there is no useful blocking wait to enter here.
+	if (timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0) {
+		return 0;
+	}
+	
+#ifndef RB_NOGVL_PENDING_INTERRUPT_FAIL
+	// On Rubies without `RB_NOGVL_PENDING_INTERRUPT_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
+	if (IO_Event_Selector_pending_interrupt()) {
+		return 0;
+	}
+#endif
+	
+	return 1;
 }
 
 struct select_arguments {
@@ -1171,8 +1184,13 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	
 	io_uring_submit_flush(selector);
 	
+	arguments->result = -EINTR;
 	selector->blocked = 1;
-	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+#ifdef RB_NOGVL_PENDING_INTERRUPT_FAIL
+	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTERRUPT_FAIL);
+#else
+	rb_thread_call_without_gvl2(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
+#endif
 	selector->blocked = 0;
 	
 	if (arguments->result == -ETIME) {
@@ -1300,7 +1318,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!selector->backend.ready && !timeout_nonblocking(arguments.timeout)) {
+		if (!selector->backend.ready && select_blocking_allowed(arguments.timeout)) {
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 			

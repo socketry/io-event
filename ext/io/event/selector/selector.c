@@ -8,6 +8,8 @@
 
 static const int DEBUG = 0;
 
+ID IO_Event_Selector_pending_interrupt_p_id;
+
 #ifndef HAVE_RB_IO_DESCRIPTOR
 static ID id_fileno;
 
@@ -79,6 +81,8 @@ static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
 }
 
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
+	IO_Event_Selector_pending_interrupt_p_id = rb_intern("pending_interrupt?");
+	
 #ifndef HAVE_RB_IO_DESCRIPTOR
 	id_fileno = rb_intern("fileno");
 #endif
