@@ -847,6 +847,7 @@ struct select_arguments {
 	struct IO_Event_Selector_KQueue *selector;
 	
 	int count;
+	int result;
 	struct kevent events[KQUEUE_MAX_EVENTS];
 	
 	struct timespec storage;
@@ -859,38 +860,42 @@ static
 void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
-	arguments->count = kevent(arguments->selector->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
+	arguments->result = kevent(arguments->selector->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
 	
 	return NULL;
 }
 
 static
-void select_internal_without_gvl(struct select_arguments *arguments) {
+int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->selector->blocked = 1;
 	
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->selector->blocked = 0;
 	
-	if (arguments->count == -1) {
+	if (arguments->result == -1) {
 		if (errno != EINTR) {
 			rb_sys_fail("select_internal_without_gvl:kevent");
 		} else {
-			arguments->count = 0;
+			return 0;
 		}
 	}
+	
+	return arguments->result;
 }
 
 static
-void select_internal_with_gvl(struct select_arguments *arguments) {
+int select_internal_with_gvl(struct select_arguments *arguments) {
 	select_internal((void *)arguments);
 	
-	if (arguments->count == -1) {
+	if (arguments->result == -1) {
 		if (errno != EINTR) {
 			rb_sys_fail("select_internal_with_gvl:kevent");
 		} else {
-			arguments->count = 0;
+			return 0;
 		}
 	}
+	
+	return arguments->result;
 }
 
 static
@@ -944,14 +949,14 @@ VALUE select_handle_events(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	struct IO_Event_Selector_KQueue *selector = arguments->selector;
 	
-	for (int i = 0; i < arguments->count; i += 1) {
+	for (int i = 0; i < arguments->result; i += 1) {
 		if (arguments->events[i].udata) {
 			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
 			kqueue_descriptor->ready_events |= events_from_kevent_filter(arguments->events[i].filter);
 		}
 	}
 	
-	for (int i = 0; i < arguments->count; i += 1) {
+	for (int i = 0; i < arguments->result; i += 1) {
 		if (arguments->events[i].udata) {
 			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
 			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor, &arguments->saved);
@@ -962,7 +967,7 @@ VALUE select_handle_events(VALUE _arguments)
 		}
 	}
 	
-	return RB_INT2NUM(arguments->count);
+	return RB_INT2NUM(arguments->result);
 }
 
 static
@@ -987,6 +992,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	struct select_arguments arguments = {
 		.selector = selector,
 		.count = KQUEUE_MAX_EVENTS,
+		.result = 0,
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
@@ -997,14 +1003,14 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	arguments.timeout = &arguments.storage;
 	
 	// We break this implementation into two parts.
-	// (1) count = kevent(..., timeout = 0)
-	// (2) without gvl: kevent(..., timeout = 0) if count == 0 and timeout != 0
+	// (1) result = kevent(..., timeout = 0)
+	// (2) without gvl: kevent(..., timeout = 0) if result == 0 and timeout != 0
 	// This allows us to avoid releasing and reacquiring the GVL.
 	// Non-comprehensive testing shows this gives a 1.5x speedup.
 	
 	// First do the syscall with no timeout to get any immediately available events:
 	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl timeout=" IO_EVENT_TIME_PRINTF_TIMESPEC "\r\n", IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
-	select_internal_with_gvl(&arguments);
+	int result = select_internal_with_gvl(&arguments);
 	if (DEBUG) fprintf(stderr, "\r\nselect_internal_with_gvl done\r\n");
 	
 	// If we:
@@ -1012,17 +1018,15 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !arguments.count && !selector->backend.ready) {
+	if (!ready && !result && !selector->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
-			arguments.count = KQUEUE_MAX_EVENTS;
-			
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 			
 			if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_select timeout=" IO_EVENT_TIME_PRINTF_TIMESPEC "\n", IO_EVENT_TIME_PRINTF_TIMESPEC_ARGUMENTS(arguments.storage));
-			select_internal_without_gvl(&arguments);
+			result = select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
 			IO_Event_Time_current(&end_time);
@@ -1030,7 +1034,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 		}
 	}
 	
-	if (arguments.count) {
+	if (result) {
 		return rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
 	} else {
 		return RB_INT2NUM(0);

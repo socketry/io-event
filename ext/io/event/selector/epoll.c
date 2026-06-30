@@ -838,6 +838,7 @@ struct select_arguments {
 	struct IO_Event_Selector_EPoll *selector;
 	
 	int count;
+	int result;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
 	
 	struct timespec * timeout;
@@ -872,13 +873,13 @@ void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
 #if defined(HAVE_EPOLL_PWAIT2)
-	arguments->count = epoll_pwait2(arguments->selector->descriptor, arguments->events, EPOLL_MAX_EVENTS, arguments->timeout, NULL);
+	arguments->result = epoll_pwait2(arguments->selector->descriptor, arguments->events, arguments->count, arguments->timeout, NULL);
 	
 	// Comment out the above line and enable the below lines to test ENOSYS code path.
-	// arguments->count = -1;
+	// arguments->result = -1;
 	// errno = ENOSYS;
 	
-	if (!enosys_error(arguments->count)) {
+	if (!enosys_error(arguments->result)) {
 		return NULL;
 	}
 	else {
@@ -886,37 +887,41 @@ void * select_internal(void *_arguments) {
 	}
 #endif
 	
-	arguments->count = epoll_wait(arguments->selector->descriptor, arguments->events, EPOLL_MAX_EVENTS, make_timeout_ms(arguments->timeout));
+	arguments->result = epoll_wait(arguments->selector->descriptor, arguments->events, arguments->count, make_timeout_ms(arguments->timeout));
 	
 	return NULL;
 }
 
 static
-void select_internal_without_gvl(struct select_arguments *arguments) {
+int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->selector->blocked = 1;
 	rb_thread_call_without_gvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	arguments->selector->blocked = 0;
 	
-	if (arguments->count == -1) {
+	if (arguments->result == -1) {
 		if (errno != EINTR) {
 			rb_sys_fail("select_internal_without_gvl:epoll_wait");
 		} else {
-			arguments->count = 0;
+			return 0;
 		}
 	}
+	
+	return arguments->result;
 }
 
 static
-void select_internal_with_gvl(struct select_arguments *arguments) {
+int select_internal_with_gvl(struct select_arguments *arguments) {
 	select_internal((void *)arguments);
 	
-	if (arguments->count == -1) {
+	if (arguments->result == -1) {
 		if (errno != EINTR) {
 			rb_sys_fail("select_internal_with_gvl:epoll_wait");
 		} else {
-			arguments->count = 0;
+			return 0;
 		}
 	}
+	
+	return arguments->result;
 }
 
 static
@@ -972,7 +977,7 @@ VALUE select_handle_events(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	struct IO_Event_Selector_EPoll *selector = arguments->selector;
 	
-	for (int i = 0; i < arguments->count; i += 1) {
+	for (int i = 0; i < arguments->result; i += 1) {
 		const struct epoll_event *event = &arguments->events[i];
 		if (DEBUG) fprintf(stderr, "-> fd=%d events=%d\n", event->data.fd, event->events);
 		
@@ -983,7 +988,7 @@ VALUE select_handle_events(VALUE _arguments)
 		}
 	}
 	
-	return INT2NUM(arguments->count);
+	return INT2NUM(arguments->result);
 }
 
 static
@@ -1008,6 +1013,8 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	
 	struct select_arguments arguments = {
 		.selector = selector,
+		.count = EPOLL_MAX_EVENTS,
+		.result = 0,
 		.storage = {
 			.tv_sec = 0,
 			.tv_nsec = 0
@@ -1018,14 +1025,14 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	arguments.timeout = &arguments.storage;
 
 	// Process any currently pending events:
-	select_internal_with_gvl(&arguments);
+	int result = select_internal_with_gvl(&arguments);
 	
 	// If we:
 	// 1. Didn't process any ready fibers, and
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !arguments.count && !selector->backend.ready) {
+	if (!ready && !result && !selector->backend.ready) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (!timeout_nonblocking(arguments.timeout)) {
@@ -1033,7 +1040,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 			IO_Event_Time_current(&start_time);
 			
 			// Wait for events to occur:
-			select_internal_without_gvl(&arguments);
+			result = select_internal_without_gvl(&arguments);
 			
 			struct timespec end_time;
 			IO_Event_Time_current(&end_time);
@@ -1041,7 +1048,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 		}
 	}
 	
-	if (arguments.count) {
+	if (result) {
 		return rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
 	} else {
 		return RB_INT2NUM(0);
