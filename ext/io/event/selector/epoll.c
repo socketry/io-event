@@ -847,8 +847,8 @@ int select_blocking_allowed(struct timespec * timespec) {
 		return 0;
 	}
 	
-#ifndef RB_NOGVL_PENDING_INTERRUPT_FAIL
-	// On Rubies without `RB_NOGVL_PENDING_INTERRUPT_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
+#ifndef RB_NOGVL_PENDING_INTR_FAIL
+	// On Rubies without `RB_NOGVL_PENDING_INTR_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
 	if (IO_Event_Selector_pending_interrupt()) {
 		return 0;
 	}
@@ -919,8 +919,8 @@ static
 int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->result = -1;
 	arguments->selector->blocked = 1;
-#ifdef RB_NOGVL_PENDING_INTERRUPT_FAIL
-	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTERRUPT_FAIL);
+#ifdef RB_NOGVL_PENDING_INTR_FAIL
+	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTR_FAIL);
 #else
 	rb_thread_call_without_gvl2(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 #endif
