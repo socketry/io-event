@@ -546,6 +546,29 @@ struct process_wait_arguments {
 #endif
 };
 
+#if defined(IO_EVENT_SELECTOR_URING_USE_WAITID) && defined(HAVE_RB_PROCESS_STATUS_FOR)
+static inline int process_wait_status_exited(int exit_status) {
+	return (exit_status & 0xff) << 8;
+}
+
+static inline int process_wait_status_signaled(int term_signal) {
+	return term_signal & 0x7f;
+}
+
+static inline int process_wait_status_from_siginfo(const siginfo_t *siginfo) {
+	switch (siginfo->si_code) {
+		case CLD_EXITED:
+			return process_wait_status_exited(siginfo->si_status);
+		case CLD_KILLED:
+			return process_wait_status_signaled(siginfo->si_status);
+		case CLD_DUMPED:
+			return process_wait_status_signaled(siginfo->si_status) | 0x80;
+		default:
+			return 0;
+	}
+}
+#endif
+
 static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
@@ -559,11 +582,20 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 	if (result < 0) {
 		// The `waitid` failed (e.g. `ECHILD` when there are no children). Reproduce the failure as a `Process::Status` carrying the error, rather than raising, so callers like `Process.waitall` / `Process.detach` (which expect `waitpid` to report the error, not raise) behave correctly:
+#ifdef HAVE_RB_PROCESS_STATUS_FOR
+		return IO_Event_Selector_process_status_for(-1, 0, -result);
+#else
 		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
+#endif
 	}
 	
+#ifdef HAVE_RB_PROCESS_STATUS_FOR
+	// The `waitid` operation already reaped the child. Convert the `siginfo_t` result directly into the Ruby process status value:
+	return IO_Event_Selector_process_status_for(arguments->siginfo.si_pid, process_wait_status_from_siginfo(&arguments->siginfo), 0);
+#else
 	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid` tells us exactly which child changed state (important when waiting for any child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
 	return IO_Event_Selector_process_status_reap(arguments->siginfo.si_pid, arguments->flags);
+#endif
 #else
 	if (arguments->waiting->result) {
 		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
@@ -632,8 +664,13 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	id_t id;
 	idtype_t idtype = process_waitid_type(pid, &id);
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_waitid(fiber=%p, idtype=%d, id=%d, flags=%d)\n", (void*)fiber, idtype, (int)id, flags);
+#ifdef HAVE_RB_PROCESS_STATUS_FOR
+	// Reap the child directly; the completion contains enough information to construct the Ruby process status value:
+	io_uring_prep_waitid(sqe, idtype, id, &process_wait_arguments.siginfo, WEXITED, 0);
+#else
 	// `WNOWAIT` leaves the child in a waitable state so we can reap it with `rb_process_status_wait` afterwards and build a correct `Process::Status`:
 	io_uring_prep_waitid(sqe, idtype, id, &process_wait_arguments.siginfo, WEXITED | WNOWAIT, 0);
+#endif
 #else
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_process_wait:io_uring_prep_poll_add(%p)\n", (void*)fiber);
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
