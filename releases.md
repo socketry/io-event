@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.19.2
 
   - Use `rb_process_status_for` when available to construct `URing` `process_wait` results directly from `waitid`, avoiding the extra reap syscall previously needed to build a `Process::Status`.
 
