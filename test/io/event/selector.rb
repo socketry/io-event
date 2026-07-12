@@ -726,7 +726,7 @@ Selector = Sus::Shared("a selector") do
 			pid = Process.spawn(*command, **spawn_options)
 			_, expected = Process.wait2(pid)
 			
-			skip_unless(expected.respond_to?(:coredump?) && expected.coredump?, "core dump status is not reported on this platform")
+			next unless expected.respond_to?(:coredump?) && expected.coredump?
 			
 			result = nil
 			
