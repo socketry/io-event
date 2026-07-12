@@ -52,6 +52,7 @@ static inline int IO_Event_Selector_pending_interrupt(void) {
 int IO_Event_Selector_io_descriptor(VALUE io);
 #endif
 
+// Wait for a process to change state. This blocks until the process changes state, unless `WNOHANG` is given in `flags`.
 #ifdef HAVE_RB_PROCESS_STATUS_WAIT
 #define IO_Event_Selector_process_status_wait(pid, flags) rb_process_status_wait(pid, flags)
 #else
