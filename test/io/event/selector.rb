@@ -717,6 +717,35 @@ Selector = Sus::Shared("a selector") do
 			expect(result.termsig).to be == Signal.list.fetch("KILL")
 		end
 		
+		it "reports termination by signal with a core dump" do
+			skip_if_ruby_platform(/darwin|mswin|mingw|cygwin/)
+			
+			command = ["ruby", "-e", "Process.kill(:ABRT, $$)"]
+			spawn_options = {out: File::NULL, err: File::NULL, rlimit_core: 0}
+			
+			pid = Process.spawn(*command, **spawn_options)
+			_, expected = Process.wait2(pid)
+			
+			skip_unless(expected.respond_to?(:coredump?) && expected.coredump?, "core dump status is not reported on this platform")
+			
+			result = nil
+			
+			fiber = Fiber.new do
+				pid = Process.spawn(*command, **spawn_options)
+				result = selector.process_wait(Fiber.current, pid, 0)
+			end
+			
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(0)
+			end
+			
+			expect(result).to be(:signaled?)
+			expect(result.termsig).to be == expected.termsig
+			expect(result).to be(:coredump?)
+		end
+		
 		it "can wait for any child process" do
 			result1 = result2 = nil
 			pids = []
