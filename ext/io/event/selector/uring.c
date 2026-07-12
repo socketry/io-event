@@ -583,7 +583,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	if (result < 0) {
 		// The `waitid` failed (e.g. `ECHILD` when there are no children). Reproduce the failure as a `Process::Status` carrying the error, rather than raising, so callers like `Process.waitall` / `Process.detach` (which expect `waitpid` to report the error, not raise) behave correctly:
 #ifdef HAVE_RB_PROCESS_STATUS_FOR
-		return IO_Event_Selector_process_status_for(-1, 0, -result);
+		return rb_process_status_for(-1, 0, -result);
 #else
 		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
 #endif
@@ -591,7 +591,7 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	
 #ifdef HAVE_RB_PROCESS_STATUS_FOR
 	// The `waitid` operation already reaped the child. Convert the `siginfo_t` result directly into the Ruby process status value:
-	return IO_Event_Selector_process_status_for(arguments->siginfo.si_pid, process_wait_status_from_siginfo(&arguments->siginfo), 0);
+	return rb_process_status_for(arguments->siginfo.si_pid, process_wait_status_from_siginfo(&arguments->siginfo), 0);
 #else
 	// We waited with `WNOWAIT`, so the child has not been reaped yet. `si_pid` tells us exactly which child changed state (important when waiting for any child, e.g. pid -1). Reap it to obtain a correct `Process::Status`:
 	return IO_Event_Selector_process_status_reap(arguments->siginfo.si_pid, arguments->flags);
