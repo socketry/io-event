@@ -51,6 +51,7 @@ have_header("sys/eventfd.h")
 $srcs << "io/event/interrupt.c"
 
 have_func("rb_io_descriptor")
+have_func("rb_process_status_for")
 have_func("&rb_process_status_wait")
 have_func("rb_fiber_current")
 have_func("&rb_fiber_raise")
