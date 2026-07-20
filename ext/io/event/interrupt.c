@@ -2,13 +2,17 @@
 // Copyright, 2021-2025, by Samuel Williams.
 
 #include "interrupt.h"
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 
 #include "selector/selector.h"
 
 #ifdef HAVE_RUBY_WIN32_H
 #include <ruby/win32.h>
-#if !defined(HAVE_PIPE) && !defined(pipe)
+// The `pipe` emulation macro is only visible while building ruby itself (RUBY_EXPORT):
+#ifndef pipe
 #define pipe(p)	rb_w32_pipe(p)
 #endif
 #endif
