@@ -50,11 +50,6 @@ struct IO_Event_Selector_KQueue
 	int descriptor;
 	pid_t owner;
 	
-	// Flag indicating whether the selector is currently blocked in a system call.
-	// Set to 1 when blocked in kevent() without GVL, 0 otherwise.
-	// Used by wakeup() to determine if an interrupt signal is needed.
-	int blocked;
-	
 	struct timespec idle_duration;
 	
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
@@ -299,8 +294,6 @@ VALUE IO_Event_Selector_KQueue_allocate(VALUE self) {
 	IO_Event_Selector_initialize(&selector->backend, self, Qnil);
 	selector->descriptor = -1;
 	selector->owner = 0;
-	selector->blocked = 0;
-	
 	selector->descriptors.element_initialize = IO_Event_Selector_KQueue_Descriptor_initialize;
 	selector->descriptors.element_free = IO_Event_Selector_KQueue_Descriptor_free;
 	
@@ -850,14 +843,6 @@ int select_blocking_allowed(struct timespec * timespec) {
 	if (timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0) {
 		return 0;
 	}
-	
-#ifndef RB_NOGVL_PENDING_INTR_FAIL
-	// On Rubies without `RB_NOGVL_PENDING_INTR_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
-	if (IO_Event_Selector_pending_interrupt()) {
-		return 0;
-	}
-#endif
-	
 	return 1;
 }
 
@@ -886,14 +871,7 @@ void * select_internal(void *_arguments) {
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->result = -1;
-	arguments->selector->blocked = 1;
-	
-#ifdef RB_NOGVL_PENDING_INTR_FAIL
-	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTR_FAIL);
-#else
-	rb_thread_call_without_gvl2(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
-#endif
-	arguments->selector->blocked = 0;
+	IO_Event_Selector_blocking_operation(&arguments->selector->backend, select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	
 	if (arguments->result == -1) {
 		// If Ruby skips the native callback, the result sentinel can remain `-1`; `errno` may be `0` or `EINTR` depending on the Ruby implementation. Both cases mean the blocking wait did not produce any events.
@@ -1069,7 +1047,7 @@ VALUE IO_Event_Selector_KQueue_wakeup(VALUE self) {
 	struct IO_Event_Selector_KQueue *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_KQueue, &IO_Event_Selector_KQueue_Type, selector);
 	
-	if (selector->blocked) {
+	if (selector->backend.blocked) {
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 		IO_Event_Interrupt_signal(&selector->interrupt);
 #else

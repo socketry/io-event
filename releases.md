@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Prevent `URing`, `EPoll`, and `KQueue` from entering a native wait when a signal exception becomes pending during the GVL transition. On Ruby versions without `RB_NOGVL_PENDING_INTR_FAIL`, the fallback now refreshes pending-interrupt state immediately before releasing the GVL while preserving the caller's exception-delivery timing.
+
 ## v1.19.2
 
   - Use `rb_process_status_for` when available to construct `URing` `process_wait` results directly from `waitid`, avoiding the extra reap syscall previously needed to build a `Process::Status`.

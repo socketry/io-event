@@ -42,10 +42,6 @@ struct IO_Event_Selector_URing
 	struct io_uring ring;
 	pid_t owner;
 	
-	// Flag indicating whether the selector is currently blocked in a system call.
-	// Set to 1 when blocked in io_uring_wait_cqe_timeout() without GVL, 0 otherwise.
-	int blocked;
-	
 	// Interrupt used to wake the selector from another thread without touching the ring's SQ.
 	// This allows IORING_SETUP_SINGLE_ISSUER: only the owner thread ever submits SQEs.
 	// Uses eventfd on Linux, pipe fallback elsewhere.
@@ -254,7 +250,6 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	selector->ring.ring_fd = -1;
 	selector->owner = 0;
 	
-	selector->blocked = 0;
 	selector->interrupt.descriptor = -1;
 	selector->wakeup_registered = 0;
 	
@@ -1247,14 +1242,6 @@ int select_blocking_allowed(struct __kernel_timespec *timespec) {
 	if (timespec && timespec->tv_sec == 0 && timespec->tv_nsec == 0) {
 		return 0;
 	}
-	
-#ifndef RB_NOGVL_PENDING_INTR_FAIL
-	// On Rubies without `RB_NOGVL_PENDING_INTR_FAIL`, `rb_thread_call_without_gvl2` can enter an indefinite native wait even if a masked interrupt is already pending for this thread. This is the last safe point to avoid that wait: we still hold the GVL, so the pending interrupt queue cannot change concurrently before we decide whether to enter the blocking path.
-	if (IO_Event_Selector_pending_interrupt()) {
-		return 0;
-	}
-#endif
-	
 	return 1;
 }
 
@@ -1295,13 +1282,7 @@ int select_internal_without_gvl(struct select_arguments *arguments) {
 	io_uring_submit_flush(selector);
 	
 	arguments->result = -EINTR;
-	selector->blocked = 1;
-#ifdef RB_NOGVL_PENDING_INTR_FAIL
-	rb_nogvl(select_internal, (void *)arguments, RUBY_UBF_IO, 0, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTR_FAIL);
-#else
-	rb_thread_call_without_gvl2(select_internal, (void *)arguments, RUBY_UBF_IO, 0);
-#endif
-	selector->blocked = 0;
+	IO_Event_Selector_blocking_operation(&selector->backend, select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	
 	if (arguments->result == -ETIME) {
 		return 0;
@@ -1455,7 +1436,7 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 	
 	// Wake the selector by signalling the interrupt. This is safe from any thread
 	// and never touches the ring's SQ, which is required for IORING_SETUP_SINGLE_ISSUER.
-	if (selector->blocked) {
+	if (selector->backend.blocked) {
 		IO_Event_Interrupt_signal(&selector->interrupt);
 		return Qtrue;
 	}
