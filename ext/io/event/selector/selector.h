@@ -40,11 +40,11 @@ static inline int IO_Event_try_again(int error) {
 	return error == EAGAIN || error == EWOULDBLOCK;
 }
 
-extern ID IO_Event_Selector_pending_interrupt_p_id;
-
-static inline int IO_Event_Selector_pending_interrupt(void) {
-	return RTEST(rb_funcall(rb_cThread, IO_Event_Selector_pending_interrupt_p_id, 0));
-}
+// Enter a blocking region without the GVL. On Rubies without
+// `RB_NOGVL_PENDING_INTR_FAIL`, refresh pending-interrupt state immediately
+// before releasing the GVL so a signal cannot be stranded in the queue.
+struct IO_Event_Selector;
+void IO_Event_Selector_blocking_operation(struct IO_Event_Selector *selector, void *(*function)(void *), void *data, rb_unblock_function_t *unblock_function, void *unblock_data);
 
 #ifdef HAVE_RB_IO_DESCRIPTOR
 #define IO_Event_Selector_io_descriptor(io) rb_io_descriptor(io)
@@ -89,6 +89,10 @@ struct IO_Event_Selector_Queue {
 struct IO_Event_Selector {
 	VALUE self;
 	VALUE loop;
+	
+	// Whether the selector is currently blocked in a system call without the GVL.
+	// Used by wakeup() to determine if an interrupt signal is needed.
+	int blocked;
 	
 	// The ready queue is a list of fibers that are ready to be resumed from the event loop fiber.
 	// Append to waiting (front/head of queue).
