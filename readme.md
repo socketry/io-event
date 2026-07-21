@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.19.3
+
+  - Prevent `URing`, `EPoll`, and `KQueue` from entering a native wait when a signal exception becomes pending during the GVL transition. On Ruby versions without `RB_NOGVL_PENDING_INTR_FAIL`, the fallback now refreshes pending-interrupt state immediately before releasing the GVL while preserving the caller's exception-delivery timing.
+
 ### v1.19.2
 
   - Use `rb_process_status_for` when available to construct `URing` `process_wait` results directly from `waitid`, avoiding the extra reap syscall previously needed to build a `Process::Status`.
@@ -54,16 +58,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.16.1
 
   - Ensure the pure Ruby `Select` selector returns `false`, not `nil`, when `io_wait` resumes without any ready events.
-
-### v1.16.0
-
-  - Use `eventfd` for `URing` cross-thread wakeup, and enable `IORING_SETUP_SINGLE_ISSUER`, `IORING_SETUP_DEFER_TASKRUN`, and `IORING_SETUP_TASKRUN_FLAG`. The waking thread now signals via `eventfd` rather than submitting a `NOP` SQE, which unlocks the single-issuer optimisation, defers task work to the application thread, and lets `select()` skip the `io_uring_get_events()` syscall when no task work is pending.
-  - Add support for the `io_close` fiber-scheduler hook (Ruby 4.0+). The `URing` selector performs the close asynchronously via the ring; the `Debug::Selector` and `TestScheduler` wrappers forward to the underlying selector when supported.
-  - Improve `WorkerPool` GC compaction support and add proper write barriers, fixing potential use-after-free under compacting GC.
-  - Keep blocked scheduler fibers alive during GC by registering them as roots in `TestScheduler#block`, preventing premature collection and the resulting use-after-free crash on resume.
-  - Use Ruby's `xmalloc` / `xcalloc` / `xrealloc2` / `xfree` for all internal selector allocations (the per-fiber ready-queue entries in `IO_Event_Selector_ready_push`, and both the backing array and per-element allocations in `IO_Event_Array`). Previously a raw `malloc` paired with a debug-build-only `assert(...)` would silently dereference `NULL` and crash in release builds under memory pressure; the Ruby allocators trigger a GC sweep on pressure and raise `NoMemoryError` / `RangeError` on real failure, so the `-1` return-code paths through `IO_Event_Array_initialize` / `_resize` / `_lookup` and their callers in `epoll.c` / `kqueue.c` / `uring.c` are removed in favour of straight exception propagation.
-  - Correctly handle short `io_uring_submit()` results in the `URing` selector. `io_uring_submit()` returns the number of SQEs actually accepted by the kernel and can be short (SQE prep errors, `ENOMEM`, transient `EAGAIN`); the old accounting reset `pending = 0` on any success and silently lost track of unsubmitted SQEs.
-  - Enable `IORING_SETUP_SUBMIT_ALL` (kernel 5.18+) on the `URing` selector so the kernel keeps processing the rest of an SQE batch past individual errors, reducing the frequency of short submits in practice.
 
 ## Contributing
 
