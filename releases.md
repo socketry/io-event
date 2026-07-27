@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.19.4
 
   - Capture `errno` immediately after `epoll_wait` / `kevent`, preventing stale or subsequently clobbered values from raising a spurious `Errno::*` when a native selector wait is interrupted or skipped.
 
