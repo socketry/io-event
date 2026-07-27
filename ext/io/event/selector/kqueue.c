@@ -851,6 +851,7 @@ struct select_arguments {
 	
 	int count;
 	int result;
+	int error;
 	struct kevent events[KQUEUE_MAX_EVENTS];
 	
 	struct timespec storage;
@@ -864,6 +865,7 @@ void * select_internal(void *_arguments) {
 	struct select_arguments * arguments = (struct select_arguments *)_arguments;
 	
 	arguments->result = kevent(arguments->selector->descriptor, NULL, 0, arguments->events, arguments->count, arguments->timeout);
+	arguments->error = errno;
 	
 	return NULL;
 }
@@ -871,12 +873,12 @@ void * select_internal(void *_arguments) {
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->result = -1;
+	arguments->error = EINTR;
 	IO_Event_Selector_blocking_operation(&arguments->selector->backend, select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	
 	if (arguments->result == -1) {
-		// If Ruby skips the native callback, the result sentinel can remain `-1`; `errno` may be `0` or `EINTR` depending on the Ruby implementation. Both cases mean the blocking wait did not produce any events.
-		if (errno != EINTR && errno != 0) {
-			rb_sys_fail("select_internal_without_gvl:kevent");
+		if (arguments->error != EINTR) {
+			rb_syserr_fail(arguments->error, "select_internal_without_gvl:kevent");
 		} else {
 			return 0;
 		}
@@ -890,8 +892,8 @@ int select_internal_with_gvl(struct select_arguments *arguments) {
 	select_internal((void *)arguments);
 	
 	if (arguments->result == -1) {
-		if (errno != EINTR) {
-			rb_sys_fail("select_internal_with_gvl:kevent");
+		if (arguments->error != EINTR) {
+			rb_syserr_fail(arguments->error, "select_internal_with_gvl:kevent");
 		} else {
 			return 0;
 		}

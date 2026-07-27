@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Capture `errno` immediately after `epoll_wait` / `kevent`, preventing stale or subsequently clobbered values from raising a spurious `Errno::*` when a native selector wait is interrupted or skipped.
+
 ## v1.19.3
 
   - Prevent `URing`, `EPoll`, and `KQueue` from entering a native wait when a signal exception becomes pending during the GVL transition. On Ruby versions without `RB_NOGVL_PENDING_INTR_FAIL`, the fallback now refreshes pending-interrupt state immediately before releasing the GVL while preserving the caller's exception-delivery timing.
