@@ -6,7 +6,6 @@
 require "io/event"
 require "io/event/selector"
 require "socket"
-require "fiddle"
 
 Interruptable = Sus::Shared("interruptable") do
 	it "ignores stale errno with pending interrupts" do
@@ -25,7 +24,11 @@ Interruptable = Sus::Shared("interruptable") do
 			begin
 				Thread.handle_interrupt(::SignalException => :never) do
 					Thread.current.raise(::Interrupt)
-					Fiddle.last_error = Errno::ENOENT::Errno
+					begin
+						File.stat(__FILE__ + ".missing")
+					rescue Errno::ENOENT
+					end
+					
 					result = selector.select(nil)
 				end
 			rescue ::Interrupt
@@ -33,7 +36,6 @@ Interruptable = Sus::Shared("interruptable") do
 		ensure
 			watchdog.kill
 			watchdog.join
-			Fiddle.last_error = 0
 		end
 		
 		expect(result).to be == 0
