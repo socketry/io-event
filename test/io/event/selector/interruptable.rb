@@ -8,7 +8,7 @@ require "io/event/selector"
 require "socket"
 
 Interruptable = Sus::Shared("interruptable") do
-	it "does not block with pending interrupts" do
+	it "ignores stale errno with pending interrupts" do
 		selector = subject.new(Fiber.current)
 		woken = false
 		
@@ -23,7 +23,16 @@ Interruptable = Sus::Shared("interruptable") do
 		begin
 			begin
 				Thread.handle_interrupt(::SignalException => :never) do
+					# Keep an interrupt pending so Ruby may skip the native selector callback.
 					Thread.current.raise(::Interrupt)
+					
+					# Leave an unrelated ENOENT in thread-local errno. A skipped callback must
+					# not mistake this stale value for an error from epoll_wait/kevent.
+					begin
+						File.stat(__FILE__ + ".missing")
+					rescue Errno::ENOENT
+					end
+					
 					result = selector.select(nil)
 				end
 			rescue ::Interrupt

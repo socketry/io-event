@@ -847,6 +847,7 @@ struct select_arguments {
 	
 	int count;
 	int result;
+	int error;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
 	
 	struct timespec * timeout;
@@ -868,9 +869,9 @@ static int make_timeout_ms(struct timespec * timeout) {
 }
 
 static
-int enosys_error(int result) {
+int enosys_error(int result, int error) {
 	if (result == -1) {
-		return errno == ENOSYS;
+		return error == ENOSYS;
 	}
 	
 	return 0;
@@ -882,12 +883,13 @@ void * select_internal(void *_arguments) {
 	
 #if defined(HAVE_EPOLL_PWAIT2)
 	arguments->result = epoll_pwait2(arguments->selector->descriptor, arguments->events, arguments->count, arguments->timeout, NULL);
+	arguments->error = errno;
 	
 	// Comment out the above line and enable the below lines to test ENOSYS code path.
 	// arguments->result = -1;
-	// errno = ENOSYS;
+	// arguments->error = ENOSYS;
 	
-	if (!enosys_error(arguments->result)) {
+	if (!enosys_error(arguments->result, arguments->error)) {
 		return NULL;
 	}
 	else {
@@ -896,6 +898,7 @@ void * select_internal(void *_arguments) {
 #endif
 	
 	arguments->result = epoll_wait(arguments->selector->descriptor, arguments->events, arguments->count, make_timeout_ms(arguments->timeout));
+	arguments->error = errno;
 	
 	return NULL;
 }
@@ -903,12 +906,12 @@ void * select_internal(void *_arguments) {
 static
 int select_internal_without_gvl(struct select_arguments *arguments) {
 	arguments->result = -1;
+	arguments->error = EINTR;
 	IO_Event_Selector_blocking_operation(&arguments->selector->backend, select_internal, (void *)arguments, RUBY_UBF_IO, 0);
 	
 	if (arguments->result == -1) {
-		// If Ruby skips the native callback, the result sentinel can remain `-1`; `errno` may be `0` or `EINTR` depending on the Ruby implementation. Both cases mean the blocking wait did not produce any events.
-		if (errno != EINTR && errno != 0) {
-			rb_sys_fail("select_internal_without_gvl:epoll_wait");
+		if (arguments->error != EINTR) {
+			rb_syserr_fail(arguments->error, "select_internal_without_gvl:epoll_wait");
 		} else {
 			return 0;
 		}
@@ -922,8 +925,8 @@ int select_internal_with_gvl(struct select_arguments *arguments) {
 	select_internal((void *)arguments);
 	
 	if (arguments->result == -1) {
-		if (errno != EINTR) {
-			rb_sys_fail("select_internal_with_gvl:epoll_wait");
+		if (arguments->error != EINTR) {
+			rb_syserr_fail(arguments->error, "select_internal_with_gvl:epoll_wait");
 		} else {
 			return 0;
 		}
