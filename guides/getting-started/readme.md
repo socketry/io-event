@@ -25,29 +25,64 @@ This example shows how to perform a blocking operation
 require "fiber"
 require "io/event"
 
+# Create an I/O event selector controlled by the main Fiber.
 selector = IO::Event::Selector.new(Fiber.current)
+
+# input: read end, output: write end.
 input, output = IO.pipe
 
 writer = Fiber.new do
+	puts "[writer] Started"
+	puts "[writer] Writing data..."
+
 	output.write("Hello World")
 	output.close
+
+	puts "[writer] Finished"
 end
 
 reader = Fiber.new do
-	selector.io_wait(Fiber.current, input, IO::READABLE)
-	pp read: input.read
+	puts "[reader] Started"
+	puts "[reader] No data available. Waiting for input..."
+
+	# Suspend this Fiber until the input becomes readable.
+	selector.io_wait(
+		Fiber.current,
+		input,
+		IO::READABLE
+	)
+
+	# Execution resumes here once the selector detects the event.
+	puts "[reader] Received: #{input.read.inspect}"
+	puts "[reader] Finished"
 end
 
-# The reader will be blocked until the IO has data available:
+puts "[main] Starting reader"
 reader.transfer
 
-# Write some data to the pipe and close the writing end:
+puts "[main] The reader is waiting, but I can keep running"
+
+puts "[main] Starting writer"
 writer.transfer
 
+puts "[main] Checking for I/O events"
 selector.select(1)
 
+puts "[main] Done"
+
 # Results in:
-# {:read=>"Hello World"}
+# [main] Starting reader
+# [reader] Started
+# [reader] No data available. Waiting for input...
+# [main] The reader is waiting, but I can keep running
+# [main] Starting writer
+# [writer] Started
+# [writer] Writing data...
+# [writer] Finished
+# [main] Checking for I/O events
+# [reader] Received: "Hello World"
+# [reader] Finished
+# [main] Done
 ```
 
 ## Debugging
