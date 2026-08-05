@@ -47,7 +47,7 @@ writer.transfer
 selector.select(1)
 
 # Results in:
-# {:read=>"Hello World"}
+# {read: "Hello World"}
 ```
 
 ## Debugging
