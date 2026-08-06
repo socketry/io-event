@@ -32,18 +32,14 @@ selector = IO::Event::Selector.new(Fiber.current)
 input, output = IO.pipe
 
 writer = Fiber.new do
-	puts "[writer] Started"
-	puts "[writer] Writing data..."
+	puts "[writer] Writing data"
 
 	output.write("Hello World")
 	output.close
-
-	puts "[writer] Finished"
 end
 
 reader = Fiber.new do
-	puts "[reader] Started"
-	puts "[reader] No data available. Waiting for input..."
+	puts "[reader] No data available, waiting for input"
 
 	# Suspend this Fiber until the input becomes readable.
 	selector.io_wait(
@@ -54,15 +50,14 @@ reader = Fiber.new do
 
 	# Execution resumes here once the selector detects the event.
 	puts "[reader] Received: #{input.read.inspect}"
-	puts "[reader] Finished"
 end
 
-puts "[main] Starting reader"
+puts "[main] Transferring to reader fiber"
 reader.transfer
 
-puts "[main] The reader is waiting, but I can keep running"
+puts "[main] Reader is waiting, but main can keep running"
 
-puts "[main] Starting writer"
+puts "[main] Transferring to writer fiber"
 writer.transfer
 
 puts "[main] Checking for I/O events"
@@ -71,17 +66,13 @@ selector.select(1)
 puts "[main] Done"
 
 # Results in:
-# [main] Starting reader
-# [reader] Started
-# [reader] No data available. Waiting for input...
-# [main] The reader is waiting, but I can keep running
-# [main] Starting writer
-# [writer] Started
-# [writer] Writing data...
-# [writer] Finished
+# [main] Transferring to reader fiber
+# [reader] No data available, waiting for input
+# [main] Reader is waiting, but main can keep running
+# [main] Transferring to writer fiber
+# [writer] Writing data
 # [main] Checking for I/O events
 # [reader] Received: "Hello World"
-# [reader] Finished
 # [main] Done
 ```
 
