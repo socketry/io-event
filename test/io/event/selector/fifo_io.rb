@@ -21,6 +21,7 @@ FifoIO = Sus::Shared("fifo io") do
 		
 		it "can read and write" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			skip "JRuby's Java NIO selector does not support FIFO channels" if RUBY_ENGINE == "jruby"
 			
 			File.mkfifo(path)
 			
