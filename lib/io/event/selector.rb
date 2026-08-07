@@ -10,7 +10,7 @@ require_relative "debug/selector"
 module IO::Event
 	# @namespace
 	module Selector
-		selectors = [:URing, :EPoll, :KQueue, :Select]
+		selectors = [:URing, :EPoll, :KQueue, :IOCP, :Select]
 		BEST = const_get(selectors.find{|name| const_defined?(name)})
 		private_constant :BEST
 		

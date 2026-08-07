@@ -20,7 +20,7 @@ group :maintenance, optional: true do
 end
 
 group :test do
-	gem "sus"
+	gem "sus", "0.37.1"
 	gem "sus-fixtures-benchmark"
 	gem "covered"
 	
