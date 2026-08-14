@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.19.5
+
+  - Preserve the original exception or non-local control flow when `IO::Event::WorkerPool` cancellation interrupts a blocked fiber, while still cancelling and draining the in-flight blocking operation before returning control to Ruby.
+
 ### v1.19.4
 
   - Capture `errno` immediately after `epoll_wait` / `kevent`, preventing stale or subsequently clobbered values from raising a spurious `Errno::*` when a native selector wait is interrupted or skipped.
@@ -54,10 +58,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.16.3
 
   - Handle `IOError` raised while shutting down the pure Ruby interrupt pipe, so `IO::Event::Interrupt#close` does not leak expected shutdown errors from the interrupt fiber.
-
-### v1.16.2
-
-  - Improve timer heap performance by batching scheduled timer insertion, compacting cancelled timers during flush, and avoiding unnecessary heap rebuilds for small incremental inserts.
 
 ## Contributing
 

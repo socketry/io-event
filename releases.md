@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.19.5
 
   - Preserve the original exception or non-local control flow when `IO::Event::WorkerPool` cancellation interrupts a blocked fiber, while still cancelling and draining the in-flight blocking operation before returning control to Ruby.
 
