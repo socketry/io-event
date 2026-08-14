@@ -41,6 +41,7 @@ describe IO::Event.const_get(:Interrupt) do
 	with "test scheduler" do
 		it "can be used to wake up a fiber blocked in `Thread#join`" do
 			skip_unless_method_defined(:fork, Process.singleton_class)
+			skip "Process.fork is not available on JRuby" if RUBY_ENGINE == "jruby"
 			
 			10.times do
 				r, w = IO.pipe
@@ -51,8 +52,6 @@ describe IO::Event.const_get(:Interrupt) do
 					Fiber.set_scheduler(scheduler)
 					
 					Fiber.schedule do
-						selector.dump_state($stderr, label: "interrupt fork before fork") if ENV["IO_EVENT_DIAGNOSTICS"]
-						
 						pid = Process.fork do
 							# Child process:
 							w.write("hello")
