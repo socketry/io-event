@@ -306,10 +306,10 @@ static VALUE worker_pool_initialize(int argc, VALUE *argv, VALUE self) {
 	return self;
 }
 
-static VALUE worker_pool_work_begin(VALUE _work) {
+static VALUE worker_pool_work_block(VALUE _work) {
 	struct IO_Event_WorkerPool_Work *work = (void*)_work;
 
-	if (DEBUG) fprintf(stderr, "worker_pool_work_begin:rb_fiber_scheduler_block work=%p\n", work);
+	if (DEBUG) fprintf(stderr, "worker_pool_work_block:rb_fiber_scheduler_block work=%p\n", work);
 	rb_fiber_scheduler_block(work->scheduler, work->blocker, Qnil);
 
 	return Qnil;
@@ -319,7 +319,7 @@ static VALUE worker_pool_work_wait(VALUE _work) {
 	struct IO_Event_WorkerPool_Work *work = (void*)_work;
 
 	while (true) {
-		worker_pool_work_begin(_work);
+		worker_pool_work_block(_work);
 		if (DEBUG) fprintf(stderr, "-- worker_pool_work_wait:work completed=%d\n", work->completed);
 		
 		if (work->completed) {
@@ -341,7 +341,7 @@ static VALUE worker_pool_work_ensure(VALUE _work) {
 		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
 		
 		int state = 0;
-		rb_protect(worker_pool_work_begin, _work, &state);
+		rb_protect(worker_pool_work_block, _work, &state);
 		if (DEBUG) fprintf(stderr, "-- worker_pool_work_ensure:work completed=%d, state=%d\n", work->completed, state);
 		
 		if (state) {
