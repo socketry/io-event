@@ -315,6 +315,45 @@ static VALUE worker_pool_work_begin(VALUE _work) {
 	return Qnil;
 }
 
+static VALUE worker_pool_work_wait(VALUE _work) {
+	struct IO_Event_WorkerPool_Work *work = (void*)_work;
+
+	while (true) {
+		worker_pool_work_begin(_work);
+		if (DEBUG) fprintf(stderr, "-- worker_pool_work_wait:work completed=%d\n", work->completed);
+		
+		if (work->completed) {
+			break;
+		}
+		
+		if (DEBUG) fprintf(stderr, "worker_pool_work_wait:rb_fiber_scheduler_blocking_operation_cancel\n");
+		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
+	}
+
+	return Qtrue;
+}
+
+static VALUE worker_pool_work_ensure(VALUE _work) {
+	struct IO_Event_WorkerPool_Work *work = (void*)_work;
+
+	while (!work->completed) {
+		if (DEBUG) fprintf(stderr, "worker_pool_work_ensure:rb_fiber_scheduler_blocking_operation_cancel\n");
+		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
+		
+		int state = 0;
+		rb_protect(worker_pool_work_begin, _work, &state);
+		if (DEBUG) fprintf(stderr, "-- worker_pool_work_ensure:work completed=%d, state=%d\n", work->completed, state);
+		
+		if (state) {
+			// Ignore errors raised while waiting for cancellation to complete. rb_ensure
+			// will restore and rethrow the original control-flow state after this returns.
+			rb_set_errinfo(Qnil);
+		}
+	}
+
+	return Qnil;
+}
+
 // Ruby method to submit work and wait for completion
 static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	struct IO_Event_WorkerPool *pool;
@@ -357,43 +396,10 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	pthread_cond_signal(&pool->work_available);
 	pthread_mutex_unlock(&pool->mutex);
 	
-	// Block the current fiber until work is completed:
-	int state = 0;
-	VALUE saved_errinfo = Qnil;
-	while (true) {
-		int current_state = 0;
-		rb_protect(worker_pool_work_begin, (VALUE)&work, &current_state);
-		if (DEBUG) fprintf(stderr, "-- worker_pool_call:work completed=%d, current_state=%d, state=%d\n", work.completed, current_state, state);
-		
-		// Store the first exception state and errinfo:
-		if (!state && current_state) {
-			state = current_state;
-			saved_errinfo = rb_errinfo();
-		}
-		
-		// If the work is still in the queue, we must wait for a worker to complete it (even if cancelled):
-		if (work.completed) {
-			// The work was completed, we can exit the loop:
-			break;
-		} else {
-			if (DEBUG) fprintf(stderr, "worker_pool_call:rb_fiber_scheduler_blocking_operation_cancel\n");
-			// Ensure the blocking operation is cancelled:
-			rb_fiber_scheduler_blocking_operation_cancel(blocking_operation);
-			
-			// The work was not completed, we need to wait for it to be completed, so we go around the loop again.
-		}
-	}
-	
-	if (DEBUG) fprintf(stderr, "<- worker_pool_call:work completed=%d, state=%d\n", work.completed, state);
-	
-	if (state) {
-		// Restore the saved errinfo in case a later iteration's rb_fiber_scheduler_block
-		// ran Ruby code with a rescue clause that cleared ec->errinfo.
-		rb_set_errinfo(saved_errinfo);
-		rb_jump_tag(state);
-	} else {
-		return Qtrue;
-	}
+	// Block the current fiber until work is completed. If blocking exits via an
+	// exception or another non-local jump, ensure the work is cancelled and fully
+	// drained before Ruby restores and rethrows the original control-flow state.
+	return rb_ensure(worker_pool_work_wait, (VALUE)&work, worker_pool_work_ensure, (VALUE)&work);
 }
 
 static VALUE worker_pool_allocate(VALUE klass) {
