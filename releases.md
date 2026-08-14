@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Preserve the original exception or non-local control flow when `IO::Event::WorkerPool` cancellation interrupts a blocked fiber, while still cancelling and draining the in-flight blocking operation before returning control to Ruby.
+
 ## v1.19.4
 
   - Capture `errno` immediately after `epoll_wait` / `kevent`, preventing stale or subsequently clobbered values from raising a spurious `Errno::*` when a native selector wait is interrupted or skipped.
