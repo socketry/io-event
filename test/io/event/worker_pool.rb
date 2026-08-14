@@ -225,4 +225,54 @@ describe IO::Event::WorkerPool do
 			)
 		end
 	end
+	
+	with "scheduler that rescues internally in block" do
+		# A scheduler whose block method raises on the first call
+		# and rescues on a subsequent call clearing ec->errinfo.
+		class RescuingBlockScheduler < IO::Event::TestScheduler
+			attr_reader :rescued
+			
+			def initialize(...)
+				super
+				@block_call_count = 0
+			end
+			
+			def block(blocker, timeout = nil)
+				@block_call_count += 1
+				
+				raise StandardError, "first block failure" if @block_call_count == 1
+				
+				begin
+					raise StandardError, "internal block error"
+				rescue
+					@rescued = true
+				end
+				super
+			end
+		end
+		
+		it "preserves the original exception through block rescue" do
+			result = nil
+			rescued = false
+			
+			Thread.new do
+				scheduler = RescuingBlockScheduler.new
+				Fiber.set_scheduler(scheduler)
+				
+				Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: 2.0)
+				end
+				rescued = scheduler.rescued
+			ensure
+				Fiber.set_scheduler(nil)
+				scheduler&.close
+			end.value
+			
+			expect(result).to be_a(Hash)
+			expect(result[:result]).to be == :exception
+			expect(result[:exception]).to be_a(StandardError)
+			expect(result[:exception].message).to be == "first block failure"
+			expect(rescued).to be == true
+		end
+	end
 end

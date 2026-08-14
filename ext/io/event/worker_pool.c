@@ -359,14 +359,16 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	
 	// Block the current fiber until work is completed:
 	int state = 0;
+	VALUE saved_errinfo = Qnil;
 	while (true) {
 		int current_state = 0;
 		rb_protect(worker_pool_work_begin, (VALUE)&work, &current_state);
 		if (DEBUG) fprintf(stderr, "-- worker_pool_call:work completed=%d, current_state=%d, state=%d\n", work.completed, current_state, state);
 		
-		// Store the first exception state:
-		if (!state) {
+		// Store the first exception state and errinfo:
+		if (!state && current_state) {
 			state = current_state;
+			saved_errinfo = rb_errinfo();
 		}
 		
 		// If the work is still in the queue, we must wait for a worker to complete it (even if cancelled):
@@ -385,6 +387,9 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	if (DEBUG) fprintf(stderr, "<- worker_pool_call:work completed=%d, state=%d\n", work.completed, state);
 	
 	if (state) {
+		// Restore the saved errinfo in case a later iteration's rb_fiber_scheduler_block
+		// ran Ruby code with a rescue clause that cleared ec->errinfo.
+		rb_set_errinfo(saved_errinfo);
 		rb_jump_tag(state);
 	} else {
 		return Qtrue;
