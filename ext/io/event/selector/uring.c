@@ -871,7 +871,9 @@ static VALUE IO_Event_Selector_URing_futex_wait(VALUE self, VALUE fiber, VALUE f
 	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
 	
-	return rb_ensure(futex_wait_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	VALUE result = rb_ensure(futex_wait_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(futex);
+	return result;
 }
 
 #ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
@@ -932,7 +934,9 @@ static VALUE IO_Event_Selector_URing_futex_waitv(VALUE self, VALUE fiber, VALUE 
 	io_uring_sqe_set_data(sqe, completion);
 	io_uring_submit_pending(selector);
 	
-	return rb_ensure(futex_waitv_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	VALUE result = rb_ensure(futex_waitv_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(entries);
+	return result;
 }
 
 #endif
