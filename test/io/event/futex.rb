@@ -47,6 +47,31 @@ describe IO::Event::Futex do
 			expect(futex.increment(2)).to be == 3
 		end
 	end
+
+	with "#decrement" do
+		it "decrements the value" do
+			futex.value = 3
+
+			expect(futex.decrement).to be == 2
+			expect(futex.decrement(2)).to be == 0
+		end
+	end
+
+	with "#compare_exchange" do
+		it "exchanges a matching value" do
+			futex.value = 2
+
+			expect(futex.compare_exchange(2, 1)).to be == true
+			expect(futex.value).to be == 1
+		end
+
+		it "does not exchange a different value" do
+			futex.value = 2
+
+			expect(futex.compare_exchange(1, 0)).to be == false
+			expect(futex.value).to be == 2
+		end
+	end
 	
 	with "offset:" do
 		it "can address independent words in one buffer" do
