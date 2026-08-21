@@ -7,4 +7,4 @@
 
 #define IO_EVENT_SELECTOR_URING
 
-void Init_IO_Event_Selector_URing(VALUE IO_Event, VALUE IO_Event_Selector);
+void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector);
