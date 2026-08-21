@@ -2265,7 +2265,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event, VALUE IO_Event_Selector) {
 		
 #ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
 		if (IO_Event_Selector_URing_futex_waitv_supported) {
-			rb_define_method(IO_Event_Selector_URing, "futex_waitv", IO_Event_Selector_URing_futex_waitv, 3);
+			rb_define_method(IO_Event_Selector_URing, "futex_waitv", IO_Event_Selector_URing_futex_waitv, 2);
 		}
 #endif
 	}
