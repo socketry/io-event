@@ -3,6 +3,7 @@
 
 #include "event.h"
 #include "fiber.h"
+#include "futex.h"
 #include "selector/selector.h"
 
 void Init_IO_Event(void)
@@ -15,6 +16,10 @@ void Init_IO_Event(void)
 	
 	Init_IO_Event_Fiber(IO_Event);
 
+	#ifdef IO_EVENT_FUTEX
+	Init_IO_Event_Futex(IO_Event);
+	#endif
+
 	#ifdef HAVE_IO_EVENT_WORKER_POOL
 	Init_IO_Event_WorkerPool(IO_Event);
 	#endif
@@ -23,7 +28,7 @@ void Init_IO_Event(void)
 	Init_IO_Event_Selector(IO_Event_Selector);
 	
 	#ifdef IO_EVENT_SELECTOR_URING
-	Init_IO_Event_Selector_URing(IO_Event, IO_Event_Selector);
+	Init_IO_Event_Selector_URing(IO_Event_Selector);
 	#endif
 	
 	#ifdef IO_EVENT_SELECTOR_EPOLL
