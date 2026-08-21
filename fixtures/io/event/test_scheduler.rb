@@ -37,6 +37,11 @@ module IO::Event
 			def io_close(descriptor)
 				@selector.io_close(descriptor)
 			end
+			
+			# Wait while the futex contains the expected value.
+			def futex_wait(futex, expected)
+				@selector.futex_wait(Fiber.current, futex, expected)
+			end
 		end
 		
 		def initialize(selector: nil, worker_pool: nil, maximum_worker_count: nil)
