@@ -17,12 +17,20 @@
 
 #include <linux/version.h>
 
-#if defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
+#if defined(__linux__) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
 #include <linux/futex.h>
 #include <sys/syscall.h>
 
 #ifndef FUTEX2_SIZE_U32
 #define FUTEX2_SIZE_U32 2
+#endif
+
+#ifndef FUTEX_32
+#define FUTEX_32 2
+#endif
+
+#ifndef FUTEX_WAITV_MAX
+#define FUTEX_WAITV_MAX 128
 #endif
 #endif
 
@@ -43,7 +51,7 @@ enum {
 
 enum {URING_ENTRIES = 64};
 
-#if defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
+#if defined(__linux__) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
 
 #pragma mark - Futex Data Type
 
@@ -180,6 +188,138 @@ static uint32_t *IO_Event_Futex_address(VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Futex, &IO_Event_Futex_Type, futex);
 	return futex->address;
 }
+
+static ID id_futex_wait;
+static ID id_futex_waitv;
+
+struct IO_Event_Futex_BlockingWait {
+	uint32_t *address;
+	uint32_t expected;
+	int result;
+	int error;
+};
+
+static void *IO_Event_Futex_blocking_wait_without_gvl(void *_arguments) {
+	struct IO_Event_Futex_BlockingWait *arguments = _arguments;
+	arguments->result = syscall(SYS_futex, arguments->address, FUTEX_WAIT, arguments->expected, NULL, NULL, 0);
+	arguments->error = arguments->result < 0 ? errno : 0;
+	return NULL;
+}
+
+static VALUE IO_Event_Futex_blocking_wait(VALUE self, VALUE expected_value) {
+	struct IO_Event_Futex_BlockingWait arguments = {
+		.address = IO_Event_Futex_address(self),
+		.expected = NUM2UINT(expected_value),
+	};
+
+	rb_thread_call_without_gvl(IO_Event_Futex_blocking_wait_without_gvl, &arguments, RUBY_UBF_IO, 0);
+
+	if (arguments.result == 0) {
+		return Qtrue;
+	} else if (arguments.error == EAGAIN) {
+		return Qfalse;
+	} else {
+		rb_syserr_fail(arguments.error, "IO_Event_Futex_blocking_wait:futex");
+	}
+
+	return Qfalse;
+}
+
+#ifdef SYS_futex_waitv
+
+struct IO_Event_Futex_BlockingWaitV {
+	struct futex_waitv *vector;
+	size_t count;
+	int result;
+	int error;
+};
+
+static void *IO_Event_Futex_blocking_waitv_without_gvl(void *_arguments) {
+	struct IO_Event_Futex_BlockingWaitV *arguments = _arguments;
+	arguments->result = syscall(SYS_futex_waitv, arguments->vector, arguments->count, 0, NULL, CLOCK_MONOTONIC);
+	arguments->error = arguments->result < 0 ? errno : 0;
+	return NULL;
+}
+
+static VALUE IO_Event_Futex_blocking_waitv(VALUE klass, VALUE entries) {
+	(void)klass;
+	entries = rb_Array(entries);
+	long count = RARRAY_LEN(entries);
+	if (count < 1 || count > FUTEX_WAITV_MAX) {
+		rb_raise(rb_eArgError, "Futex vector must contain between 1 and %d entries!", FUTEX_WAITV_MAX);
+	}
+
+	struct futex_waitv *vector = ALLOCA_N(struct futex_waitv, count);
+	for (long index = 0; index < count; index++) {
+		VALUE entry = rb_Array(RARRAY_AREF(entries, index));
+		if (RARRAY_LEN(entry) != 2) {
+			rb_raise(rb_eArgError, "Each futex vector entry must contain a futex and its expected value!");
+		}
+
+		VALUE futex = RARRAY_AREF(entry, 0);
+		vector[index].val = NUM2UINT(RARRAY_AREF(entry, 1));
+		vector[index].uaddr = (uintptr_t)IO_Event_Futex_address(futex);
+		vector[index].flags = FUTEX_32;
+		vector[index].__reserved = 0;
+	}
+
+	struct IO_Event_Futex_BlockingWaitV arguments = {
+		.vector = vector,
+		.count = count,
+	};
+
+	rb_thread_call_without_gvl(IO_Event_Futex_blocking_waitv_without_gvl, &arguments, RUBY_UBF_IO, 0);
+	RB_GC_GUARD(entries);
+
+	if (arguments.result >= 0) {
+		return INT2NUM(arguments.result);
+	} else if (arguments.error == EAGAIN) {
+		return Qnil;
+	} else {
+		rb_syserr_fail(arguments.error, "IO_Event_Futex_blocking_waitv:futex_waitv");
+	}
+
+	return Qnil;
+}
+
+#endif
+
+static VALUE IO_Event_Futex_wait(int argc, VALUE *argv, VALUE self) {
+	VALUE expected_value;
+	rb_scan_args(argc, argv, "01", &expected_value);
+
+	if (argc == 0) {
+		expected_value = IO_Event_Futex_value(self);
+	}
+
+	VALUE scheduler = rb_fiber_scheduler_current();
+	if (NIL_P(scheduler)) {
+		return IO_Event_Futex_blocking_wait(self, expected_value);
+	}
+
+	if (!rb_respond_to(scheduler, id_futex_wait)) {
+		rb_raise(rb_eNotImpError, "The current fiber scheduler does not support futex waits!");
+	}
+
+	return rb_funcall(scheduler, id_futex_wait, 2, self, expected_value);
+}
+
+#ifdef SYS_futex_waitv
+
+static VALUE IO_Event_Futex_wait_any(VALUE klass, VALUE entries) {
+	VALUE scheduler = rb_fiber_scheduler_current();
+	if (NIL_P(scheduler)) {
+		return IO_Event_Futex_blocking_waitv(klass, entries);
+	}
+
+	if (!rb_respond_to(scheduler, id_futex_waitv)) {
+		rb_raise(rb_eNotImpError, "The current fiber scheduler does not support vector futex waits!");
+	}
+
+	return rb_funcall(scheduler, id_futex_waitv, 1, entries);
+}
+
+#endif
 
 #endif
 
@@ -953,7 +1093,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
 
-#if defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
+#if defined(__linux__) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
 
 #pragma mark - Futex Wait
 
@@ -1021,6 +1161,69 @@ static VALUE IO_Event_Selector_URing_futex_wait(VALUE self, VALUE fiber, VALUE f
 	
 	return rb_ensure(futex_wait_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
 }
+
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+
+static VALUE futex_waitv_transfer(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	
+	int32_t result = arguments->waiting->result;
+	if (result >= 0) {
+		return INT2NUM(result);
+	} else if (result == -EAGAIN) {
+		return Qnil;
+	} else {
+		rb_syserr_fail(-result, "futex_waitv_transfer:io_uring_futex_waitv");
+	}
+	
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_URing_futex_waitv(VALUE self, VALUE fiber, VALUE entries) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	entries = rb_Array(entries);
+	long count = RARRAY_LEN(entries);
+	if (count < 1 || count > FUTEX_WAITV_MAX) {
+		rb_raise(rb_eArgError, "Futex vector must contain between 1 and %d entries!", FUTEX_WAITV_MAX);
+	}
+	
+	struct futex_waitv *vector = ALLOCA_N(struct futex_waitv, count);
+	for (long index = 0; index < count; index++) {
+		VALUE entry = rb_Array(RARRAY_AREF(entries, index));
+		if (RARRAY_LEN(entry) != 2) {
+			rb_raise(rb_eArgError, "Each futex vector entry must contain a futex and its expected value!");
+		}
+		
+		VALUE futex = RARRAY_AREF(entry, 0);
+		vector[index].val = NUM2UINT(RARRAY_AREF(entry, 1));
+		vector[index].uaddr = (uintptr_t)IO_Event_Futex_address(futex);
+		vector[index].flags = FUTEX_32;
+		vector[index].__reserved = 0;
+	}
+	
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
+	struct futex_wait_arguments arguments = {
+		.selector = selector,
+		.waiting = &waiting,
+	};
+	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_futex_waitv(sqe, vector, count, 0);
+	io_uring_sqe_set_data(sqe, completion);
+	io_uring_submit_pending(selector);
+	
+	return rb_ensure(futex_waitv_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+}
+
+#endif
 
 #endif
 
@@ -1945,6 +2148,7 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 #pragma mark - Native Methods
 
 static int IO_Event_Selector_URing_futex_supported = 0;
+static int IO_Event_Selector_URing_futex_waitv_supported = 0;
 
 static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
@@ -1977,10 +2181,13 @@ static int IO_Event_Selector_URing_supported_p(void) {
 		return 0;
 	}
 
-#if defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
+#if defined(__linux__) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
 	struct io_uring_probe *probe = io_uring_get_probe_ring(&ring);
 	if (probe) {
 		IO_Event_Selector_URing_futex_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAIT);
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+		IO_Event_Selector_URing_futex_waitv_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAITV);
+#endif
 		io_uring_free_probe(probe);
 	}
 #endif
@@ -2034,7 +2241,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event, VALUE IO_Event_Selector) {
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
 
-#if defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
+#if defined(__linux__) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT) && defined(HAVE_RUBY_IO_BUFFER_H)
 	if (IO_Event_Selector_URing_futex_supported) {
 		VALUE IO_Event_Futex = rb_define_class_under(IO_Event, "Futex", rb_cObject);
 		rb_define_alloc_func(IO_Event_Futex, IO_Event_Futex_allocate);
@@ -2044,10 +2251,23 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event, VALUE IO_Event_Selector) {
 		rb_define_method(IO_Event_Futex, "increment", IO_Event_Futex_increment, -1);
 		rb_define_method(IO_Event_Futex, "wake", IO_Event_Futex_wake, -1);
 		rb_define_method(IO_Event_Futex, "signal", IO_Event_Futex_signal, -1);
+		rb_define_method(IO_Event_Futex, "wait", IO_Event_Futex_wait, -1);
+
+#ifdef SYS_futex_waitv
+		rb_define_singleton_method(IO_Event_Futex, "wait_any", IO_Event_Futex_wait_any, 1);
+#endif
 		
 		id_offset = rb_intern("offset");
+		id_futex_wait = rb_intern("futex_wait");
+		id_futex_waitv = rb_intern("futex_waitv");
 		
 		rb_define_method(IO_Event_Selector_URing, "futex_wait", IO_Event_Selector_URing_futex_wait, 3);
+		
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+		if (IO_Event_Selector_URing_futex_waitv_supported) {
+			rb_define_method(IO_Event_Selector_URing, "futex_waitv", IO_Event_Selector_URing_futex_waitv, 3);
+		}
+#endif
 	}
 #endif
 }

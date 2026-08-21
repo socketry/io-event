@@ -25,6 +25,12 @@ module IO::Event
 					log("Waiting for futex #{futex.inspect} with value #{expected}")
 					@selector.futex_wait(fiber, futex, expected)
 				end
+				
+				# Wait for any futex value to change, forwarded to the underlying selector.
+				def futex_waitv(fiber, entries)
+					log("Waiting for futex vector #{entries.inspect}")
+					@selector.futex_waitv(fiber, entries)
+				end
 			end
 			
 			# Wrap the given selector with debugging.

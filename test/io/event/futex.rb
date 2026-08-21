@@ -4,6 +4,7 @@
 # Copyright, 2026, by Samuel Williams.
 
 require "io/event"
+require "io/event/test_scheduler"
 
 return unless defined?(IO::Event::Futex)
 
@@ -51,10 +52,21 @@ describe IO::Event::Futex do
 	end
 	
 	with "#wait" do
-		it "requires scheduler support" do
-			expect do
-				futex.wait(0)
-			end.to raise_exception(NotImplementedError)
+		it "waits without blocking other Ruby threads when no scheduler is installed" do
+			thread = Thread.new do
+				sleep 0.01
+				futex.signal
+			end
+			
+			expect(futex.wait(0)).to be == true
+			expect(futex.value).to be == 1
+		ensure
+			thread&.join
+		end
+		
+		it "does not wait without a scheduler when the value has changed" do
+			futex.value = 1
+			expect(futex.wait(0)).to be == false
 		end
 		
 		it "waits asynchronously for a signal" do
@@ -81,6 +93,29 @@ describe IO::Event::Futex do
 			thread&.join
 		end
 		
+		it "uses the current scheduler" do
+			selector = IO::Event::Selector::URing.new(Fiber.current)
+			scheduler = IO::Event::TestScheduler.new(selector: selector)
+			result = nil
+			
+			Fiber.set_scheduler(scheduler)
+			Fiber.schedule do
+				result = futex.wait(0)
+			end
+			
+			thread = Thread.new do
+				sleep 0.01
+				futex.signal
+			end
+			
+			scheduler.run
+			
+			expect(result).to be == true
+		ensure
+			Fiber.set_scheduler(nil)
+			thread&.join
+		end
+		
 		it "does not wait when the value has changed" do
 			selector = IO::Event::Selector::URing.new(Fiber.current)
 			futex.value = 1
@@ -93,6 +128,110 @@ describe IO::Event::Futex do
 			selector.select(1)
 			
 			expect(result).to be == false
+		ensure
+			selector&.close
+		end
+	end
+	
+	with ".wait_any" do
+		it "waits without blocking other Ruby threads when no scheduler is installed" do
+			first = subject.new(buffer, offset: 0)
+			second = subject.new(buffer, offset: 4)
+			
+			thread = Thread.new do
+				sleep 0.01
+				second.signal
+			end
+			
+			expect(subject.wait_any([[first, 0], [second, 0]])).to be == 1
+		ensure
+			thread&.join
+		end
+		
+		it "does not wait without a scheduler when a value has changed" do
+			first = subject.new(buffer, offset: 0)
+			second = subject.new(buffer, offset: 4)
+			second.value = 1
+			
+			expect(subject.wait_any([[first, 0], [second, 0]])).to be_nil
+		end
+		
+		it "waits asynchronously for any futex to be signalled" do
+			selector = IO::Event::Selector::URing.new(Fiber.current)
+			unless selector.respond_to?(:futex_waitv)
+				skip "io_uring futex waitv operations are not available"
+			end
+			
+			first = subject.new(buffer, offset: 0)
+			second = subject.new(buffer, offset: 4)
+			result = nil
+			
+			fiber = Fiber.new do
+				result = selector.futex_waitv(Fiber.current, [[first, 0], [second, 0]])
+			end
+			fiber.transfer
+			
+			thread = Thread.new do
+				sleep 0.01
+				second.signal
+			end
+			
+			selector.select(1)
+			thread.join
+			
+			expect(result).to be == 1
+		ensure
+			selector&.close
+			thread&.join
+		end
+		
+		it "uses the current scheduler" do
+			selector = IO::Event::Selector::URing.new(Fiber.current)
+			unless selector.respond_to?(:futex_waitv)
+				skip "io_uring futex waitv operations are not available"
+			end
+			
+			scheduler = IO::Event::TestScheduler.new(selector: selector)
+			first = subject.new(buffer, offset: 0)
+			second = subject.new(buffer, offset: 4)
+			result = nil
+			
+			Fiber.set_scheduler(scheduler)
+			Fiber.schedule do
+				result = subject.wait_any([[first, 0], [second, 0]])
+			end
+			
+			thread = Thread.new do
+				sleep 0.01
+				second.signal
+			end
+			
+			scheduler.run
+			
+			expect(result).to be == 1
+		ensure
+			Fiber.set_scheduler(nil)
+			thread&.join
+		end
+		
+		it "returns nil when a value has changed" do
+			selector = IO::Event::Selector::URing.new(Fiber.current)
+			unless selector.respond_to?(:futex_waitv)
+				skip "io_uring futex waitv operations are not available"
+			end
+			
+			first = subject.new(buffer, offset: 0)
+			second = subject.new(buffer, offset: 4)
+			second.value = 1
+			result = :waiting
+			
+			fiber = Fiber.new do
+				result = selector.futex_waitv(Fiber.current, [[first, 0], [second, 0]])
+			end
+			fiber.transfer
+			selector.select(1)
+			
+			expect(result).to be_nil
 		ensure
 			selector&.close
 		end
