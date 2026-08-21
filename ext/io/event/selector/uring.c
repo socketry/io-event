@@ -65,9 +65,7 @@ static void IO_Event_Futex_compact(void *_futex) {
 }
 
 static void IO_Event_Futex_free(void *_futex) {
-	struct IO_Event_Futex *futex = _futex;
-	if (!NIL_P(futex->buffer)) rb_io_buffer_try_unlock(futex->buffer);
-	xfree(futex);
+	xfree(_futex);
 }
 
 static size_t IO_Event_Futex_size(const void *_futex) {
@@ -123,8 +121,6 @@ static VALUE IO_Event_Futex_initialize(int argc, VALUE *argv, VALUE self) {
 	
 	struct IO_Event_Futex *futex = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Futex, &IO_Event_Futex_Type, futex);
-	if (!NIL_P(futex->buffer)) rb_io_buffer_unlock(futex->buffer);
-	rb_io_buffer_lock(buffer);
 	RB_OBJ_WRITE(self, &futex->buffer, buffer);
 	futex->address = address;
 	

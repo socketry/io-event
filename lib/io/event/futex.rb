@@ -9,6 +9,9 @@ class IO
 		#
 		# This class is only defined when the native io_uring selector supports
 		# `IORING_OP_FUTEX_WAIT`.
+		#
+		# The buffer must not be explicitly freed or resized while a futex refers
+		# to it. The futex retains the buffer so it cannot be garbage collected.
 		class Futex
 			# Wait while the futex contains the expected value.
 			#
