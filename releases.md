@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-  - Add `IO::Event::Futex` on Linux systems, including blocking and scheduler-aware single and vector waits over shared memory.
+  - Add `IO::Event::Futex` on Linux systems, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory.
 
 ## v1.21.1
 

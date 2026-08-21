@@ -6,6 +6,7 @@
 #ifdef IO_EVENT_FUTEX
 
 #include <errno.h>
+#include <stdbool.h>
 #include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
@@ -119,6 +120,35 @@ static VALUE IO_Event_Futex_increment(int argc, VALUE *argv, VALUE self) {
 	TypedData_Get_Struct(self, struct IO_Event_Futex, &IO_Event_Futex_Type, futex);
 	uint32_t value = __atomic_add_fetch(futex->address, amount, __ATOMIC_ACQ_REL);
 	return UINT2NUM(value);
+}
+
+static VALUE IO_Event_Futex_decrement(int argc, VALUE *argv, VALUE self) {
+	VALUE amount_value;
+	rb_scan_args(argc, argv, "01", &amount_value);
+	uint32_t amount = NIL_P(amount_value) ? 1 : NUM2UINT(amount_value);
+
+	struct IO_Event_Futex *futex = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Futex, &IO_Event_Futex_Type, futex);
+	uint32_t value = __atomic_sub_fetch(futex->address, amount, __ATOMIC_ACQ_REL);
+	return UINT2NUM(value);
+}
+
+static VALUE IO_Event_Futex_compare_exchange(VALUE self, VALUE expected_value, VALUE desired_value) {
+	uint32_t expected = NUM2UINT(expected_value);
+	uint32_t desired = NUM2UINT(desired_value);
+
+	struct IO_Event_Futex *futex = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Futex, &IO_Event_Futex_Type, futex);
+	bool exchanged = __atomic_compare_exchange_n(
+		futex->address,
+		&expected,
+		desired,
+		false,
+		__ATOMIC_ACQ_REL,
+		__ATOMIC_ACQUIRE
+	);
+
+	return exchanged ? Qtrue : Qfalse;
 }
 
 static VALUE IO_Event_Futex_wake(int argc, VALUE *argv, VALUE self) {
@@ -284,6 +314,8 @@ void Init_IO_Event_Futex(VALUE IO_Event) {
 	rb_define_method(IO_Event_Futex, "value", IO_Event_Futex_value, 0);
 	rb_define_method(IO_Event_Futex, "value=", IO_Event_Futex_set_value, 1);
 	rb_define_method(IO_Event_Futex, "increment", IO_Event_Futex_increment, -1);
+	rb_define_method(IO_Event_Futex, "decrement", IO_Event_Futex_decrement, -1);
+	rb_define_method(IO_Event_Futex, "compare_exchange", IO_Event_Futex_compare_exchange, 2);
 	rb_define_method(IO_Event_Futex, "wake", IO_Event_Futex_wake, -1);
 	rb_define_method(IO_Event_Futex, "signal", IO_Event_Futex_signal, -1);
 	rb_define_method(IO_Event_Futex, "wait", IO_Event_Futex_wait, -1);
