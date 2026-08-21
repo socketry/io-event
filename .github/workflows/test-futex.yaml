@@ -7,18 +7,13 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
     - uses: actions/checkout@v6
 
     - name: Install liburing with futex support
-      run: |
-        git clone --branch liburing-2.6 --depth 1 https://github.com/axboe/liburing.git /tmp/liburing
-        make -C /tmp/liburing -j2
-        sudo make -C /tmp/liburing install
-        echo "/usr/lib" | sudo tee /etc/ld.so.conf.d/liburing.conf
-        sudo ldconfig
+      run: sudo apt-get update && sudo apt-get install -y liburing-dev
 
     - uses: ruby/setup-ruby@v1
       with:
