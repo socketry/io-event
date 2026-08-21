@@ -13,21 +13,6 @@ class IO
 		# The buffer must not be explicitly freed or resized while a futex refers
 		# to it. The futex retains the buffer so it cannot be garbage collected.
 		class Futex
-			# Wait while the futex contains the expected value.
-			#
-			# @asynchronous
-			# @parameter expected [Integer] The value that must still be present before waiting.
-			# @returns [Boolean] `true` when woken, or `false` when the value had already changed.
-			# @raises [NotImplementedError] If the current fiber scheduler does not support futex waits.
-			def wait(expected = value)
-				scheduler = Fiber.scheduler
-				
-				unless scheduler&.respond_to?(:futex_wait)
-					raise NotImplementedError, "The current fiber scheduler does not support futex waits!"
-				end
-				
-				scheduler.futex_wait(self, expected)
-			end
 		end
 	end
 end

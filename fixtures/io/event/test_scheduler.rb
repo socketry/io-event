@@ -40,7 +40,18 @@ module IO::Event
 			
 			# Wait while the futex contains the expected value.
 			def futex_wait(futex, expected)
+				@blocked += 1
 				@selector.futex_wait(Fiber.current, futex, expected)
+			ensure
+				@blocked -= 1
+			end
+			
+			# Wait until any futex value changes.
+			def futex_waitv(entries)
+				@blocked += 1
+				@selector.futex_waitv(Fiber.current, entries)
+			ensure
+				@blocked -= 1
 			end
 		end
 		

@@ -34,5 +34,5 @@ jobs:
         bundle exec ruby extconf.rb
         make
         cd ..
-        bundle exec ruby -e 'require "io/event"; abort "IO::Event::Futex is unavailable!" unless defined?(IO::Event::Futex)'
+        bundle exec ruby -e 'require "io/event"; abort "IO::Event::Futex is unavailable!" unless defined?(IO::Event::Futex); selector = IO::Event::Selector::URing.new(Fiber.current); abort "futex_waitv is unavailable!" unless selector.respond_to?(:futex_waitv)'
         bundle exec sus test/io/event/futex.rb

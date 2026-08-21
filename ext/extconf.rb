@@ -35,6 +35,7 @@ have_func("&rb_fiber_transfer")
 if have_library("uring") and have_header("liburing.h")
 	have_func("io_uring_prep_waitid", "liburing.h")
 	have_func("io_uring_prep_futex_wait", "liburing.h")
+	have_func("io_uring_prep_futex_waitv", "liburing.h")
 	$srcs << "io/event/selector/uring.c"
 end
 
