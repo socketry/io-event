@@ -33,21 +33,21 @@ input, output = IO.pipe
 
 writer = Fiber.new do
 	puts "[writer] Writing data"
-
+	
 	output.write("Hello World")
 	output.close
 end
 
 reader = Fiber.new do
 	puts "[reader] No data available, waiting for input"
-
+	
 	# Suspend this Fiber until the input becomes readable.
 	selector.io_wait(
 		Fiber.current,
 		input,
 		IO::READABLE
 	)
-
+	
 	# Execution resumes here once the selector detects the event.
 	puts "[reader] Received: #{input.read.inspect}"
 end

@@ -21,6 +21,8 @@ Cancellable = Sus::Shared("cancellable") do
 		end
 		
 		it "can cancel reads" do
+			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				
@@ -39,6 +41,8 @@ Cancellable = Sus::Shared("cancellable") do
 		end
 		
 		it "can cancel waits" do
+			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				

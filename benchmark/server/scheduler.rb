@@ -70,18 +70,18 @@ class Scheduler
 end
 
 class DirectScheduler < Scheduler
-	def io_read(io, buffer, length)
+	def io_read(io, buffer, *arguments)
 		fiber = Fiber.current
 		@waiting += 1
-		result = @selector.io_read(fiber, io, buffer, length)
+		@selector.io_read(fiber, io, buffer, *arguments)
 	ensure
 		@waiting -= 1
 	end
 	
-	def io_write(io, buffer, length)
+	def io_write(io, buffer, *arguments)
 		fiber = Fiber.current
 		@waiting += 1
-		@selector.io_write(fiber, io, buffer, length)
+		@selector.io_write(fiber, io, buffer, *arguments)
 	ensure
 		@waiting -= 1
 	end

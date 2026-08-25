@@ -593,9 +593,11 @@ VALUE IO_Event_Selector_EPoll_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 #ifdef HAVE_RUBY_IO_BUFFER_H
 
 struct io_read_arguments {
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 	VALUE self;
 	VALUE fiber;
 	VALUE io;
+#endif
 	
 	int flags;
 	
@@ -605,14 +607,20 @@ struct io_read_arguments {
 	void *base;
 	size_t size;
 	
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 	// The minimum number of bytes requested by the caller.
 	size_t length;
+#endif
 };
 
 static
 VALUE io_read_loop(VALUE _arguments) {
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	ssize_t result = read(arguments->descriptor, arguments->base, arguments->size);
+	return rb_fiber_scheduler_io_result(result, errno);
+#else
 	size_t length = arguments->length;
 	size_t total = 0;
 	
@@ -635,6 +643,7 @@ VALUE io_read_loop(VALUE _arguments) {
 	}
 	
 	return rb_fiber_scheduler_io_result(total, 0);
+#endif
 }
 
 static
@@ -646,13 +655,26 @@ VALUE io_read_ensure(VALUE _arguments) {
 	return Qnil;
 }
 
-VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
-	size_t offset = NUM2SIZET(_offset);
-	size_t length = NUM2SIZET(_length);
-	
+VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
+	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	size_t offset = NUM2SIZET(_first);
+	size_t length = NUM2SIZET(_second);
+	
+	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (length == 0) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	base = (char*)base + offset;
+	size = length;
+#else
+	size_t length = NUM2SIZET(_first);
+	size_t offset = NUM2SIZET(_second);
 	
 	if (offset > size) {
 		return rb_fiber_scheduler_io_result(-1, EINVAL);
@@ -662,19 +684,24 @@ VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	base = (char*)base + offset;
 	size -= offset;
+#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_read_arguments io_read_arguments = {
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 		.self = self,
 		.fiber = fiber,
 		.io = io,
+#endif
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.base = base,
 		.size = size,
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 		.length = length,
+#endif
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -682,6 +709,7 @@ VALUE IO_Event_Selector_EPoll_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
 
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 VALUE IO_Event_Selector_EPoll_io_read_compatible(int argc, VALUE *argv, VALUE self)
 {
 	rb_check_arity(argc, 4, 5);
@@ -694,11 +722,14 @@ VALUE IO_Event_Selector_EPoll_io_read_compatible(int argc, VALUE *argv, VALUE se
 	
 	return IO_Event_Selector_EPoll_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
+#endif
 
 struct io_write_arguments {
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 	VALUE self;
 	VALUE fiber;
 	VALUE io;
+#endif
 	
 	int flags;
 	
@@ -708,14 +739,20 @@ struct io_write_arguments {
 	const void *base;
 	size_t size;
 	
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 	// The minimum number of bytes requested by the caller.
 	size_t length;
+#endif
 };
 
 static
 VALUE io_write_loop(VALUE _arguments) {
 	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	ssize_t result = write(arguments->descriptor, arguments->base, arguments->size);
+	return rb_fiber_scheduler_io_result(result, errno);
+#else
 	size_t length = arguments->length;
 	size_t total = 0;
 	
@@ -738,6 +775,7 @@ VALUE io_write_loop(VALUE _arguments) {
 	}
 	
 	return rb_fiber_scheduler_io_result(total, 0);
+#endif
 };
 
 static
@@ -749,13 +787,26 @@ VALUE io_write_ensure(VALUE _arguments) {
 	return Qnil;
 };
 
-VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _length, VALUE _offset) {
-	size_t length = NUM2SIZET(_length);
-	size_t offset = NUM2SIZET(_offset);
-	
+VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
+	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	size_t offset = NUM2SIZET(_first);
+	size_t length = NUM2SIZET(_second);
+	
+	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (length == 0) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	base = (const char*)base + offset;
+	size = length;
+#else
+	size_t length = NUM2SIZET(_first);
+	size_t offset = NUM2SIZET(_second);
 	
 	if (length > size) {
 		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
@@ -769,19 +820,24 @@ VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	base = (const char*)base + offset;
 	size -= offset;
+#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_write_arguments io_write_arguments = {
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 		.self = self,
 		.fiber = fiber,
 		.io = io,
+#endif
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.base = base,
 		.size = size,
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 		.length = length,
+#endif
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -789,6 +845,7 @@ VALUE IO_Event_Selector_EPoll_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
 
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
 VALUE IO_Event_Selector_EPoll_io_write_compatible(int argc, VALUE *argv, VALUE self)
 {
 	rb_check_arity(argc, 4, 5);
@@ -801,6 +858,7 @@ VALUE IO_Event_Selector_EPoll_io_write_compatible(int argc, VALUE *argv, VALUE s
 	
 	return IO_Event_Selector_EPoll_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
 }
+#endif
 
 #endif
 
@@ -1123,13 +1181,14 @@ void Init_IO_Event_Selector_EPoll(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_EPoll, "io_wait", IO_Event_Selector_EPoll_io_wait, 3);
 	
 #ifdef HAVE_RUBY_IO_BUFFER_H
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	rb_define_method(IO_Event_Selector_EPoll, "io_read", IO_Event_Selector_EPoll_io_read, 5);
+	rb_define_method(IO_Event_Selector_EPoll, "io_write", IO_Event_Selector_EPoll_io_write, 5);
+#else
 	rb_define_method(IO_Event_Selector_EPoll, "io_read", IO_Event_Selector_EPoll_io_read_compatible, -1);
 	rb_define_method(IO_Event_Selector_EPoll, "io_write", IO_Event_Selector_EPoll_io_write_compatible, -1);
 #endif
-	
-	// Once compatibility isn't a concern, we can do this:
-	// rb_define_method(IO_Event_Selector_EPoll, "io_read", IO_Event_Selector_EPoll_io_read, 5);
-	// rb_define_method(IO_Event_Selector_EPoll, "io_write", IO_Event_Selector_EPoll_io_write, 5);
+#endif
 	
 	rb_define_method(IO_Event_Selector_EPoll, "process_wait", IO_Event_Selector_EPoll_process_wait, 3);
 }

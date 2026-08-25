@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Add compatibility with Ruby 4.1's fiber scheduler interface version 4. Buffered IO operations now use `(offset, length)`, perform a single transfer of at most `length` bytes, return short transfers directly, and report `-EAGAIN` without waiting. Earlier Ruby versions retain the existing minimum-progress behavior.
+
 ## v1.19.5
 
   - Preserve the original exception or non-local control flow when `IO::Event::WorkerPool` cancellation interrupts a blocked fiber, while still cancelling and draining the in-flight blocking operation before returning control to Ruby.

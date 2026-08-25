@@ -40,6 +40,10 @@ static inline int IO_Event_try_again(int error) {
 	return error == EAGAIN || error == EWOULDBLOCK;
 }
 
+static inline int IO_Event_Selector_valid_buffer_range(size_t size, size_t offset, size_t length) {
+	return offset <= size && length <= size - offset;
+}
+
 // Enter a blocking region without the GVL. On Rubies without
 // `RB_NOGVL_PENDING_INTR_FAIL`, refresh pending-interrupt state immediately
 // before releasing the GVL so a signal cannot be stranded in the queue.

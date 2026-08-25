@@ -10,6 +10,8 @@ require "socket"
 WriteDeadlock = Sus::Shared("write deadlock") do
 	with "a pipe that fills up" do
 		it "should not deadlock when waiting for writable" do
+			skip "Single-transfer io_write returns EAGAIN directly" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
 			# Skip on Windows which doesn't have the same socket behavior
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			

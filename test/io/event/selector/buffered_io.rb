@@ -11,6 +11,22 @@ require "socket"
 require "unix_socket"
 
 BufferedIO = Sus::Shared("buffered io") do
+	def io_read(io, buffer, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_read(Fiber.current, io, buffer, offset, length)
+		else
+			selector.io_read(Fiber.current, io, buffer, length, offset)
+		end
+	end
+	
+	def io_write(io, buffer, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_write(Fiber.current, io, buffer, offset, length)
+		else
+			selector.io_write(Fiber.current, io, buffer, length, offset)
+		end
+	end
+	
 	with "a pipe" do
 		let(:pipe) {IO.pipe}
 		let(:input) {pipe.first}
@@ -21,25 +37,30 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
-				expect(selector.io_write(Fiber.current, output, buffer, 128, 0)).to be == 128
+				expect(io_write(output, buffer, 0, 128)).to be == 128
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
-				expect(selector.io_read(Fiber.current, input, buffer, 1, 0)).to be == 64
+				expect(io_read(input, buffer, 0, 64)).to be == 64
 			end
 			
-			reader.transfer
-			writer.transfer
-			
-			expect(selector.select(1)).to be >= 1
+			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+				writer.transfer
+				reader.transfer
+			else
+				reader.transfer
+				writer.transfer
+				
+				expect(selector.select(1)).to be >= 1
+			end
 		end
 		
 		it "can write zero length buffers" do
 			skip_if_ruby_platform(/mswin|mingw|cygwin/)
 			
 			buffer = IO::Buffer.new(1).slice(0, 0)
-			expect(selector.io_write(Fiber.current, output, buffer, 0, 0)).to be == 0
+			expect(io_write(output, buffer, 0, 0)).to be == 0
 		end
 		
 		it "can read and write at the specified offset" do
@@ -47,20 +68,42 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
-				# We can't write 128 bytes because there are only +64 bytes from offset 64.
-				expect(selector.io_write(Fiber.current, output, buffer, 128, 64)).to be == 64
+				expect(io_write(output, buffer, 64, 64)).to be == 64
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(128)
-				# Only 64 bytes are available to read.
-				expect(selector.io_read(Fiber.current, input, buffer, 1, 64)).to be == 64
+				expect(io_read(input, buffer, 64, 64)).to be == 64
 			end
 			
-			reader.transfer
-			writer.transfer
+			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+				writer.transfer
+				reader.transfer
+			else
+				reader.transfer
+				writer.transfer
+				
+				expect(selector.select(1)).to be >= 1
+			end
+		end
+		
+		it "limits single-transfer reads to the requested range" do
+			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
 			
-			expect(selector.select(1)).to be >= 1
+			output.write("abc")
+			buffer = IO::Buffer.new(8)
+			
+			expect(io_read(input, buffer, 2, 3)).to be == 3
+			expect(buffer.get_string(2, 3)).to be == "abc"
+		end
+		
+		it "limits single-transfer writes to the requested range" do
+			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
+			
+			buffer = IO::Buffer.for("01234567".dup)
+			
+			expect(io_write(output, buffer, 2, 3)).to be == 3
+			expect(input.read(3)).to be == "234"
 		end
 		
 		it "can't write to the read end of a pipe" do
@@ -70,7 +113,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(64)
-				result = selector.io_write(Fiber.current, input, buffer, 64, 0)
+				result = io_write(input, buffer, 0, 64)
 				expect(result).to be < 0
 			end
 			
@@ -88,7 +131,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			output.close
 			
 			reader = Fiber.new do
-				result = selector.io_read(Fiber.current, input, buffer, 0, 0)
+				result = io_read(input, buffer, 0, 64)
 			end
 			
 			reader.transfer
@@ -109,7 +152,11 @@ BufferedIO = Sus::Shared("buffered io") do
 			result = nil
 			
 			reader = Fiber.new do
-				result = selector.io_read(Fiber.current, input, buffer, 0, 0)
+				if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+					result = io_read(input, buffer, 0, 64)
+				else
+					result = selector.io_read(Fiber.current, input, buffer, 0, 0)
+				end
 			end
 			
 			reader.transfer
@@ -125,7 +172,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			reader = Fiber.new do
 				# Offset 128 exceeds buffer size of 64
-				result = selector.io_read(Fiber.current, input, buffer, 1, 128)
+				result = io_read(input, buffer, 128, 1)
 				expect(result).to be == -Errno::EINVAL::Errno
 			end
 			
@@ -138,7 +185,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			buffer = IO::Buffer.new(64)
 			
 			reader = Fiber.new do
-				result = selector.io_read(Fiber.current, input, buffer, 1, 64)
+				result = io_read(input, buffer, 64, 0)
 				expect(result).to be == 0
 			end
 			
@@ -153,7 +200,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			writer = Fiber.new do
 				# Offset 128 exceeds buffer size of 64
-				result = selector.io_write(Fiber.current, output, buffer, 1, 128)
+				result = io_write(output, buffer, 128, 1)
 				expect(result).to be == -Errno::EINVAL::Errno
 			end
 			
@@ -166,7 +213,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			buffer = IO::Buffer.new(64)
 			
 			writer = Fiber.new do
-				result = selector.io_write(Fiber.current, output, buffer, 1, 64)
+				result = io_write(output, buffer, 64, 0)
 				expect(result).to be == 0
 			end
 			
