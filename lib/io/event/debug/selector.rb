@@ -177,15 +177,15 @@ module IO::Event
 			end
 			
 			# Read from the given IO, forwarded to the underlying selector.
-			def io_read(fiber, io, buffer, length, offset = 0)
-				log("Reading from IO #{io.inspect} with buffer #{buffer}; length #{length} offset #{offset}")
-				@selector.io_read(fiber, io, buffer, length, offset)
+			def io_read(fiber, io, buffer, *arguments)
+				log("Reading from IO #{io.inspect} with buffer #{buffer}; arguments #{arguments.inspect}")
+				@selector.io_read(fiber, io, buffer, *arguments)
 			end
 			
 			# Write to the given IO, forwarded to the underlying selector.
-			def io_write(fiber, io, buffer, length, offset = 0)
-				log("Writing to IO #{io.inspect} with buffer #{buffer}; length #{length} offset #{offset}")
-				@selector.io_write(fiber, io, buffer, length, offset)
+			def io_write(fiber, io, buffer, *arguments)
+				log("Writing to IO #{io.inspect} with buffer #{buffer}; arguments #{arguments.inspect}")
+				@selector.io_write(fiber, io, buffer, *arguments)
 			end
 			
 			# Forward the given method to the underlying selector.

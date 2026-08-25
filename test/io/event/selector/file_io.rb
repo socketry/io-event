@@ -8,6 +8,38 @@ require "io/event/selector"
 require "tempfile"
 
 FileIO = Sus::Shared("file io") do
+	def io_read(io, buffer, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_read(Fiber.current, io, buffer, offset, length)
+		else
+			selector.io_read(Fiber.current, io, buffer, length, offset)
+		end
+	end
+	
+	def io_write(io, buffer, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_write(Fiber.current, io, buffer, offset, length)
+		else
+			selector.io_write(Fiber.current, io, buffer, length, offset)
+		end
+	end
+	
+	def io_pread(io, buffer, from, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_pread(Fiber.current, io, buffer, from, offset, length)
+		else
+			selector.io_pread(Fiber.current, io, buffer, from, length, offset)
+		end
+	end
+	
+	def io_pwrite(io, buffer, from, offset, length)
+		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			selector.io_pwrite(Fiber.current, io, buffer, from, offset, length)
+		else
+			selector.io_pwrite(Fiber.current, io, buffer, from, length, offset)
+		end
+	end
+	
 	with "a file" do
 		let(:file) {Tempfile.new}
 		
@@ -20,15 +52,14 @@ FileIO = Sus::Shared("file io") do
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
 				file.seek(0)
-				write_result = selector.io_write(Fiber.current, file, buffer, 128)
+				write_result = io_write(file, buffer, 0, 128)
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
 				file.seek(0)
 				
-				# The read will return 0 if the data is not written yet:
-				read_result = selector.io_read(Fiber.current, file, buffer, 0)
+				read_result = io_read(file, buffer, 0, 64)
 			end
 			
 			writer.transfer
@@ -55,12 +86,12 @@ FileIO = Sus::Shared("file io") do
 			
 			writer = Fiber.new do
 				buffer = IO::Buffer.new(128)
-				write_result = selector.io_pwrite(Fiber.current, file, buffer, 0, 128, 0)
+				write_result = io_pwrite(file, buffer, 0, 0, 128)
 			end
 			
 			reader = Fiber.new do
 				buffer = IO::Buffer.new(64)
-				read_result = selector.io_pread(Fiber.current, file, buffer, 0, 64, 0)
+				read_result = io_pread(file, buffer, 0, 0, 64)
 			end
 			
 			writer.transfer
@@ -77,6 +108,18 @@ FileIO = Sus::Shared("file io") do
 			
 			expect(write_result).to be == 128
 			expect(read_result).to be == 64
+		end
+		
+		it "uses positional IO ranges" do
+			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
+			skip "io_pread is not implemented" unless selector.respond_to?(:io_pread)
+			
+			write_buffer = IO::Buffer.for("01234567".dup)
+			expect(io_pwrite(file, write_buffer, 5, 2, 3)).to be == 3
+			
+			read_buffer = IO::Buffer.new(8)
+			expect(io_pread(file, read_buffer, 5, 1, 3)).to be == 3
+			expect(read_buffer.get_string(1, 3)).to be == "234"
 		end
 		
 		it "can wait for the file to become writable" do
@@ -100,7 +143,7 @@ FileIO = Sus::Shared("file io") do
 			file.seek(0)
 			
 			# Offset 128 exceeds buffer size of 64
-			result = selector.io_read(Fiber.current, file, buffer, 1, 128)
+			result = io_read(file, buffer, 128, 1)
 			
 			expect(result).to be == -Errno::EINVAL::Errno
 		end
@@ -112,7 +155,7 @@ FileIO = Sus::Shared("file io") do
 			file.seek(0)
 			
 			# Offset 128 exceeds buffer size of 64
-			result = selector.io_write(Fiber.current, file, buffer, 1, 128)
+			result = io_write(file, buffer, 128, 1)
 			
 			expect(result).to be == -Errno::EINVAL::Errno
 		end
@@ -123,7 +166,7 @@ FileIO = Sus::Shared("file io") do
 			buffer = IO::Buffer.new(64)
 			
 			# Offset 128 exceeds buffer size of 64
-			result = selector.io_pread(Fiber.current, file, buffer, 0, 1, 128)
+			result = io_pread(file, buffer, 0, 128, 1)
 			
 			expect(result).to be == -Errno::EINVAL::Errno
 		end
@@ -134,7 +177,7 @@ FileIO = Sus::Shared("file io") do
 			buffer = IO::Buffer.new(64)
 			
 			# Offset 128 exceeds buffer size of 64
-			result = selector.io_pwrite(Fiber.current, file, buffer, 0, 1, 128)
+			result = io_pwrite(file, buffer, 0, 128, 1)
 			
 			expect(result).to be == -Errno::EINVAL::Errno
 		end

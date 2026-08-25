@@ -197,78 +197,112 @@ module IO::Event
 				errno == EAGAIN or errno == EWOULDBLOCK
 			end
 			
-			# Read from the given IO to the buffer.
-			#
-			# @parameter length [Integer] The minimum number of bytes to read.
-			# @parameter offset [Integer] The offset into the buffer to read to.
-			def io_read(fiber, io, buffer, length, offset = 0)
-				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
-				if offset > buffer.size
-					return -Errno::EINVAL::Errno
-				elsif offset == buffer.size
-					return 0
-				end
-				
-				total = 0
-				
-				Selector.nonblock(io) do
-					while true
-						result = Fiber.blocking{buffer.read(io, 0, offset)}
-						
-						if result < 0
-							if length > 0 and again?(result)
-								self.io_wait(fiber, io, IO::READABLE)
-							else
-								return result
-							end
-						elsif result == 0
-							break
-						else
-							total += result
-							break if total >= length
-							offset += result
-						end
+			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+				# Read at most `length` bytes from the given IO to the buffer in one operation.
+				#
+				# @parameter offset [Integer] The offset into the buffer to read to.
+				# @parameter length [Integer] The maximum number of bytes to read.
+				def io_read(fiber, io, buffer, offset, length)
+					if offset > buffer.size || length > buffer.size - offset
+						return -Errno::EINVAL::Errno
+					elsif length == 0
+						return 0
+					end
+					
+					Selector.nonblock(io) do
+						return Fiber.blocking{buffer.read(io, offset, length)}
 					end
 				end
 				
-				return total
-			end
-			
-			# Write to the given IO from the buffer.
-			#
-			# @parameter length [Integer] The minimum number of bytes to write.
-			# @parameter offset [Integer] The offset into the buffer to write from.
-			def io_write(fiber, io, buffer, length, offset = 0)
-				# Ensure offset is within the bounds of the buffer to avoid ArgumentError
-				if offset > buffer.size
-					return -Errno::EINVAL::Errno
-				elsif offset == buffer.size
-					return 0
-				end
-				
-				total = 0
-				
-				Selector.nonblock(io) do
-					while true
-						result = Fiber.blocking{buffer.write(io, 0, offset)}
-						
-						if result < 0
-							if length > 0 and again?(result)
-								self.io_wait(fiber, io, IO::WRITABLE)
-							else
-								return result
-							end
-						elsif result == 0
-							break result
-						else
-							total += result
-							break if total >= length
-							offset += result
-						end
+				# Write at most `length` bytes to the given IO from the buffer in one operation.
+				#
+				# @parameter offset [Integer] The offset into the buffer to write from.
+				# @parameter length [Integer] The maximum number of bytes to write.
+				def io_write(fiber, io, buffer, offset, length)
+					if offset > buffer.size || length > buffer.size - offset
+						return -Errno::EINVAL::Errno
+					elsif length == 0
+						return 0
+					end
+					
+					Selector.nonblock(io) do
+						return Fiber.blocking{buffer.write(io, offset, length)}
 					end
 				end
+			else
+				# Read from the given IO to the buffer.
+				#
+				# @parameter length [Integer] The minimum number of bytes to read.
+				# @parameter offset [Integer] The offset into the buffer to read to.
+				def io_read(fiber, io, buffer, length, offset = 0)
+					# Ensure offset is within the bounds of the buffer to avoid `ArgumentError`:
+					if offset > buffer.size
+						return -Errno::EINVAL::Errno
+					elsif offset == buffer.size
+						return 0
+					end
+					
+					total = 0
+					
+					Selector.nonblock(io) do
+						while true
+							result = Fiber.blocking{buffer.read(io, 0, offset)}
+							
+							if result < 0
+								if length > 0 and again?(result)
+									self.io_wait(fiber, io, IO::READABLE)
+								else
+									return result
+								end
+							elsif result == 0
+								break
+							else
+								total += result
+								break if total >= length
+								offset += result
+							end
+						end
+					end
+					
+					return total
+				end
 				
-				return total
+				# Write to the given IO from the buffer.
+				#
+				# @parameter length [Integer] The minimum number of bytes to write.
+				# @parameter offset [Integer] The offset into the buffer to write from.
+				def io_write(fiber, io, buffer, length, offset = 0)
+					# Ensure offset is within the bounds of the buffer to avoid `ArgumentError`:
+					if offset > buffer.size
+						return -Errno::EINVAL::Errno
+					elsif offset == buffer.size
+						return 0
+					end
+					
+					total = 0
+					
+					Selector.nonblock(io) do
+						while true
+							result = Fiber.blocking{buffer.write(io, 0, offset)}
+							
+							if result < 0
+								if length > 0 and again?(result)
+									self.io_wait(fiber, io, IO::WRITABLE)
+								else
+									return result
+								end
+							elsif result == 0
+								break result
+							else
+								total += result
+								break if total >= length
+								offset += result
+							end
+						end
+					end
+					
+					return total
+				end
 			end
 			
 			# Wait for a process to change state.
