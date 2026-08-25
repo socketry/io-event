@@ -53,7 +53,7 @@ module IO::Event
 				::Process::Status.wait(pid, flags)
 			end
 			
-			# A stale scheduler wake-up can cause the join to return before the thread has finished, so keep waiting until the result is available:
+			# On Ruby 3.4 and earlier, a stale scheduler wake-up can cause the join to return before the thread has finished, so keep waiting until the result is available:
 			thread.join while thread.alive?
 			
 			thread.value
