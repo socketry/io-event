@@ -43,7 +43,7 @@ module IO::Event
 		
 		# Wait for a process to change state, for the cases a selector cannot represent natively (e.g. `pid <= 0`: any child, or a process group). The native selectors integrate process waiting with the event loop using per-process primitives (`pidfd_open`, `EVFILT_PROC`) which can only refer to a single, specific process, and delegate here otherwise.
 		#
-		# The wait is performed on a separate thread, which has no fiber scheduler and therefore blocks. Joining it via `Thread#value` is fiber-scheduler aware, so the calling fiber yields to the event loop and the reactor keeps running other fibers.
+		# The wait is performed on a separate thread, which has no fiber scheduler and therefore blocks. Joining it is fiber-scheduler aware, so the calling fiber yields to the event loop and the reactor keeps running other fibers.
 		#
 		# @parameter pid [Integer] The process ID (or process group) to wait for.
 		# @parameter flags [Integer] Flags to pass to `Process::Status.wait`.
@@ -52,6 +52,9 @@ module IO::Event
 			thread = ::Thread.new do
 				::Process::Status.wait(pid, flags)
 			end
+			
+			# A stale scheduler wake-up can cause the join to return before the thread has finished, so keep waiting until the result is available:
+			thread.join while thread.alive?
 			
 			thread.value
 		ensure

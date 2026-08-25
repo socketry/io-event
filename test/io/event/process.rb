@@ -35,6 +35,46 @@ ProcessWait = Sus::Shared("process wait") do
 		Fiber.set_scheduler(nil)
 	end
 	
+	it "ignores stale scheduler wake-ups while waiting in a worker thread" do
+		skip_if_ruby_platform(/mswin|mingw|cygwin/)
+		
+		input, output = IO.pipe
+		pid = Process.spawn(RbConfig.ruby, "-e", "STDIN.read", in: input)
+		input.close
+		input = nil
+		status = nil
+		
+		Fiber.set_scheduler(scheduler)
+		
+		Fiber.schedule do
+			# Simulate a deferred wake-up from a previous blocking operation:
+			scheduler.unblock(nil, Fiber.current)
+			
+			status = IO::Event::Selector.process_wait(pid, 0)
+		end
+		
+		Fiber.schedule do
+			# Release the child after the stale wake-up has been delivered:
+			sleep(0.01)
+			output.close
+			output = nil
+		end
+		
+		scheduler.run
+		
+		expect(status).to be(:success?)
+	ensure
+		input&.close
+		output&.close
+		
+		if pid
+			Process.kill(:KILL, pid) rescue nil
+			Process.wait(pid) rescue nil
+		end
+		
+		Fiber.set_scheduler(nil)
+	end
+	
 	it "can wait for all child processes" do
 		skip_if_ruby_platform(/mswin|mingw|cygwin/)
 		
