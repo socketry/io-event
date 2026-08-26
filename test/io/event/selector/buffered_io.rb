@@ -28,6 +28,10 @@ BufferedIO = Sus::Shared("buffered io") do
 	end
 	
 	def await_io
+		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			return yield
+		end
+		
 		result = nil
 		fiber = Fiber.new do
 			result = yield

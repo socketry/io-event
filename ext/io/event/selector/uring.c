@@ -973,14 +973,38 @@ io_read_locked(void *base, size_t size, VALUE _arguments)
 	}
 	
 	int descriptor = IO_Event_Selector_io_descriptor(arguments->io);
-	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	char *buffer = (char*)base + arguments->offset;
 	
-	int result = io_read(arguments->selector, arguments->fiber, descriptor, (char*)base + arguments->offset, arguments->length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
+	// Avoid the submission and suspension overhead when the operation can
+	// complete immediately. The descriptor must be non-blocking for this
+	// optimistic syscall; if it would block, restore its original mode and
+	// submit the operation to io_uring instead.
+	int flags = IO_Event_Selector_nonblock_set(descriptor);
+	ssize_t result;
+	
+	if (arguments->positional) {
+		result = pread(descriptor, buffer, arguments->length, arguments->from);
+	} else {
+		result = read(descriptor, buffer, arguments->length);
 	}
 	
-	return rb_fiber_scheduler_io_result(result, 0);
+	int error = errno;
+	IO_Event_Selector_nonblock_restore(descriptor, flags);
+	
+	if (result >= 0) {
+		return rb_fiber_scheduler_io_result(result, 0);
+	} else if (!IO_Event_try_again(error)) {
+		return rb_fiber_scheduler_io_result(-1, error);
+	}
+	
+	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	
+	int completion = io_read(arguments->selector, arguments->fiber, descriptor, buffer, arguments->length, from);
+	if (completion < 0) {
+		return rb_fiber_scheduler_io_result(-1, -completion);
+	}
+	
+	return rb_fiber_scheduler_io_result(completion, 0);
 }
 #endif
 
@@ -1222,14 +1246,38 @@ io_write_locked(const void *base, size_t size, VALUE _arguments)
 	}
 	
 	int descriptor = IO_Event_Selector_io_descriptor(arguments->io);
-	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	const char *buffer = (const char*)base + arguments->offset;
 	
-	int result = io_write(arguments->selector, arguments->fiber, descriptor, (char*)base + arguments->offset, arguments->length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
+	// Avoid the submission and suspension overhead when the operation can
+	// complete immediately. The descriptor must be non-blocking for this
+	// optimistic syscall; if it would block, restore its original mode and
+	// submit the operation to io_uring instead.
+	int flags = IO_Event_Selector_nonblock_set(descriptor);
+	ssize_t result;
+	
+	if (arguments->positional) {
+		result = pwrite(descriptor, buffer, arguments->length, arguments->from);
+	} else {
+		result = write(descriptor, buffer, arguments->length);
 	}
 	
-	return rb_fiber_scheduler_io_result(result, 0);
+	int error = errno;
+	IO_Event_Selector_nonblock_restore(descriptor, flags);
+	
+	if (result >= 0) {
+		return rb_fiber_scheduler_io_result(result, 0);
+	} else if (!IO_Event_try_again(error)) {
+		return rb_fiber_scheduler_io_result(-1, error);
+	}
+	
+	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	
+	int completion = io_write(arguments->selector, arguments->fiber, descriptor, (char*)buffer, arguments->length, from);
+	if (completion < 0) {
+		return rb_fiber_scheduler_io_result(-1, -completion);
+	}
+	
+	return rb_fiber_scheduler_io_result(completion, 0);
 }
 #endif
 

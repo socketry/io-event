@@ -50,6 +50,10 @@ Selector = Sus::Shared("a selector") do
 	end
 	
 	def await_io
+		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			return yield
+		end
+		
 		result = nil
 		fiber = Fiber.new do
 			result = yield
@@ -563,7 +567,7 @@ Selector = Sus::Shared("a selector") do
 			
 			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
 				remote.write(message[0...5])
-				result = await_io{io_read(local, buffer, 0, message.bytesize)}
+				result = io_read(local, buffer, 0, message.bytesize)
 				
 				expect(result).to be == 5
 				expect(buffer.get_string(0, result)).to be == message[0...5]
