@@ -66,6 +66,7 @@ struct IO_Event_Selector_URing_Completion;
 struct IO_Event_Selector_URing_Waiting
 {
 	struct IO_Event_Selector_URing_Completion *completion;
+	struct IO_Event_Selector_Queue queue;
 	
 	VALUE fiber;
 	
@@ -263,9 +264,10 @@ void IO_Event_Selector_URing_Completion_cancellation_complete(struct IO_Event_Se
 }
 
 inline static
-void IO_Event_Selector_URing_Waiting_cancel(struct IO_Event_Selector_URing_Waiting *waiting)
+void IO_Event_Selector_URing_Waiting_cancel(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
 {
 	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Waiting_cancel(%p, %p)\n", (void*)waiting, (void*)waiting->completion);
+	IO_Event_Selector_ready_cancel(&selector->backend, &waiting->queue);
 	
 	if (waiting->completion) {
 		waiting->completion->waiting = NULL;
@@ -577,7 +579,7 @@ void IO_Event_Selector_URing_Waiting_cancel_and_wait(struct IO_Event_Selector_UR
 		}
 	}
 	
-	IO_Event_Selector_URing_Waiting_cancel(waiting);
+	IO_Event_Selector_URing_Waiting_cancel(selector, waiting);
 }
 
 #pragma mark - Process.wait
@@ -692,7 +694,7 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	close(arguments->descriptor);
 #endif
 	
-	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_URing_Waiting_cancel(arguments->selector, arguments->waiting);
 	
 	return Qnil;
 }
@@ -802,7 +804,7 @@ VALUE io_wait_ensure(VALUE _arguments) {
 		IO_Event_Selector_URing_Completion_cancel_async(arguments->selector, arguments->waiting->completion);
 	}
 	
-	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_URing_Waiting_cancel(arguments->selector, arguments->waiting);
 	
 	return Qnil;
 };
@@ -1586,7 +1588,7 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		IO_Event_Selector_URing_Completion_complete(selector, completion);
 		
 		if (fiber) {
-			IO_Event_Selector_loop_resume(&selector->backend, fiber, 0, NULL);
+			IO_Event_Selector_ready_schedule(&selector->backend, &waiting->queue, fiber);
 		}
 	}
 	
@@ -1659,6 +1661,10 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 				completed = select_process_completions(selector);
 			}
 		}
+	}
+	
+	if (completed) {
+		IO_Event_Selector_ready_flush(&selector->backend);
 	}
 	
 	return RB_INT2NUM(completed);

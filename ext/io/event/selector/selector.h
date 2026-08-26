@@ -77,6 +77,8 @@ void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
 enum IO_Event_Selector_Queue_Flags {
 	IO_EVENT_SELECTOR_QUEUE_FIBER = 1,
 	IO_EVENT_SELECTOR_QUEUE_INTERNAL = 2,
+	IO_EVENT_SELECTOR_QUEUE_EXTERNAL = 4,
+	IO_EVENT_SELECTOR_QUEUE_QUEUED = 8,
 };
 
 struct IO_Event_Selector_Queue {
@@ -162,19 +164,24 @@ VALUE IO_Event_Selector_resume(struct IO_Event_Selector *backend, int argc, VALU
 // We currently only implement the first strategy.
 VALUE IO_Event_Selector_raise(struct IO_Event_Selector *backend, int argc, VALUE *argv);
 
-// Yield control to the event loop. This is a scheduling operation.
+// Yield execution while keeping the current fiber runnable.
 //
-// The implementation adds the current fiber to the ready queue and transfers control to the event loop.
-static inline
-VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend)
-{
-	return IO_Event_Selector_resume(backend, 1, &backend->loop);
-}
+// The implementation adds the current fiber to the ready queue and transfers
+// control to the next ready fiber, or to the event loop when no other fiber is
+// ready.
+VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend);
 
 // Append a specific fiber to the ready queue.
 // The fiber can be an actual fiber or an object that responds to `alive?` and `transfer`.
 // The implementation will transfer control to the fiber later on.
 void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber);
+
+// Schedule a fiber using queue storage owned by the caller. The caller must
+// keep the queue storage alive until it is dispatched or cancelled.
+void IO_Event_Selector_ready_schedule(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *queue, VALUE fiber);
+
+// Cancel a caller-owned ready queue entry if it has not been dispatched yet.
+void IO_Event_Selector_ready_cancel(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *queue);
 
 // Flush the ready queue by transferring control one at a time.
 int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend);

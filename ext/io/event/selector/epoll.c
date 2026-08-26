@@ -24,6 +24,7 @@ enum {EPOLL_MAX_EVENTS = 64};
 struct IO_Event_Selector_EPoll_Waiting
 {
 	struct IO_Event_List list;
+	struct IO_Event_Selector_Queue queue;
 	
 	// The events the fiber is waiting for.
 	enum IO_Event events;
@@ -286,9 +287,10 @@ int IO_Event_Selector_EPoll_Waiting_register(struct IO_Event_Selector_EPoll *sel
 }
 
 inline static
-void IO_Event_Selector_EPoll_Waiting_cancel(struct IO_Event_Selector_EPoll_Waiting *waiting)
+void IO_Event_Selector_EPoll_Waiting_cancel(struct IO_Event_Selector_EPoll *selector, struct IO_Event_Selector_EPoll_Waiting *waiting)
 {
-	IO_Event_List_pop(&waiting->list);
+	IO_Event_Selector_ready_cancel(&selector->backend, &waiting->queue);
+	IO_Event_List_free(&waiting->list);
 	waiting->fiber = 0;
 }
 
@@ -467,7 +469,7 @@ VALUE process_wait_ensure(VALUE _arguments) {
 	
 	close(arguments->descriptor);
 	
-	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->selector, arguments->waiting);
 	
 	return Qnil;
 }
@@ -536,7 +538,7 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	IO_Event_Selector_EPoll_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_EPoll_Waiting_cancel(arguments->selector, arguments->waiting);
 	
 	return Qnil;
 };
@@ -1024,9 +1026,10 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 		if (matching_events) {
 			IO_Event_List_append(node, saved);
 			
-			// Resume the fiber:
+			// Schedule the fiber after all ready events have been collected:
 			waiting->ready = matching_events;
-			IO_Event_Selector_loop_resume(&selector->backend, waiting->fiber, 0, NULL);
+			IO_Event_Selector_ready_schedule(&selector->backend, &waiting->queue, waiting->fiber);
+			IO_Event_List_pop(&waiting->list);
 			
 			node = saved->tail;
 			IO_Event_List_pop(saved);
@@ -1118,7 +1121,9 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	}
 	
 	if (result) {
-		return rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
+		VALUE selected = rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
+		IO_Event_Selector_ready_flush(&selector->backend);
+		return selected;
 	} else {
 		return RB_INT2NUM(0);
 	}

@@ -51,7 +51,7 @@ describe IO::Event::Selector::Select do
 			fiber.transfer
 			
 			waiter = subject::Waiter.new(fiber, IO::READABLE, nil)
-			waiter.dispatch(IO::READABLE){}
+			waiter.dispatch(IO::READABLE, ::Queue.new){}
 			
 			expect(waiter.fiber).to be_nil
 		end

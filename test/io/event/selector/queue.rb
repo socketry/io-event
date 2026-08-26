@@ -27,6 +27,26 @@ Queue = Sus::Shared("queue") do
 			
 			expect(sequence).to be == [:select, :transfer, :select]
 		end
+		
+		it "transfers directly to a ready fiber" do
+			sequence = []
+			
+			second = Fiber.new do
+				sequence << :second
+			end
+			
+			first = Fiber.new do
+				sequence << :first
+				selector.transfer
+				sequence << :unreachable
+			end
+			
+			selector.push(second)
+			first.transfer
+			sequence << :returned
+			
+			expect(sequence).to be == [:first, :second, :returned]
+		end
 	end
 	
 	with "#push" do
@@ -170,6 +190,27 @@ Queue = Sus::Shared("queue") do
 			selector.select(0)
 			
 			expect(sequence).to be == [:yield, :select, :resumed]
+		end
+		
+		it "transfers directly to an existing ready fiber" do
+			sequence = []
+			
+			second = Fiber.new do
+				sequence << :second
+			end
+			
+			first = Fiber.new do
+				sequence << :first
+				selector.yield
+				sequence << :resumed
+			end
+			
+			selector.push(second)
+			first.transfer
+			sequence << :returned
+			selector.select(0)
+			
+			expect(sequence).to be == [:first, :second, :returned, :resumed]
 		end
 		
 		it "can yield from resumed fiber" do

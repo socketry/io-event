@@ -78,7 +78,11 @@ module IO::Event
 			
 			# Transfer from the current fiber to the event loop.
 			def transfer
-				@loop.transfer
+				if fiber = pop_ready_fiber
+					fiber.transfer
+				else
+					@loop.transfer
+				end
 			end
 			
 			# Transfer from the current fiber to the specified fiber. Put the current fiber into the ready list.
@@ -94,9 +98,14 @@ module IO::Event
 			# Yield from the current fiber back to the event loop. Put the current fiber into the ready list.
 			def yield
 				optional = Optional.new(Fiber.current)
+				fiber = pop_ready_fiber
 				@ready.push(optional)
 				
-				@loop.transfer
+				if fiber
+					fiber.transfer
+				else
+					@loop.transfer
+				end
 			ensure
 				optional.nullify
 			end
@@ -122,14 +131,22 @@ module IO::Event
 			end
 			
 			# A linked list node used to track fibers waiting for IO events.
-			Waiter = Struct.new(:fiber, :events, :tail) do
+			Waiter = Struct.new(:fiber, :events, :tail, :ready) do
 				# @returns [Boolean | Nil] Whether the waiting fiber is still alive.
 				def alive?
 					self.fiber&.alive?
 				end
 				
+				# Transfer control to the waiting fiber if it has not been cancelled.
+				def transfer
+					if fiber = self.fiber
+						self.fiber = nil
+						fiber.transfer
+					end
+				end
+				
 				# Dispatch the given events to the list of waiting fibers. If the fiber was not waiting for the given events, it is reactivated by calling the given block.
-				def dispatch(events, &reactivate)
+				def dispatch(events, ready_queue, &reactivate)
 					# We capture the tail here, because calling reactivate might modify it:
 					tail = self.tail
 					
@@ -139,15 +156,15 @@ module IO::Event
 							if revents.zero?
 								reactivate.call(self)
 							else
-								self.fiber = nil
-								fiber.transfer(revents)
+								self.ready = revents
+								ready_queue.push(self)
 							end
 						else
 							self.fiber = nil
 						end
 					end
 					
-					tail&.dispatch(events, &reactivate)
+					tail&.dispatch(events, ready_queue, &reactivate)
 				end
 				
 				# Clear the waiting fiber so it will not be resumed.
@@ -173,7 +190,8 @@ module IO::Event
 			def io_wait(fiber, io, events)
 				waiter = @waiting[io] = Waiter.new(fiber, events, @waiting[io])
 				
-				@loop.transfer || false
+				transfer
+				waiter.ready || false
 			ensure
 				waiter&.invalidate
 			end
@@ -315,13 +333,27 @@ module IO::Event
 				Selector.process_wait(pid, flags)
 			end
 			
+			private def pop_ready_fiber
+				while fiber = pop_ready_item
+					return fiber if fiber.alive?
+				end
+				
+				return nil
+			end
+			
+			private def pop_ready_item
+				@ready.pop(true)
+			rescue ThreadError
+				return nil
+			end
+			
 			private def pop_ready
 				unless @ready.empty?
 					count = @ready.size
 					
 					count.times do
-						fiber = @ready.pop
-						fiber.transfer if fiber.alive?
+						fiber = pop_ready_item
+						fiber.transfer if fiber&.alive?
 					end
 					
 					return true
@@ -416,12 +448,14 @@ module IO::Event
 				end
 				
 				ready.each do |io, events|
-					@waiting.delete(io).dispatch(events) do |waiter|
+					@waiting.delete(io).dispatch(events, @ready) do |waiter|
 						# Re-schedule the waiting IO:
 						waiter.tail = @waiting[io]
 						@waiting[io] = waiter
 					end
 				end
+				
+				pop_ready unless ready.empty?
 				
 				return ready.size
 			end

@@ -180,24 +180,6 @@ VALUE IO_Event_Selector_loop_resume(struct IO_Event_Selector *backend, VALUE fib
 	return IO_Event_Fiber_transfer(fiber, argc, argv);
 }
 
-VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
-{
-	// Under normal operation, a user fiber yields back to the event loop fiber.
-	// However, in some cases (e.g. blocking IO called from within the scheduler
-	// fiber itself), the current fiber may already be the loop fiber. In that case,
-	// transferring to ourselves would be a no-op in Ruby, but it signals a misuse:
-	// the event loop fiber should never need to yield to itself, as nothing else
-	// would be running to resume it. We return immediately rather than self-transferring.
-	if (backend->loop == IO_Event_Fiber_current()) {
-		// Uncomment to investigate the callsite that triggers this condition:
-		// rb_warning("IO_Event_Selector_loop_yield: current fiber is the loop fiber");
-		// rb_funcall(rb_mKernel, rb_intern("puts"), 1, rb_funcall(rb_cThread, rb_intern("current"), 0));
-		return Qnil;
-	}
-
-	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
-}
-
 struct wait_and_transfer_arguments {
 	int argc;
 	VALUE *argv;
@@ -207,6 +189,8 @@ struct wait_and_transfer_arguments {
 };
 
 static void queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *waiting) {
+	assert(waiting->flags & IO_EVENT_SELECTOR_QUEUE_QUEUED);
+
 	if (waiting->head) {
 		waiting->head->tail = waiting->tail;
 	} else {
@@ -223,11 +207,13 @@ static void queue_pop(struct IO_Event_Selector *backend, struct IO_Event_Selecto
 	
 	waiting->head = NULL;
 	waiting->tail = NULL;
+	waiting->flags &= ~IO_EVENT_SELECTOR_QUEUE_QUEUED;
 }
 
 static void queue_push(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *waiting) {
 	assert(waiting->head == NULL);
 	assert(waiting->tail == NULL);
+	assert(!(waiting->flags & IO_EVENT_SELECTOR_QUEUE_QUEUED));
 	
 	if (backend->waiting) {
 		// If there was an item in the queue already, we shift it along:
@@ -240,6 +226,7 @@ static void queue_push(struct IO_Event_Selector *backend, struct IO_Event_Select
 	
 	// We always push to the front/head:
 	backend->waiting = waiting;
+	waiting->flags |= IO_EVENT_SELECTOR_QUEUE_QUEUED;
 }
 
 static VALUE wait_and_transfer(VALUE _arguments) {
@@ -334,6 +321,27 @@ void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber
 	queue_push(backend, waiting);
 }
 
+void IO_Event_Selector_ready_schedule(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *queue, VALUE fiber)
+{
+	assert(!(queue->flags & IO_EVENT_SELECTOR_QUEUE_QUEUED));
+
+	queue->head = NULL;
+	queue->tail = NULL;
+	queue->flags = IO_EVENT_SELECTOR_QUEUE_EXTERNAL;
+
+	RB_OBJ_WRITE(backend->self, &queue->fiber, fiber);
+	queue_push(backend, queue);
+}
+
+void IO_Event_Selector_ready_cancel(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *queue)
+{
+	if (queue->flags & IO_EVENT_SELECTOR_QUEUE_QUEUED) {
+		queue_pop(backend, queue);
+	}
+
+	queue->fiber = 0;
+}
+
 static inline
 void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Event_Selector_Queue *ready)
 {
@@ -345,6 +353,10 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 		// This means that the fiber was added to the ready queue by the selector itself, and we need to transfer control to it, but before we do that, we need to remove it from the queue, as there is no expectation that returning from `transfer` will remove it.
 		queue_pop(backend, ready);
 		xfree(ready);
+	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_EXTERNAL) {
+		// Caller-owned queue entries are removed before control is transferred.
+		// This allows the resumed fiber to unwind and release the queue storage.
+		queue_pop(backend, ready);
 	} else if (ready->flags & IO_EVENT_SELECTOR_QUEUE_FIBER) {
 		// This means the fiber added itself to the ready queue, and we need to transfer control back to it. Transferring control back to the fiber will call `queue_pop` and remove it from the queue.
 	} else {
@@ -352,6 +364,62 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 	}
 	
 	IO_Event_Selector_loop_resume(backend, fiber, 0, NULL);
+}
+
+VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
+{
+	// Prefer a direct hand-off to a fiber which is already runnable. This avoids
+	// bouncing through the event loop merely to consult the ready queue.
+	if (backend->ready) {
+		IO_Event_Selector_ready_pop(backend, backend->ready);
+		return Qnil;
+	}
+
+	// Under normal operation, a user fiber yields back to the event loop fiber.
+	// However, in some cases (e.g. blocking IO called from within the scheduler
+	// fiber itself), the current fiber may already be the loop fiber. In that case,
+	// transferring to ourselves would be a no-op in Ruby, but it signals a misuse:
+	// the event loop fiber should never need to yield to itself, as nothing else
+	// would be running to resume it. We return immediately rather than self-transferring.
+	if (backend->loop == IO_Event_Fiber_current()) {
+		return Qnil;
+	}
+
+	return IO_Event_Fiber_transfer(backend->loop, 0, NULL);
+}
+
+static VALUE wait_and_schedule(VALUE _arguments) {
+	struct wait_and_transfer_arguments *arguments = (struct wait_and_transfer_arguments *)_arguments;
+	struct IO_Event_Selector_Queue *ready = arguments->backend->ready;
+
+	if (ready != arguments->waiting) {
+		IO_Event_Selector_ready_pop(arguments->backend, ready);
+		return Qnil;
+	}
+
+	return IO_Event_Selector_loop_resume(arguments->backend, arguments->backend->loop, 0, NULL);
+}
+
+VALUE IO_Event_Selector_yield(struct IO_Event_Selector *backend)
+{
+	struct IO_Event_Selector_Queue waiting = {
+		.head = NULL,
+		.tail = NULL,
+		.flags = IO_EVENT_SELECTOR_QUEUE_FIBER,
+		.fiber = IO_Event_Fiber_current()
+	};
+
+	RB_OBJ_WRITTEN(backend->self, Qundef, waiting.fiber);
+	queue_push(backend, &waiting);
+
+	struct wait_and_transfer_arguments arguments = {
+		.argc = 0,
+		.argv = NULL,
+		.backend = backend,
+		.waiting = &waiting,
+	};
+
+	return rb_ensure(wait_and_schedule, (VALUE)&arguments, wait_and_transfer_ensure, (VALUE)&arguments);
 }
 
 int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
