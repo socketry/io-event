@@ -564,8 +564,19 @@ void IO_Event_Selector_URing_Completion_cancel_async(struct IO_Event_Selector_UR
 }
 
 static
+VALUE IO_Event_Selector_URing_Waiting_wait_yield(VALUE _selector)
+{
+	struct IO_Event_Selector_URing *selector = (struct IO_Event_Selector_URing *)_selector;
+	
+	return IO_Event_Selector_loop_yield(&selector->backend);
+}
+
+static
 void IO_Event_Selector_URing_Waiting_cancel_and_wait(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
 {
+	int state = 0;
+	VALUE error = Qnil;
+	
 	if (waiting->completion) {
 		IO_Event_Selector_URing_Completion_cancel_async(selector, waiting->completion);
 		
@@ -573,11 +584,24 @@ void IO_Event_Selector_URing_Waiting_cancel_and_wait(struct IO_Event_Selector_UR
 		// Keep the C frame, buffer lock and completion record alive until the
 		// original operation CQE confirms that it can no longer access memory.
 		while (waiting->completion) {
-			IO_Event_Selector_loop_yield(&selector->backend);
+			int current_state = 0;
+			rb_protect(IO_Event_Selector_URing_Waiting_wait_yield, (VALUE)selector, &current_state);
+			
+			if (current_state && !state) {
+				state = current_state;
+				error = rb_errinfo();
+			}
+			
+			rb_set_errinfo(Qnil);
 		}
 	}
 	
 	IO_Event_Selector_URing_Waiting_cancel(waiting);
+	
+	if (state) {
+		rb_set_errinfo(error);
+		rb_jump_tag(state);
+	}
 }
 
 #pragma mark - Process.wait

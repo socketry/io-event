@@ -40,6 +40,45 @@ Cancellable = Sus::Shared("cancellable") do
 			end
 		end
 		
+		it "continues cancellation when interrupted again" do
+			skip "Requires the URing selector" unless defined?(IO::Event::Selector::URing) && selector.is_a?(IO::Event::Selector::URing)
+			
+			buffer = IO::Buffer.new(64)
+			error = nil
+			
+			reader = Fiber.new do
+				begin
+					if selector.method(:io_read).arity == 5
+						selector.io_read(Fiber.current, input, buffer, 0, 1)
+					else
+						selector.io_read(Fiber.current, input, buffer, 1)
+					end
+				rescue Interrupt => exception
+					error = exception
+				end
+			end
+			
+			# Submit the read and leave it pending on the empty pipe:
+			reader.transfer
+			
+			# The first interruption enters cancel_and_wait and yields while the
+			# original operation is still outstanding:
+			reader.raise(Interrupt)
+			expect(reader).to be(:alive?)
+			
+			# A second interruption must be deferred until cancellation cleanup
+			# has consumed the original operation's completion:
+			reader.raise(Interrupt)
+			continued_cancellation = reader.alive?
+			
+			if continued_cancellation
+				selector.select(0.1) while reader.alive?
+			end
+			
+			expect(continued_cancellation).to be == true
+			expect(error).to be_a(Interrupt)
+		end
+		
 		it "can cancel waits" do
 			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
 			
