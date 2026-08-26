@@ -49,6 +49,22 @@ Selector = Sus::Shared("a selector") do
 		end
 	end
 	
+	def await_io
+		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			return yield
+		end
+		
+		result = nil
+		fiber = Fiber.new do
+			result = yield
+		end
+		
+		fiber.transfer
+		selector.select(1) while result.nil? && fiber.alive?
+		
+		return result
+	end
+	
 	with "#select" do
 		let(:quantum) {0.2}
 		

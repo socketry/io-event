@@ -27,6 +27,22 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 	end
 	
+	def await_io
+		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			return yield
+		end
+		
+		result = nil
+		fiber = Fiber.new do
+			result = yield
+		end
+		
+		fiber.transfer
+		selector.select(1) while result.nil? && fiber.alive?
+		
+		return result
+	end
+	
 	with "a pipe" do
 		let(:pipe) {IO.pipe}
 		let(:input) {pipe.first}
@@ -93,7 +109,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			output.write("abc")
 			buffer = IO::Buffer.new(8)
 			
-			expect(io_read(input, buffer, 2, 3)).to be == 3
+			expect(await_io{io_read(input, buffer, 2, 3)}).to be == 3
 			expect(buffer.get_string(2, 3)).to be == "abc"
 		end
 		
@@ -102,7 +118,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			
 			buffer = IO::Buffer.for("01234567".dup)
 			
-			expect(io_write(output, buffer, 2, 3)).to be == 3
+			expect(await_io{io_write(output, buffer, 2, 3)}).to be == 3
 			expect(input.read(3)).to be == "234"
 		end
 		
@@ -162,7 +178,15 @@ BufferedIO = Sus::Shared("buffered io") do
 			reader.transfer
 			selector.select(0)
 			
-			expect(result).to be_again?
+			if result.nil?
+				# Submission-based backends suspend the fiber until the kernel
+				# completes the operation, rather than returning EAGAIN.
+				output.write("x")
+				selector.select(1) while result.nil?
+				expect(result).to be == 1
+			else
+				expect(result).to be_again?
+			end
 		end
 		
 		it "returns EINVAL when read offset exceeds buffer size" do

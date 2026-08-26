@@ -81,7 +81,25 @@ struct IO_Event_Selector_URing_Completion
 	struct IO_Event_List list;
 	
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	bool cancellation_pending;
 };
+
+// Cancellation completions use the low bit to distinguish them from the
+// completion of the operation being cancelled. Completion records are aligned,
+// so the low bit is otherwise always clear.
+#define IO_EVENT_SELECTOR_URING_CANCELLATION_TAG ((uint64_t)1)
+
+static inline uint64_t
+IO_Event_Selector_URing_Completion_cancellation_data(struct IO_Event_Selector_URing_Completion *completion)
+{
+	return ((uint64_t)(uintptr_t)completion) | IO_EVENT_SELECTOR_URING_CANCELLATION_TAG;
+}
+
+static inline struct IO_Event_Selector_URing_Completion *
+IO_Event_Selector_URing_Completion_from_cancellation_data(uint64_t data)
+{
+	return (struct IO_Event_Selector_URing_Completion *)(uintptr_t)(data & ~IO_EVENT_SELECTOR_URING_CANCELLATION_TAG);
+}
 
 static
 void IO_Event_Selector_URing_Completion_mark(void *_completion)
@@ -188,6 +206,9 @@ struct IO_Event_Selector_URing_Completion * IO_Event_Selector_URing_Completion_a
 	
 	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_acquire(%p, limit=%ld)\n", (void*)completion, selector->completions.limit);
 	
+	assert(completion->waiting == NULL);
+	assert(!completion->cancellation_pending);
+	
 	waiting->completion = completion;
 	completion->waiting = waiting;
 	
@@ -206,12 +227,39 @@ void IO_Event_Selector_URing_Completion_cancel(struct IO_Event_Selector_URing_Co
 }
 
 inline static
-void IO_Event_Selector_URing_Completion_release(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+void IO_Event_Selector_URing_Completion_recycle(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
 {
-	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_release(%p)\n", (void*)completion);
+	assert(completion->waiting == NULL);
+	assert(!completion->cancellation_pending);
+	
+	IO_Event_List_prepend(&selector->free_list, &completion->list);
+}
+
+inline static
+void IO_Event_Selector_URing_Completion_complete(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+{
+	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_complete(%p)\n", (void*)completion);
 	
 	IO_Event_Selector_URing_Completion_cancel(completion);
-	IO_Event_List_prepend(&selector->free_list, &completion->list);
+	
+	// A cancellation SQE still refers to this completion record. Keep it out of
+	// the free list until that CQE has also been observed, avoiding ABA reuse.
+	if (!completion->cancellation_pending) {
+		IO_Event_Selector_URing_Completion_recycle(selector, completion);
+	}
+}
+
+inline static
+void IO_Event_Selector_URing_Completion_cancellation_complete(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+{
+	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_cancellation_complete(%p)\n", (void*)completion);
+	
+	assert(completion->cancellation_pending);
+	completion->cancellation_pending = false;
+	
+	if (completion->waiting == NULL) {
+		IO_Event_Selector_URing_Completion_recycle(selector, completion);
+	}
 }
 
 inline static
@@ -234,6 +282,8 @@ void IO_Event_Selector_URing_Completion_initialize(void *element)
 	struct IO_Event_Selector_URing_Completion *completion = element;
 	IO_Event_List_initialize(&completion->list);
 	completion->list.type = &IO_Event_Selector_URing_Completion_Type;
+	completion->waiting = NULL;
+	completion->cancellation_pending = false;
 }
 
 void IO_Event_Selector_URing_Completion_free(void *element)
@@ -500,6 +550,36 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 	return sqe;
 }
 
+static
+void IO_Event_Selector_URing_Completion_cancel_async(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+{
+	if (completion->cancellation_pending) return;
+	
+	completion->cancellation_pending = true;
+	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_cancel(sqe, completion, 0);
+	io_uring_sqe_set_data64(sqe, IO_Event_Selector_URing_Completion_cancellation_data(completion));
+	io_uring_submit_pending(selector);
+}
+
+static
+void IO_Event_Selector_URing_Waiting_cancel_and_wait(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Waiting *waiting)
+{
+	if (waiting->completion) {
+		IO_Event_Selector_URing_Completion_cancel_async(selector, waiting->completion);
+		
+		// The kernel may still be reading from or writing to the supplied buffer.
+		// Keep the C frame, buffer lock and completion record alive until the
+		// original operation CQE confirms that it can no longer access memory.
+		while (waiting->completion) {
+			IO_Event_Selector_loop_yield(&selector->backend);
+		}
+	}
+	
+	IO_Event_Selector_URing_Waiting_cancel(waiting);
+}
+
 #pragma mark - Process.wait
 
 #ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
@@ -603,6 +683,10 @@ VALUE process_wait_transfer(VALUE _arguments) {
 static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
+	
+	if (arguments->waiting->completion) {
+		IO_Event_Selector_URing_Completion_cancel_async(arguments->selector, arguments->waiting->completion);
+	}
 	
 #ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
 	close(arguments->descriptor);
@@ -714,13 +798,8 @@ static
 VALUE io_wait_ensure(VALUE _arguments) {
 	struct io_wait_arguments *arguments = (struct io_wait_arguments *)_arguments;
 	
-	// If the operation is still in progress, cancel it:
 	if (arguments->waiting->completion) {
-		if (DEBUG) fprintf(stderr, "io_wait_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-		struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
-		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
-		io_uring_sqe_set_data(sqe, NULL);
-		io_uring_submit_now(arguments->selector);
+		IO_Event_Selector_URing_Completion_cancel_async(arguments->selector, arguments->waiting->completion);
 	}
 	
 	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
@@ -824,7 +903,7 @@ io_read_submit(VALUE _arguments)
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
 	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, arguments->offset);
 	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
-	io_uring_submit_now(selector);
+	io_uring_submit_pending(selector);
 	
 	IO_Event_Selector_loop_yield(&selector->backend);
 	
@@ -837,16 +916,7 @@ io_read_ensure(VALUE _arguments)
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	// If the operation is still in progress, cancel it:
-	if (arguments->waiting->completion) {
-		if (DEBUG) fprintf(stderr, "io_read_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-		struct io_uring_sqe *sqe = io_get_sqe(selector);
-		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
-		io_uring_sqe_set_data(sqe, NULL);
-		io_uring_submit_now(selector);
-	}
-	
-	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_URing_Waiting_cancel_and_wait(selector, arguments->waiting);
 	
 	return Qnil;
 }
@@ -876,24 +946,84 @@ io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, c
 	);
 }
 
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+struct io_read_locked_arguments {
+	struct IO_Event_Selector_URing *selector;
+	VALUE fiber;
+	VALUE io;
+	off_t from;
+	size_t offset;
+	size_t length;
+	bool positional;
+};
+
+static VALUE
+io_read_locked(void *base, size_t size, VALUE _arguments)
+{
+	struct io_read_locked_arguments *arguments = (struct io_read_locked_arguments *)_arguments;
+	
+	if (!IO_Event_Selector_valid_buffer_range(size, arguments->offset, arguments->length)) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (arguments->length == 0) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	int descriptor = IO_Event_Selector_io_descriptor(arguments->io);
+	char *buffer = (char*)base + arguments->offset;
+	
+	// Avoid the submission and suspension overhead when the operation can
+	// complete immediately. The descriptor must be non-blocking for this
+	// optimistic syscall; if it would block, restore its original mode and
+	// submit the operation to io_uring instead.
+	int flags = IO_Event_Selector_nonblock_set(descriptor);
+	ssize_t result;
+	
+	if (arguments->positional) {
+		result = pread(descriptor, buffer, arguments->length, arguments->from);
+	} else {
+		result = read(descriptor, buffer, arguments->length);
+	}
+	
+	int error = errno;
+	IO_Event_Selector_nonblock_restore(descriptor, flags);
+	
+	if (result >= 0) {
+		return rb_fiber_scheduler_io_result(result, 0);
+	} else if (!IO_Event_try_again(error)) {
+		return rb_fiber_scheduler_io_result(-1, error);
+	}
+	
+	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	
+	int completion = io_read(arguments->selector, arguments->fiber, descriptor, buffer, arguments->length, from);
+	if (completion < 0) {
+		return rb_fiber_scheduler_io_result(-1, -completion);
+	}
+	
+	return rb_fiber_scheduler_io_result(completion, 0);
+}
+#endif
+
 VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	struct io_read_locked_arguments arguments = {
+		.selector = selector,
+		.fiber = fiber,
+		.io = io,
+		.offset = NUM2SIZET(_first),
+		.length = NUM2SIZET(_second),
+		.positional = false,
+	};
+	
+	return rb_io_buffer_locked_for_writing(buffer, io_read_locked, (VALUE)&arguments);
+#else
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	size_t offset = NUM2SIZET(_first);
-	size_t length = NUM2SIZET(_second);
-	
-	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-#else
 	size_t length = NUM2SIZET(_first);
 	size_t offset = NUM2SIZET(_second);
 	size_t total = 0;
@@ -908,15 +1038,6 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	off_t from = io_seekable(descriptor);
-	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	int result = io_read(selector, fiber, descriptor, (char*)base + offset, length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
-	}
-	
-	return rb_fiber_scheduler_io_result(result, 0);
-#else
 	size_t maximum_size = size - offset;
 	
 	// Are we performing a non-blocking read?
@@ -974,20 +1095,23 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	struct io_read_locked_arguments arguments = {
+		.selector = selector,
+		.fiber = fiber,
+		.io = io,
+		.from = NUM2OFFT(_from),
+		.offset = NUM2SIZET(_first),
+		.length = NUM2SIZET(_second),
+		.positional = true,
+	};
+	
+	return rb_io_buffer_locked_for_writing(buffer, io_read_locked, (VALUE)&arguments);
+#else
 	void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	size_t offset = NUM2SIZET(_first);
-	size_t length = NUM2SIZET(_second);
-	
-	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-#else
 	size_t length = NUM2SIZET(_first);
 	size_t offset = NUM2SIZET(_second);
 	size_t total = 0;
@@ -1000,17 +1124,7 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	}
 #endif
 	off_t from = NUM2OFFT(_from);
-	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	int result = io_read(selector, fiber, descriptor, (char*)base + offset, length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
-	}
-	
-	return rb_fiber_scheduler_io_result(result, 0);
-#else
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
@@ -1071,16 +1185,7 @@ io_write_ensure(VALUE _argument)
 	struct io_write_arguments *arguments = (struct io_write_arguments*)_argument;
 	struct IO_Event_Selector_URing *selector = arguments->selector;
 	
-	// If the operation is still in progress, cancel it:
-	if (arguments->waiting->completion) {
-		if (DEBUG) fprintf(stderr, "io_write_ensure:io_uring_prep_cancel(waiting=%p, completion=%p)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion);
-		struct io_uring_sqe *sqe = io_get_sqe(selector);
-		io_uring_prep_cancel(sqe, (void*)arguments->waiting->completion, 0);
-		io_uring_sqe_set_data(sqe, NULL);
-		io_uring_submit_now(selector);
-	}
-	
-	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+	IO_Event_Selector_URing_Waiting_cancel_and_wait(selector, arguments->waiting);
 	
 	return Qnil;
 }
@@ -1110,24 +1215,84 @@ io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, 
 	);
 }
 
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+struct io_write_locked_arguments {
+	struct IO_Event_Selector_URing *selector;
+	VALUE fiber;
+	VALUE io;
+	off_t from;
+	size_t offset;
+	size_t length;
+	bool positional;
+};
+
+static VALUE
+io_write_locked(const void *base, size_t size, VALUE _arguments)
+{
+	struct io_write_locked_arguments *arguments = (struct io_write_locked_arguments *)_arguments;
+	
+	if (!IO_Event_Selector_valid_buffer_range(size, arguments->offset, arguments->length)) {
+		return rb_fiber_scheduler_io_result(-1, EINVAL);
+	} else if (arguments->length == 0) {
+		return rb_fiber_scheduler_io_result(0, 0);
+	}
+	
+	int descriptor = IO_Event_Selector_io_descriptor(arguments->io);
+	const char *buffer = (const char*)base + arguments->offset;
+	
+	// Avoid the submission and suspension overhead when the operation can
+	// complete immediately. The descriptor must be non-blocking for this
+	// optimistic syscall; if it would block, restore its original mode and
+	// submit the operation to io_uring instead.
+	int flags = IO_Event_Selector_nonblock_set(descriptor);
+	ssize_t result;
+	
+	if (arguments->positional) {
+		result = pwrite(descriptor, buffer, arguments->length, arguments->from);
+	} else {
+		result = write(descriptor, buffer, arguments->length);
+	}
+	
+	int error = errno;
+	IO_Event_Selector_nonblock_restore(descriptor, flags);
+	
+	if (result >= 0) {
+		return rb_fiber_scheduler_io_result(result, 0);
+	} else if (!IO_Event_try_again(error)) {
+		return rb_fiber_scheduler_io_result(-1, error);
+	}
+	
+	off_t from = arguments->positional ? arguments->from : io_seekable(descriptor);
+	
+	int completion = io_write(arguments->selector, arguments->fiber, descriptor, (char*)buffer, arguments->length, from);
+	if (completion < 0) {
+		return rb_fiber_scheduler_io_result(-1, -completion);
+	}
+	
+	return rb_fiber_scheduler_io_result(completion, 0);
+}
+#endif
+
 VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	struct io_write_locked_arguments arguments = {
+		.selector = selector,
+		.fiber = fiber,
+		.io = io,
+		.offset = NUM2SIZET(_first),
+		.length = NUM2SIZET(_second),
+		.positional = false,
+	};
+	
+	return rb_io_buffer_locked_for_reading(buffer, io_write_locked, (VALUE)&arguments);
+#else
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	size_t offset = NUM2SIZET(_first);
-	size_t length = NUM2SIZET(_second);
-	
-	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-#else
 	size_t length = NUM2SIZET(_first);
 	size_t offset = NUM2SIZET(_second);
 	size_t total = 0;
@@ -1146,15 +1311,6 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	off_t from = io_seekable(descriptor);
-	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	int result = io_write(selector, fiber, descriptor, (char*)base + offset, length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
-	}
-	
-	return rb_fiber_scheduler_io_result(result, 0);
-#else
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
@@ -1198,20 +1354,23 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
+#if RUBY_FIBER_SCHEDULER_VERSION >= 4
+	struct io_write_locked_arguments arguments = {
+		.selector = selector,
+		.fiber = fiber,
+		.io = io,
+		.from = NUM2OFFT(_from),
+		.offset = NUM2SIZET(_first),
+		.length = NUM2SIZET(_second),
+		.positional = true,
+	};
+	
+	return rb_io_buffer_locked_for_reading(buffer, io_write_locked, (VALUE)&arguments);
+#else
 	const void *base;
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	size_t offset = NUM2SIZET(_first);
-	size_t length = NUM2SIZET(_second);
-	
-	if (!IO_Event_Selector_valid_buffer_range(size, offset, length)) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (length == 0) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-#else
 	size_t length = NUM2SIZET(_first);
 	size_t offset = NUM2SIZET(_second);
 	size_t total = 0;
@@ -1228,17 +1387,7 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	}
 #endif
 	off_t from = NUM2OFFT(_from);
-	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
-	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
-	int result = io_write(selector, fiber, descriptor, (char*)base + offset, length, from);
-	if (result < 0) {
-		return rb_fiber_scheduler_io_result(-1, -result);
-	}
-	
-	return rb_fiber_scheduler_io_result(result, 0);
-#else
 	size_t maximum_size = size - offset;
 	while (maximum_size) {
 		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
@@ -1413,6 +1562,13 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 			continue;
 		}
 		
+		if (cqe->user_data & IO_EVENT_SELECTOR_URING_CANCELLATION_TAG) {
+			struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_from_cancellation_data(cqe->user_data);
+			IO_Event_Selector_URing_Completion_cancellation_complete(selector, completion);
+			io_uring_cq_advance(ring, 1);
+			continue;
+		}
+		
 		struct IO_Event_Selector_URing_Completion *completion = (void*)cqe->user_data;
 		struct IO_Event_Selector_URing_Waiting *waiting = completion->waiting;
 		
@@ -1427,13 +1583,11 @@ unsigned select_process_completions(struct IO_Event_Selector_URing *selector) {
 		
 		VALUE fiber = 0;
 		if (waiting && waiting->fiber) {
-			assert(waiting->result != -ECANCELED);
-			
 			fiber = waiting->fiber;
 		}
 
 		// This marks the waiting operation as "complete":
-		IO_Event_Selector_URing_Completion_release(selector, completion);
+		IO_Event_Selector_URing_Completion_complete(selector, completion);
 		
 		if (fiber) {
 			IO_Event_Selector_loop_resume(&selector->backend, fiber, 0, NULL);
