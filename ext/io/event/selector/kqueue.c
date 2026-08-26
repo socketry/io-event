@@ -917,7 +917,6 @@ struct select_arguments {
 	struct timespec storage;
 	struct timespec *timeout;
 	
-	struct IO_Event_List saved;
 };
 
 static
@@ -963,7 +962,7 @@ int select_internal_with_gvl(struct select_arguments *arguments) {
 }
 
 static
-int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor, struct IO_Event_List *saved)
+int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, uintptr_t identifier, struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor)
 {
 	// This is the mask of all events that occured for the given descriptor:
 	enum IO_Event ready_events = kqueue_descriptor->ready_events;
@@ -991,14 +990,12 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 		if (DEBUG) fprintf(stderr, "IO_Event_Selector_KQueue_handle: identifier=%lu, ready_events=%d, matching_events=%d\n", identifier, ready_events, matching_events);
 		
 		if (matching_events) {
-			IO_Event_List_append(node, saved);
+			struct IO_Event_List *next = node->tail;
+			IO_Event_List_pop(node);
 			
 			waiting->ready = matching_events;
 			IO_Event_Selector_ready_schedule(&selector->backend, &waiting->queue, waiting->fiber);
-			IO_Event_List_pop(&waiting->list);
-			
-			node = saved->tail;
-			IO_Event_List_pop(saved);
+			node = next;
 		} else {
 			kqueue_descriptor->waiting_events |= waiting->events;
 			node = node->tail;
@@ -1024,7 +1021,7 @@ VALUE select_handle_events(VALUE _arguments)
 	for (int i = 0; i < arguments->result; i += 1) {
 		if (arguments->events[i].udata) {
 			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
-			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor, &arguments->saved);
+			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor);
 		} else {
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 			IO_Event_Interrupt_clear(&selector->interrupt);
@@ -1033,16 +1030,6 @@ VALUE select_handle_events(VALUE _arguments)
 	}
 	
 	return RB_INT2NUM(arguments->result);
-}
-
-static
-VALUE select_handle_events_ensure(VALUE _arguments)
-{
-	struct select_arguments *arguments = (struct select_arguments *)_arguments;
-	
-	IO_Event_List_free(&arguments->saved);
-	
-	return Qnil;
 }
 
 VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
@@ -1062,7 +1049,6 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 			.tv_sec = 0,
 			.tv_nsec = 0
 		},
-		.saved = {},
 	};
 	
 	arguments.timeout = &arguments.storage;
@@ -1100,7 +1086,7 @@ VALUE IO_Event_Selector_KQueue_select(VALUE self, VALUE duration) {
 	}
 	
 	if (result) {
-		VALUE selected = rb_ensure(select_handle_events, (VALUE)&arguments, select_handle_events_ensure, (VALUE)&arguments);
+		VALUE selected = select_handle_events((VALUE)&arguments);
 		IO_Event_Selector_ready_flush(&selector->backend);
 		return selected;
 	} else {
