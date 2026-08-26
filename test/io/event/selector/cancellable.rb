@@ -64,7 +64,7 @@ Cancellable = Sus::Shared("cancellable") do
 			# The first interruption enters cancel_and_wait and yields while the
 			# original operation is still outstanding:
 			reader.raise(Interrupt)
-			expect(reader.alive?).to be == true
+			expect(reader).to be(:alive?)
 			
 			# A second interruption must be deferred until cancellation cleanup
 			# has consumed the original operation's completion:
