@@ -368,13 +368,6 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 
 VALUE IO_Event_Selector_loop_yield(struct IO_Event_Selector *backend)
 {
-	// Prefer a direct hand-off to a fiber which is already runnable. This avoids
-	// bouncing through the event loop merely to consult the ready queue.
-	if (backend->ready) {
-		IO_Event_Selector_ready_pop(backend, backend->ready);
-		return Qnil;
-	}
-
 	// Under normal operation, a user fiber yields back to the event loop fiber.
 	// However, in some cases (e.g. blocking IO called from within the scheduler
 	// fiber itself), the current fiber may already be the loop fiber. In that case,

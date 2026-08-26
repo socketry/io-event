@@ -28,7 +28,7 @@ Queue = Sus::Shared("queue") do
 			expect(sequence).to be == [:select, :transfer, :select]
 		end
 		
-		it "transfers directly to a ready fiber" do
+		it "returns to the event loop without consuming the ready queue" do
 			sequence = []
 			
 			second = Fiber.new do
@@ -44,9 +44,11 @@ Queue = Sus::Shared("queue") do
 			selector.push(second)
 			first.transfer
 			sequence << :returned
+			selector.select(0)
 			
-			expect(sequence).to be == [:first, :second, :returned]
+			expect(sequence).to be == [:first, :returned, :second]
 		end
+		
 	end
 	
 	with "#push" do

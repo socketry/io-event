@@ -78,11 +78,7 @@ module IO::Event
 			
 			# Transfer from the current fiber to the event loop.
 			def transfer
-				if fiber = pop_ready_fiber
-					fiber.transfer
-				else
-					@loop.transfer
-				end
+				@loop.transfer
 			end
 			
 			# Transfer from the current fiber to the specified fiber. Put the current fiber into the ready list.
