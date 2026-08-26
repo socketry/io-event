@@ -100,6 +100,44 @@ Cancellable = Sus::Shared("cancellable") do
 				selector.select(0.1)
 			end
 		end
+		
+		it "can reuse completions after cancelling waits" do
+			skip "Requires the URing selector" unless defined?(IO::Event::Selector::URing) && selector.is_a?(IO::Event::Selector::URing)
+			
+			pid = Process.fork do
+				local_selector = selector.class.new(Fiber.current)
+				local_input, local_output = IO.pipe
+				
+				begin
+					cancelled_waiter = Fiber.new do
+						local_selector.io_wait(Fiber.current, local_input, IO::READABLE)
+					rescue Interrupt
+						# The pending wait was cancelled.
+					end
+					
+					cancelled_waiter.transfer
+					cancelled_waiter.raise(Interrupt)
+					local_selector.select(0.01)
+					
+					waiters = 2.times.map do
+						Fiber.new do
+							local_selector.io_wait(Fiber.current, local_input, IO::READABLE)
+						rescue Interrupt
+							# The pending wait was cancelled.
+						end
+					end
+					
+					waiters.each(&:transfer)
+				ensure
+					local_selector.close
+					local_input.close
+					local_output.close
+				end
+			end
+			
+			_, status = Process.wait2(pid)
+			expect(status).to be(:success?)
+		end
 	end
 end
 
