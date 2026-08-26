@@ -169,6 +169,17 @@ describe IO::Event::PriorityHeap do
 			expect(priority_heap.size).to be == 9
 		end
 		
+		it "should bubble up the replacement element when necessary" do
+			[1, 4, 2, 5, 6, 3].each{|element| priority_heap.push(element)}
+			
+			expect(priority_heap.delete(5)).to be == 5
+			expect(priority_heap).to be(:valid?)
+			
+			remaining = []
+			remaining << priority_heap.pop until priority_heap.empty?
+			expect(remaining).to be == [1, 2, 3, 4, 6]
+		end
+		
 		it "should handle deleting duplicate elements" do
 			elements = [5, 3, 5, 1, 5, 2]
 			elements.each{|e| priority_heap.push(e)}
