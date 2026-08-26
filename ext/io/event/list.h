@@ -90,7 +90,7 @@ inline static size_t IO_Event_List_memory_size(const struct IO_Event_List *list)
 // Return true if the list is empty.
 inline static int IO_Event_List_empty(const struct IO_Event_List *list)
 {
-	return list->head == list->tail;
+	return list->head == list;
 }
 
 // Enumerate all items in the list, assuming the list will not be modified during iteration.
