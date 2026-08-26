@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.20.0
+
+  - Add compatibility with Ruby 4.1's fiber scheduler interface version 4. Buffered IO operations now use `(offset, length)`, perform a single transfer of at most `length` bytes, return short transfers directly, and report `-EAGAIN` without waiting. Earlier Ruby versions retain the existing minimum-progress behavior.
+
 ### v1.19.5
 
   - Preserve the original exception or non-local control flow when `IO::Event::WorkerPool` cancellation interrupts a blocked fiber, while still cancelling and draining the in-flight blocking operation before returning control to Ruby.
@@ -54,10 +58,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.16.4
 
   - Correctly implement `Interrupt#signal` so that it is robust enough to be called by `Scheduler#unblock`.
-
-### v1.16.3
-
-  - Handle `IOError` raised while shutting down the pure Ruby interrupt pipe, so `IO::Event::Interrupt#close` does not leak expected shutdown errors from the interrupt fiber.
 
 ## Contributing
 

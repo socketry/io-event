@@ -7,6 +7,6 @@
 class IO
 	# @namespace
 	module Event
-		VERSION = "1.19.5"
+		VERSION = "1.20.0"
 	end
 end

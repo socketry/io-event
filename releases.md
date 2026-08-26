@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.20.0
 
   - Add compatibility with Ruby 4.1's fiber scheduler interface version 4. Buffered IO operations now use `(offset, length)`, perform a single transfer of at most `length` bytes, return short transfers directly, and report `-EAGAIN` without waiting. Earlier Ruby versions retain the existing minimum-progress behavior.
 
