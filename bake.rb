@@ -8,8 +8,8 @@ def build
 	ext_path = File.expand_path("ext", __dir__)
 	
 	Dir.chdir(ext_path) do
-		system("ruby ./extconf.rb")
-		system("make")
+		system("ruby", "./extconf.rb", exception: true)
+		system("make", exception: true)
 	end
 end
 
