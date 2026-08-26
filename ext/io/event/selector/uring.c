@@ -1034,7 +1034,6 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	} else if (offset == size) {
 		return rb_fiber_scheduler_io_result(0, 0);
 	}
-#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	off_t from = io_seekable(descriptor);
@@ -1122,7 +1121,6 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	} else if (offset == size) {
 		return rb_fiber_scheduler_io_result(0, 0);
 	}
-#endif
 	off_t from = NUM2OFFT(_from);
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	size_t maximum_size = size - offset;
@@ -1307,7 +1305,6 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	} else if (offset == size) {
 		return rb_fiber_scheduler_io_result(0, 0);
 	}
-#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	off_t from = io_seekable(descriptor);
@@ -1385,7 +1382,6 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	} else if (offset == size) {
 		return rb_fiber_scheduler_io_result(0, 0);
 	}
-#endif
 	off_t from = NUM2OFFT(_from);
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	size_t maximum_size = size - offset;
