@@ -20,9 +20,7 @@ jobs:
           - macos
         
         ruby:
-          - "3.3"
-          - "3.4"
-          - "4.0"
+          - head
     
     steps:
     - uses: actions/checkout@v6
@@ -40,7 +38,7 @@ jobs:
       run: bundle exec bake test:external
     
     - name: Run tests (worker pool)
-      if: ${{matrix.os == 'ubuntu' && matrix.ruby == '4.0'}}
+      if: ${{matrix.os == 'ubuntu'}}
       env:
         ASYNC_SCHEDULER_WORKER_POOL: true
       timeout-minutes: 10

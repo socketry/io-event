@@ -8,8 +8,6 @@
 # Copyright, 2026, by Stan Hu.
 # Copyright, 2026, by Sharon Rosner.
 
-return if RUBY_DESCRIPTION =~ /jruby/
-
 require "mkmf"
 
 gem_name = File.basename(__dir__)
@@ -29,9 +27,6 @@ $srcs = ["io/event/event.c", "io/event/time.c", "io/event/fiber.c", "io/event/se
 $VPATH << "$(srcdir)/io/event"
 $VPATH << "$(srcdir)/io/event/selector"
 
-have_func("rb_ext_ractor_safe")
-have_func("&rb_fiber_transfer")
-
 if have_library("uring") and have_header("liburing.h")
 	have_func("io_uring_prep_waitid", "liburing.h")
 	$srcs << "io/event/selector/uring.c"
@@ -50,23 +45,14 @@ have_header("sys/wait.h")
 have_header("sys/eventfd.h")
 $srcs << "io/event/interrupt.c"
 
-have_func("rb_io_descriptor")
 have_func("rb_process_status_for")
-have_func("&rb_process_status_wait")
-have_func("rb_fiber_current")
-have_func("&rb_fiber_raise")
 have_func("epoll_pwait2(0, 0, 0, 0, 0)", "sys/epoll.h") if enable_config("epoll_pwait2", true)
 
-have_header("ruby/io/buffer.h")
-
-# Feature detection for blocking operation support
-if have_func("rb_fiber_scheduler_blocking_operation_extract")
-	# Feature detection for pthread support (needed for WorkerPool)
-	if have_header("pthread.h")
-		append_cflags(["-DHAVE_IO_EVENT_WORKER_POOL"])
-		$srcs << "io/event/worker_pool.c"
-		$srcs << "io/event/worker_pool_test.c"
-	end
+# The worker pool requires pthreads, but its Ruby interface is guaranteed by Ruby 4.1.
+if have_header("pthread.h")
+	append_cflags(["-DHAVE_IO_EVENT_WORKER_POOL"])
+	$srcs << "io/event/worker_pool.c"
+	$srcs << "io/event/worker_pool_test.c"
 end
 
 if ENV.key?("RUBY_SANITIZE")

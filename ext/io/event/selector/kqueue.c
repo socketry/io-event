@@ -18,8 +18,6 @@
 
 enum {
 	DEBUG = 0,
-	DEBUG_IO_READ = 0,
-	DEBUG_IO_WRITE = 0,
 	DEBUG_IO_WAIT = 0
 };
 
@@ -581,14 +579,8 @@ VALUE IO_Event_Selector_KQueue_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
-#ifdef HAVE_RUBY_IO_BUFFER_H
 
 struct io_read_arguments {
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-	VALUE self;
-	VALUE fiber;
-	VALUE io;
-#endif
 	
 	int flags;
 	
@@ -598,50 +590,14 @@ struct io_read_arguments {
 	void *base;
 	size_t size;
 	
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-	// The minimum number of bytes requested by the caller.
-	size_t length;
-#endif
 };
 
 static
 VALUE io_read_loop(VALUE _arguments) {
 	struct io_read_arguments *arguments = (struct io_read_arguments *)_arguments;
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	ssize_t result = read(arguments->descriptor, arguments->base, arguments->size);
 	return rb_fiber_scheduler_io_result(result, errno);
-#else
-	size_t length = arguments->length;
-	size_t total = 0;
-	
-	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
-	
-	size_t maximum_size = arguments->size;
-	while (maximum_size) {
-		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld)\n", arguments->descriptor, total, maximum_size);
-		ssize_t result = read(arguments->descriptor, (char*)arguments->base+total, maximum_size);
-		if (DEBUG_IO_READ) fprintf(stderr, "read(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, total, maximum_size, result);
-		
-		if (result > 0) {
-			total += result;
-			if ((size_t)result >= length) break;
-			maximum_size -= result;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(errno)) {
-			if (DEBUG_IO_READ) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait(fd=%d, length=%zu)\n", arguments->descriptor, length);
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_READABLE));
-		} else {
-			if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
-			return rb_fiber_scheduler_io_result(-1, errno);
-		}
-	}
-	
-	if (DEBUG_IO_READ) fprintf(stderr, "io_read_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, total);
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 }
 
 static
@@ -661,7 +617,6 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	size_t size;
 	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	size_t offset = NUM2SIZET(_first);
 	size_t length = NUM2SIZET(_second);
 	
@@ -673,36 +628,15 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	
 	base = (char*)base + offset;
 	size = length;
-#else
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	
-	base = (char*)base + offset;
-	size -= offset;
-#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_read_arguments io_read_arguments = {
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-		.self = self,
-		.fiber = fiber,
-		.io = io,
-#endif
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.base = base,
 		.size = size,
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-		.length = length,
-#endif
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -710,27 +644,8 @@ VALUE IO_Event_Selector_KQueue_io_read(VALUE self, VALUE fiber, VALUE io, VALUE 
 	return rb_ensure(io_read_loop, (VALUE)&io_read_arguments, io_read_ensure, (VALUE)&io_read_arguments);
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-static VALUE IO_Event_Selector_KQueue_io_read_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_KQueue_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
-}
-#endif
 
 struct io_write_arguments {
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-	VALUE self;
-	VALUE fiber;
-	VALUE io;
-#endif
 	
 	int flags;
 	
@@ -740,50 +655,14 @@ struct io_write_arguments {
 	const void *base;
 	size_t size;
 	
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-	// The minimum number of bytes requested by the caller.
-	size_t length;
-#endif
 };
 
 static
 VALUE io_write_loop(VALUE _arguments) {
 	struct io_write_arguments *arguments = (struct io_write_arguments *)_arguments;
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	ssize_t result = write(arguments->descriptor, arguments->base, arguments->size);
 	return rb_fiber_scheduler_io_result(result, errno);
-#else
-	size_t length = arguments->length;
-	size_t total = 0;
-	
-	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu)\n", arguments->descriptor, length);
-	
-	size_t maximum_size = arguments->size;
-	while (maximum_size) {
-		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld, length=%zu)\n", arguments->descriptor, total, maximum_size, length);
-		ssize_t result = write(arguments->descriptor, (char*)arguments->base+total, maximum_size);
-		if (DEBUG_IO_WRITE) fprintf(stderr, "write(%d, +%ld, %ld) -> %zd\n", arguments->descriptor, total, maximum_size, result);
-		
-		if (result > 0) {
-			total += result;
-			if ((size_t)result >= length) break;
-			maximum_size -= result;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(errno)) {
-			if (DEBUG_IO_WRITE) fprintf(stderr, "IO_Event_Selector_KQueue_io_wait(fd=%d, length=%zu)\n", arguments->descriptor, length);
-			IO_Event_Selector_KQueue_io_wait(arguments->self, arguments->fiber, arguments->io, RB_INT2NUM(IO_EVENT_WRITABLE));
-		} else {
-			if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> errno=%d\n", arguments->descriptor, length, errno);
-			return rb_fiber_scheduler_io_result(-1, errno);
-		}
-	}
-	
-	if (DEBUG_IO_WRITE) fprintf(stderr, "io_write_loop(fd=%d, length=%zu) -> %zu\n", arguments->descriptor, length, total);
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 };
 
 static
@@ -803,7 +682,6 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	size_t size;
 	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	size_t offset = NUM2SIZET(_first);
 	size_t length = NUM2SIZET(_second);
 	
@@ -815,40 +693,15 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	
 	base = (const char*)base + offset;
 	size = length;
-#else
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	
-	if (length > size) {
-		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
-	}
-	
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	
-	base = (const char*)base + offset;
-	size -= offset;
-#endif
 	
 	int descriptor = IO_Event_Selector_io_descriptor(io);
 	
 	struct io_write_arguments io_write_arguments = {
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-		.self = self,
-		.fiber = fiber,
-		.io = io,
-#endif
 		
 		.flags = IO_Event_Selector_nonblock_set(descriptor),
 		.descriptor = descriptor,
 		.base = base,
 		.size = size,
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-		.length = length,
-#endif
 	};
 	
 	RB_OBJ_WRITTEN(self, Qundef, fiber);
@@ -856,22 +709,7 @@ VALUE IO_Event_Selector_KQueue_io_write(VALUE self, VALUE fiber, VALUE io, VALUE
 	return rb_ensure(io_write_loop, (VALUE)&io_write_arguments, io_write_ensure, (VALUE)&io_write_arguments);
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-static VALUE IO_Event_Selector_KQueue_io_write_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_KQueue_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
-}
-#endif
 
-#endif
 
 static
 struct timespec * make_timeout(VALUE duration, struct timespec * storage) {
@@ -1173,15 +1011,8 @@ void Init_IO_Event_Selector_KQueue(VALUE IO_Event_Selector) {
 	
 	rb_define_method(IO_Event_Selector_KQueue, "io_wait", IO_Event_Selector_KQueue_io_wait, 3);
 	
-#ifdef HAVE_RUBY_IO_BUFFER_H
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read, 5);
 	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write, 5);
-#else
-	rb_define_method(IO_Event_Selector_KQueue, "io_read", IO_Event_Selector_KQueue_io_read_compatible, -1);
-	rb_define_method(IO_Event_Selector_KQueue, "io_write", IO_Event_Selector_KQueue_io_write_compatible, -1);
-#endif
-#endif
 	
 	rb_define_method(IO_Event_Selector_KQueue, "process_wait", IO_Event_Selector_KQueue_process_wait, 3);
 }

@@ -6,17 +6,14 @@
 #include <ruby.h>
 #include <ruby/thread.h>
 #include <ruby/io.h>
+#include <ruby/io/buffer.h>
+#include <ruby/fiber/scheduler.h>
 
 #include "../time.h"
 #include "../fiber.h"
 
-#ifdef HAVE_RUBY_IO_BUFFER_H
-#include <ruby/io/buffer.h>
-#include <ruby/fiber/scheduler.h>
-#endif
-
-#ifndef RUBY_FIBER_SCHEDULER_VERSION
-#define RUBY_FIBER_SCHEDULER_VERSION 1
+#if RUBY_FIBER_SCHEDULER_VERSION < 4
+#error "io-event v2 requires Ruby 4.1 scheduler interface version 4 or newer!"
 #endif
 
 #ifdef HAVE_SYS_WAIT_H
@@ -50,18 +47,10 @@ static inline int IO_Event_Selector_valid_buffer_range(size_t size, size_t offse
 struct IO_Event_Selector;
 void IO_Event_Selector_blocking_operation(struct IO_Event_Selector *selector, void *(*function)(void *), void *data, rb_unblock_function_t *unblock_function, void *unblock_data);
 
-#ifdef HAVE_RB_IO_DESCRIPTOR
 #define IO_Event_Selector_io_descriptor(io) rb_io_descriptor(io)
-#else
-int IO_Event_Selector_io_descriptor(VALUE io);
-#endif
 
 // Wait for a process to change state. This blocks until the process changes state, unless `WNOHANG` is given in `flags`.
-#ifdef HAVE_RB_PROCESS_STATUS_WAIT
 #define IO_Event_Selector_process_status_wait(pid, flags) rb_process_status_wait(pid, flags)
-#else
-VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags);
-#endif
 
 // Reap a process that is known to have changed state (e.g. after a readiness event), without blocking.
 static inline VALUE IO_Event_Selector_process_status_reap(rb_pid_t pid, int flags) {

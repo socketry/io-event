@@ -12,26 +12,14 @@ require "unix_socket"
 
 BufferedIO = Sus::Shared("buffered io") do
 	def io_read(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_read(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_read(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_read(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def io_write(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_write(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_write(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_write(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def await_io
-		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			return yield
-		end
-		
 		result = nil
 		fiber = Fiber.new do
 			result = yield
@@ -61,15 +49,8 @@ BufferedIO = Sus::Shared("buffered io") do
 				expect(io_read(input, buffer, 0, 64)).to be == 64
 			end
 			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				writer.transfer
-				reader.transfer
-			else
-				reader.transfer
-				writer.transfer
-				
-				expect(selector.select(1)).to be >= 1
-			end
+			writer.transfer
+			reader.transfer
 		end
 		
 		it "can write zero length buffers" do
@@ -92,20 +73,11 @@ BufferedIO = Sus::Shared("buffered io") do
 				expect(io_read(input, buffer, 64, 64)).to be == 64
 			end
 			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				writer.transfer
-				reader.transfer
-			else
-				reader.transfer
-				writer.transfer
-				
-				expect(selector.select(1)).to be >= 1
-			end
+			writer.transfer
+			reader.transfer
 		end
 		
 		it "limits single-transfer reads to the requested range" do
-			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
-			
 			output.write("abc")
 			buffer = IO::Buffer.new(8)
 			
@@ -114,8 +86,6 @@ BufferedIO = Sus::Shared("buffered io") do
 		end
 		
 		it "limits single-transfer writes to the requested range" do
-			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
-			
 			buffer = IO::Buffer.for("01234567".dup)
 			
 			expect(await_io{io_write(output, buffer, 2, 3)}).to be == 3
@@ -168,11 +138,7 @@ BufferedIO = Sus::Shared("buffered io") do
 			result = nil
 			
 			reader = Fiber.new do
-				if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-					result = io_read(input, buffer, 0, 64)
-				else
-					result = selector.io_read(Fiber.current, input, buffer, 0, 0)
-				end
+				result = io_read(input, buffer, 0, 64)
 			end
 			
 			reader.transfer

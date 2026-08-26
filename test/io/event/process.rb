@@ -36,10 +36,6 @@ ProcessWait = Sus::Shared("process wait") do
 	end
 	
 	it "ignores stale scheduler wake-ups while waiting in a worker thread" do
-		# Pending backports of https://github.com/ruby/ruby/pull/13532:
-		# - Ruby 3.3: https://github.com/ruby/ruby/pull/18502
-		# - Ruby 3.4: https://github.com/ruby/ruby/pull/18503
-		skip_unless_minimum_ruby_version("4")
 		skip_if_ruby_platform(/mswin|mingw|cygwin/)
 		
 		input, output = IO.pipe

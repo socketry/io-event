@@ -25,5 +25,5 @@ Gem::Specification.new do |spec|
 	
 	spec.extensions = ["ext/extconf.rb"]
 	
-	spec.required_ruby_version = ">= 3.3"
+	spec.required_ruby_version = ">= 4.1.0.dev"
 end

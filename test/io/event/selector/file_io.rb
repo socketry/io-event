@@ -9,42 +9,22 @@ require "tempfile"
 
 FileIO = Sus::Shared("file io") do
 	def io_read(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_read(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_read(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_read(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def io_write(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_write(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_write(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_write(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def io_pread(io, buffer, from, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_pread(Fiber.current, io, buffer, from, offset, length)
-		else
-			selector.io_pread(Fiber.current, io, buffer, from, length, offset)
-		end
+		selector.io_pread(Fiber.current, io, buffer, from, offset, length)
 	end
 	
 	def io_pwrite(io, buffer, from, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_pwrite(Fiber.current, io, buffer, from, offset, length)
-		else
-			selector.io_pwrite(Fiber.current, io, buffer, from, length, offset)
-		end
+		selector.io_pwrite(Fiber.current, io, buffer, from, offset, length)
 	end
 	
 	def await_io
-		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			return yield
-		end
-		
 		result = nil
 		fiber = Fiber.new do
 			result = yield
@@ -127,7 +107,6 @@ FileIO = Sus::Shared("file io") do
 		end
 		
 		it "uses positional IO ranges" do
-			skip "Requires IO::Buffer version 3" if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
 			skip "io_pread is not implemented" unless selector.respond_to?(:io_pread)
 			
 			write_buffer = IO::Buffer.for("01234567".dup)

@@ -9,7 +9,6 @@ jobs:
   test:
     name: ${{matrix.ruby}} on ${{matrix.os}}
     runs-on: ${{matrix.os}}-latest
-    continue-on-error: ${{matrix.experimental}}
     
     strategy:
       matrix:
@@ -19,22 +18,7 @@ jobs:
           - windows
         
         ruby:
-          - "3.3"
-          - "3.4"
-          - "4.0"
-        
-        experimental: [false]
-        
-        include:
-          - os: ubuntu
-            ruby: truffleruby
-            experimental: true
-          - os: ubuntu
-            ruby: jruby
-            experimental: true
-          - os: ubuntu
-            ruby: head
-            experimental: true
+          - head
     
     steps:
     - uses: actions/checkout@v6

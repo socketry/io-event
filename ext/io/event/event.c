@@ -7,9 +7,7 @@
 
 void Init_IO_Event(void)
 {
-#ifdef HAVE_RB_EXT_RACTOR_SAFE
 	rb_ext_ractor_safe(true);
-#endif
 	
 	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
 	

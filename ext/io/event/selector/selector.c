@@ -8,77 +8,13 @@
 
 static const int DEBUG = 0;
 
-#ifndef RB_NOGVL_PENDING_INTR_FAIL
-static ID handle_interrupt_id;
-static VALUE signal_exception_never = Qnil;
-
-struct IO_Event_Selector_blocking_operation_arguments {
-	void *(*function)(void *);
-	void *data;
-	rb_unblock_function_t *unblock_function;
-	void *unblock_data;
-};
-
-static VALUE IO_Event_Selector_blocking_operation_yield(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_argument, callback_argument)) {
-	struct IO_Event_Selector_blocking_operation_arguments *arguments = (struct IO_Event_Selector_blocking_operation_arguments *)callback_argument;
-	
-	rb_thread_call_without_gvl2(arguments->function, arguments->data, arguments->unblock_function, arguments->unblock_data);
-	
-	return Qnil;
-}
-
-static VALUE IO_Event_Selector_blocking_operation_fallback(VALUE callback_argument) {
-	return rb_block_call(rb_cThread, handle_interrupt_id, 1, &signal_exception_never, IO_Event_Selector_blocking_operation_yield, callback_argument);
-}
-#endif
-
 void IO_Event_Selector_blocking_operation(struct IO_Event_Selector *selector, void *(*function)(void *), void *data, rb_unblock_function_t *unblock_function, void *unblock_data) {
-	int state = 0;
 	selector->blocked = 1;
 	
-#ifdef RB_NOGVL_PENDING_INTR_FAIL
 	rb_nogvl(function, data, unblock_function, unblock_data, RB_NOGVL_INTR_FAIL | RB_NOGVL_PENDING_INTR_FAIL);
-#else
-	// `Thread.handle_interrupt` resets `pending_interrupt_queue_checked` and
-	// raises the VM interrupt flag when its mask is pushed with a non-empty
-	// pending queue. Its C block calls `rb_thread_call_without_gvl2` directly,
-	// without a Ruby safepoint between refreshing the flag and entering
-	// `unblock_function_set`. That function either observes the interrupt or
-	// installs the UBF while holding Ruby's interrupt lock.
-	//
-	// Keep signal exceptions deferred here: this fallback should prevent a
-	// stranded native wait without changing the caller's delivery timing.
-	struct IO_Event_Selector_blocking_operation_arguments arguments = {
-		.function = function,
-		.data = data,
-		.unblock_function = unblock_function,
-		.unblock_data = unblock_data,
-	};
-	rb_protect(IO_Event_Selector_blocking_operation_fallback, (VALUE)&arguments, &state);
-#endif
 	
 	selector->blocked = 0;
-	
-	if (state) rb_jump_tag(state);
 }
-
-#ifndef HAVE_RB_IO_DESCRIPTOR
-static ID id_fileno;
-
-int IO_Event_Selector_io_descriptor(VALUE io) {
-	return RB_NUM2INT(rb_funcall(io, id_fileno, 0));
-}
-#endif
-
-#ifndef HAVE_RB_PROCESS_STATUS_WAIT
-static ID id_wait;
-static VALUE rb_Process_Status = Qnil;
-
-VALUE IO_Event_Selector_process_status_wait(rb_pid_t pid, int flags)
-{
-	return rb_funcall(rb_Process_Status, id_wait, 2, PIDT2NUM(pid), INT2NUM(flags));
-}
-#endif
 
 int IO_Event_Selector_nonblock_set(int file_descriptor)
 {
@@ -141,28 +77,9 @@ VALUE IO_Event_Selector_process_wait(rb_pid_t pid, int flags) {
 }
 
 void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
-#ifndef RB_NOGVL_PENDING_INTR_FAIL
-	handle_interrupt_id = rb_intern("handle_interrupt");
-	signal_exception_never = rb_hash_new();
-	rb_hash_aset(signal_exception_never, rb_eSignal, ID2SYM(rb_intern("never")));
-	rb_funcall(signal_exception_never, rb_intern("compare_by_identity"), 0);
-	rb_obj_freeze(signal_exception_never);
-	rb_gc_register_mark_object(signal_exception_never);
-#endif
-	
 	rb_IO_Event_Selector = IO_Event_Selector;
 	rb_gc_register_mark_object(rb_IO_Event_Selector);
 	id_process_wait = rb_intern("process_wait");
-	
-#ifndef HAVE_RB_IO_DESCRIPTOR
-	id_fileno = rb_intern("fileno");
-#endif
-	
-#ifndef HAVE_RB_PROCESS_STATUS_WAIT
-	id_wait = rb_intern("wait");
-	rb_Process_Status = rb_const_get_at(rb_mProcess, rb_intern("Status"));
-	rb_gc_register_mark_object(rb_Process_Status);
-#endif
 	
 	rb_define_singleton_method(IO_Event_Selector, "nonblock", IO_Event_Selector_nonblock, 1);
 }

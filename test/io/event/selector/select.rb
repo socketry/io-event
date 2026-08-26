@@ -78,11 +78,7 @@ describe IO::Event::Selector::Select do
 			
 			buffer = IO::Buffer.new(64)
 			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				expect(selector.io_read(Fiber.current, input, buffer, 0, 1)).to be == 0
-			else
-				expect(selector.io_read(Fiber.current, input, buffer, 1)).to be == 0
-			end
+			expect(selector.io_read(Fiber.current, input, buffer, 0, 1)).to be == 0
 		ensure
 			input&.close
 		end

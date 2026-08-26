@@ -20,35 +20,10 @@ Cancellable = Sus::Shared("cancellable") do
 			output.close
 		end
 		
-		it "can cancel reads" do
-			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			
-			reader = Fiber.new do
-				buffer = IO::Buffer.new(64)
-				
-				10.times do
-					expect{selector.io_read(Fiber.current, input, buffer, 1)}.to raise_exception(Interrupt)
-				end
-			end
-			
-			# Enter the `io_read` operation:
-			reader.transfer
-			
-			while reader.alive?
-				reader.raise(Interrupt)
-				selector.select(0)
-			end
-		end
-		
 		it "can cancel waits" do
-			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			
 			reader = Fiber.new do
-				buffer = IO::Buffer.new(64)
-				
 				10.times do
 					expect{selector.io_wait(Fiber.current, input, IO::READABLE)}.to raise_exception(Interrupt)
-					selector.io_read(Fiber.current, input, buffer, 1)
 				end
 			end
 			
@@ -57,7 +32,6 @@ Cancellable = Sus::Shared("cancellable") do
 			
 			while reader.alive?
 				reader.raise(Interrupt)
-				output.write(".")
 				selector.select(0.1)
 			end
 		end

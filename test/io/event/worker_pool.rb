@@ -71,8 +71,6 @@ describe IO::Event::WorkerPool do
 		end
 		
 		it "interrupts IO::Buffer.copy operations larger than 1MiB" do
-			skip "IO::Buffer not available" unless defined?(IO::Buffer)
-			
 			# Create buffers larger than 1MiB to trigger GVL release
 			buffer_size = 2 * 1024 * 1024  # 2MiB
 			source = IO::Buffer.new(buffer_size)

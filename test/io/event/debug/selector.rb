@@ -144,13 +144,8 @@ describe IO::Event::Debug::Selector do
 		expect(selector.blocking_operation_wait(:operation)).to be == :calls_blocking_operation_wait
 		expect(selector.process_wait(123, 0)).to be == :calls_process_wait
 		expect(selector.io_wait(fiber, input, IO::READABLE)).to be == :calls_io_wait
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			expect(selector.io_read(fiber, input, buffer, 0, 1)).to be == :calls_io_read
-			expect(selector.io_write(fiber, output, buffer, 0, 1)).to be == :calls_io_write
-		else
-			expect(selector.io_read(fiber, input, buffer, 1)).to be == :calls_io_read
-			expect(selector.io_write(fiber, output, buffer, 1)).to be == :calls_io_write
-		end
+		expect(selector.io_read(fiber, input, buffer, 0, 1)).to be == :calls_io_read
+		expect(selector.io_write(fiber, output, buffer, 0, 1)).to be == :calls_io_write
 		expect(selector.io_close(input.fileno)).to be == :calls_io_close
 		expect(selector.respond_to?(:io_close)).to be == true
 		expect(selector.select(0)).to be == :calls_select

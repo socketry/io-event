@@ -863,7 +863,6 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	return rb_ensure(io_wait_transfer, (VALUE)&io_wait_arguments, io_wait_ensure, (VALUE)&io_wait_arguments);
 }
 
-#ifdef HAVE_RUBY_IO_BUFFER_H
 
 #pragma mark - IO#read
 
@@ -948,7 +947,6 @@ io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, c
 	);
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 struct io_read_locked_arguments {
 	struct IO_Event_Selector_URing *selector;
 	VALUE fiber;
@@ -1004,13 +1002,11 @@ io_read_locked(void *base, size_t size, VALUE _arguments)
 	
 	return rb_fiber_scheduler_io_result(completion, 0);
 }
-#endif
 
 VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	struct io_read_locked_arguments arguments = {
 		.selector = selector,
 		.fiber = fiber,
@@ -1021,82 +1017,13 @@ VALUE IO_Event_Selector_URing_io_read(VALUE self, VALUE fiber, VALUE io, VALUE b
 	};
 	
 	return rb_io_buffer_locked_for_writing(buffer, io_read_locked, (VALUE)&arguments);
-#else
-	void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
-	
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	size_t total = 0;
-	
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	off_t from = io_seekable(descriptor);
-	size_t maximum_size = size - offset;
-	
-	// Are we performing a non-blocking read?
-	if (!length) {
-		// If the (maximum) length is zero, that indicates we just want to read whatever is available without blocking.
-		// If we schedule this read into the URing, it will block until data is available, rather than returning immediately.
-		int state = IO_Event_Selector_nonblock_set(descriptor);
-		
-		int result = read(descriptor, (char*)base+offset, maximum_size);
-		int error = errno;
-		
-		IO_Event_Selector_nonblock_restore(descriptor, state);
-		return rb_fiber_scheduler_io_result(result, error);
-	}
-	
-	while (maximum_size) {
-		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
-		
-		if (result > 0) {
-			total += result;
-			offset += result;
-			if ((size_t)result >= length) break;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(-result)) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
-		} else {
-			return rb_fiber_scheduler_io_result(-1, -result);
-		}
-		
-		maximum_size = size - offset;
-	}
-	
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-static VALUE IO_Event_Selector_URing_io_read_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_URing_io_read(self, argv[0], argv[1], argv[2], argv[3], _offset);
-}
-#endif
 
 VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	struct io_read_locked_arguments arguments = {
 		.selector = selector,
 		.fiber = fiber,
@@ -1108,46 +1035,6 @@ VALUE IO_Event_Selector_URing_io_pread(VALUE self, VALUE fiber, VALUE io, VALUE 
 	};
 	
 	return rb_io_buffer_locked_for_writing(buffer, io_read_locked, (VALUE)&arguments);
-#else
-	void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_writing(buffer, &base, &size);
-	
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	size_t total = 0;
-	
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	off_t from = NUM2OFFT(_from);
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	size_t maximum_size = size - offset;
-	while (maximum_size) {
-		int result = io_read(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
-		
-		if (result > 0) {
-			total += result;
-			offset += result;
-			from += result;
-			if ((size_t)result >= length) break;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(-result)) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_READABLE));
-		} else {
-			return rb_fiber_scheduler_io_result(-1, -result);
-		}
-		
-		maximum_size = size - offset;
-	}
-	
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 }
 
 #pragma mark - IO#write
@@ -1215,7 +1102,6 @@ io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, 
 	);
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 struct io_write_locked_arguments {
 	struct IO_Event_Selector_URing *selector;
 	VALUE fiber;
@@ -1271,13 +1157,11 @@ io_write_locked(const void *base, size_t size, VALUE _arguments)
 	
 	return rb_fiber_scheduler_io_result(completion, 0);
 }
-#endif
 
 VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	struct io_write_locked_arguments arguments = {
 		.selector = selector,
 		.fiber = fiber,
@@ -1288,72 +1172,13 @@ VALUE IO_Event_Selector_URing_io_write(VALUE self, VALUE fiber, VALUE io, VALUE 
 	};
 	
 	return rb_io_buffer_locked_for_reading(buffer, io_write_locked, (VALUE)&arguments);
-#else
-	const void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
-	
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	size_t total = 0;
-	
-	if (length > size) {
-		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
-	}
-
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	off_t from = io_seekable(descriptor);
-	size_t maximum_size = size - offset;
-	while (maximum_size) {
-		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
-		
-		if (result > 0) {
-			total += result;
-			offset += result;
-			if ((size_t)result >= length) break;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(-result)) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
-		} else {
-			return rb_fiber_scheduler_io_result(-1, -result);
-		}
-		
-		maximum_size = size - offset;
-	}
-	
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 }
 
-#if RUBY_FIBER_SCHEDULER_VERSION < 4
-static VALUE IO_Event_Selector_URing_io_write_compatible(int argc, VALUE *argv, VALUE self)
-{
-	rb_check_arity(argc, 4, 5);
-	
-	VALUE _offset = SIZET2NUM(0);
-	
-	if (argc == 5) {
-		_offset = argv[4];
-	}
-	
-	return IO_Event_Selector_URing_io_write(self, argv[0], argv[1], argv[2], argv[3], _offset);
-}
-#endif
 
 VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE buffer, VALUE _from, VALUE _first, VALUE _second) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	struct io_write_locked_arguments arguments = {
 		.selector = selector,
 		.fiber = fiber,
@@ -1365,53 +1190,8 @@ VALUE IO_Event_Selector_URing_io_pwrite(VALUE self, VALUE fiber, VALUE io, VALUE
 	};
 	
 	return rb_io_buffer_locked_for_reading(buffer, io_write_locked, (VALUE)&arguments);
-#else
-	const void *base;
-	size_t size;
-	rb_io_buffer_get_bytes_for_reading(buffer, &base, &size);
-	
-	size_t length = NUM2SIZET(_first);
-	size_t offset = NUM2SIZET(_second);
-	size_t total = 0;
-	
-	if (length > size) {
-		rb_raise(rb_eRuntimeError, "Length exceeds size of buffer!");
-	}
-
-	// Ensure offset is within the bounds of the buffer to avoid size_t underflow and out-of-bounds pointer arithmetic on (char *)base + offset.
-	if (offset > size) {
-		return rb_fiber_scheduler_io_result(-1, EINVAL);
-	} else if (offset == size) {
-		return rb_fiber_scheduler_io_result(0, 0);
-	}
-	off_t from = NUM2OFFT(_from);
-	int descriptor = IO_Event_Selector_io_descriptor(io);
-	size_t maximum_size = size - offset;
-	while (maximum_size) {
-		int result = io_write(selector, fiber, descriptor, (char*)base+offset, maximum_size, from);
-		
-		if (result > 0) {
-			total += result;
-			offset += result;
-			from += result;
-			if ((size_t)result >= length) break;
-			length -= result;
-		} else if (result == 0) {
-			break;
-		} else if (length > 0 && IO_Event_try_again(-result)) {
-			IO_Event_Selector_URing_io_wait(self, fiber, io, RB_INT2NUM(IO_EVENT_WRITABLE));
-		} else {
-			return rb_fiber_scheduler_io_result(-1, -result);
-		}
-		
-		maximum_size = size - offset;
-	}
-	
-	return rb_fiber_scheduler_io_result(total, 0);
-#endif
 }
 
-#endif
 
 #pragma mark - IO#close
 
@@ -1750,17 +1530,10 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	
 	rb_define_method(IO_Event_Selector_URing, "io_wait", IO_Event_Selector_URing_io_wait, 3);
 	
-#ifdef HAVE_RUBY_IO_BUFFER_H
-#if RUBY_FIBER_SCHEDULER_VERSION >= 4
 	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read, 5);
 	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write, 5);
-#else
-	rb_define_method(IO_Event_Selector_URing, "io_read", IO_Event_Selector_URing_io_read_compatible, -1);
-	rb_define_method(IO_Event_Selector_URing, "io_write", IO_Event_Selector_URing_io_write_compatible, -1);
-#endif
 	rb_define_method(IO_Event_Selector_URing, "io_pread", IO_Event_Selector_URing_io_pread, 6);
 	rb_define_method(IO_Event_Selector_URing, "io_pwrite", IO_Event_Selector_URing_io_pwrite, 6);
-#endif
 	
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	

@@ -12,6 +12,8 @@ The initial proof-of-concept [Async](https://github.com/socketry/async) was buil
 
 Please see the [project documentation](https://socketry.github.io/io-event/) for more details.
 
+The `v2` branch targets Ruby 4.1 and the version 4 fiber scheduler interface. Earlier Ruby versions are not supported.
+
   - [Getting Started](https://socketry.github.io/io-event/guides/getting-started/index) - This guide explains how to use `io-event` for non-blocking IO.
 
 ## Releases

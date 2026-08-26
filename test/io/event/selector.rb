@@ -34,26 +34,14 @@ end
 
 Selector = Sus::Shared("a selector") do
 	def io_read(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_read(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_read(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_read(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def io_write(io, buffer, offset, length)
-		if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			selector.io_write(Fiber.current, io, buffer, offset, length)
-		else
-			selector.io_write(Fiber.current, io, buffer, length, offset)
-		end
+		selector.io_write(Fiber.current, io, buffer, offset, length)
 	end
 	
 	def await_io
-		unless defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-			return yield
-		end
-		
 		result = nil
 		fiber = Fiber.new do
 			result = yield
@@ -535,10 +523,8 @@ Selector = Sus::Shared("a selector") do
 		it "can read a single message" do
 			return unless selector.respond_to?(:io_read)
 			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				events << :write
-				remote.write(message)
-			end
+			events << :write
+			remote.write(message)
 			
 			fiber = Fiber.new do
 				events << :io_read
@@ -548,74 +534,17 @@ Selector = Sus::Shared("a selector") do
 			
 			fiber.transfer
 			
-			if !defined?(IO::Buffer::VERSION) || IO::Buffer::VERSION < 3
-				events << :write
-				remote.write(message)
-				
-				selector.select(1)
-			end
-			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				expect(events).to be == [:write, :io_read]
-			else
-				expect(events).to be == [:io_read, :write]
-			end
+			expect(events).to be == [:write, :io_read]
 		end
 		
 		it "returns partial reads directly" do
 			return unless selector.respond_to?(:io_read)
 			
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				remote.write(message[0...5])
-				result = io_read(local, buffer, 0, message.bytesize)
-				
-				expect(result).to be == 5
-				expect(buffer.get_string(0, result)).to be == message[0...5]
-			else
-				fiber = Fiber.new do
-					events << :io_read
-					offset = io_read(local, buffer, 0, message.bytesize)
-					expect(buffer.get_string(0, offset)).to be == message
-				end
-				
-				fiber.transfer
-				
-				events << :write
-				remote.write(message[0...5])
-				selector.select(1)
-				remote.write(message[5...message.bytesize])
-				selector.select(1)
-				
-				expect(events).to be == [:io_read, :write]
-			end
-		end
-		
-		it "can stop reading when reads are ready" do
-			# This could trigger a busy-loop in the KQueue selector.
-			return unless selector.respond_to?(:io_read)
-			skip "Single-transfer io_read does not wait for readiness" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			remote.write(message[0...5])
+			result = io_read(local, buffer, 0, message.bytesize)
 			
-			fiber = Fiber.new do
-				offset = io_read(local, buffer, 0, message.bytesize)
-				expect(buffer.get_string(0, offset)).to be == message
-				sleep(0.001)
-			end
-			
-			fiber.transfer
-			
-			remote.write(message)
-			
-			expect(selector.select(0)).to be == 1
-			
-			remote.write(message)
-			
-			result = nil
-			3.times do
-				result = selector.select(0)
-				break if result == 0
-			end
-			
-			expect(result).to be == 0
+			expect(result).to be == 5
+			expect(buffer.get_string(0, result)).to be == message[0...5]
 		end
 	end
 	
