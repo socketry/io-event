@@ -40,6 +40,18 @@ FileIO = Sus::Shared("file io") do
 		end
 	end
 	
+	def await_io
+		result = nil
+		fiber = Fiber.new do
+			result = yield
+		end
+		
+		fiber.transfer
+		selector.select(1) while result.nil? && fiber.alive?
+		
+		return result
+	end
+	
 	with "a file" do
 		let(:file) {Tempfile.new}
 		
@@ -115,10 +127,10 @@ FileIO = Sus::Shared("file io") do
 			skip "io_pread is not implemented" unless selector.respond_to?(:io_pread)
 			
 			write_buffer = IO::Buffer.for("01234567".dup)
-			expect(io_pwrite(file, write_buffer, 5, 2, 3)).to be == 3
+			expect(await_io{io_pwrite(file, write_buffer, 5, 2, 3)}).to be == 3
 			
 			read_buffer = IO::Buffer.new(8)
-			expect(io_pread(file, read_buffer, 5, 1, 3)).to be == 3
+			expect(await_io{io_pread(file, read_buffer, 5, 1, 3)}).to be == 3
 			expect(read_buffer.get_string(1, 3)).to be == "234"
 		end
 		
