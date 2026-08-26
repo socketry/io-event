@@ -924,10 +924,6 @@ io_read_ensure(VALUE _arguments)
 static int
 io_read(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
 {
-	if (selector->backend.loop == IO_Event_Fiber_current()) {
-		rb_raise(rb_eFiberError, "Cannot submit an io_uring read from the event loop fiber!");
-	}
-	
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
 	};
@@ -1197,10 +1193,6 @@ io_write_ensure(VALUE _argument)
 static int
 io_write(struct IO_Event_Selector_URing *selector, VALUE fiber, int descriptor, char *buffer, size_t length, off_t offset)
 {
-	if (selector->backend.loop == IO_Event_Fiber_current()) {
-		rb_raise(rb_eFiberError, "Cannot submit an io_uring write from the event loop fiber!");
-	}
-	
 	struct IO_Event_Selector_URing_Waiting waiting = {
 		.fiber = fiber,
 	};
