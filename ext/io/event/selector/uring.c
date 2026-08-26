@@ -648,10 +648,18 @@ static
 VALUE process_wait_transfer(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
 	IO_Event_Selector_loop_yield(&arguments->selector->backend);
 	
-#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+	if (arguments->waiting->completion) {
+		// The kernel may still write to siginfo or reap the child. Keep the C frame alive until the original operation completes, then distinguish cancellation from process completion:
+		IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, arguments->waiting);
+	}
+	
 	int32_t result = arguments->waiting->result;
+	if (result == -ECANCELED) {
+		return Qfalse;
+	}
 	
 	if (DEBUG) fprintf(stderr, "waitid result=%d pid=%d code=%d status=%d\n", result, arguments->siginfo.si_pid, arguments->siginfo.si_code, arguments->siginfo.si_status);
 	
@@ -672,6 +680,8 @@ VALUE process_wait_transfer(VALUE _arguments) {
 	return IO_Event_Selector_process_status_reap(arguments->siginfo.si_pid, arguments->flags);
 #endif
 #else
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	
 	if (arguments->waiting->result) {
 		return IO_Event_Selector_process_status_reap(arguments->pid, arguments->flags);
 	} else {
@@ -684,15 +694,17 @@ static
 VALUE process_wait_ensure(VALUE _arguments) {
 	struct process_wait_arguments *arguments = (struct process_wait_arguments *)_arguments;
 	
+#ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
+	// `waitid` may write to stack-backed siginfo while cancellation is pending:
+	IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, arguments->waiting);
+#else
 	if (arguments->waiting->completion) {
 		IO_Event_Selector_URing_Completion_cancel_async(arguments->selector, arguments->waiting->completion);
 	}
 	
-#ifndef IO_EVENT_SELECTOR_URING_USE_WAITID
 	close(arguments->descriptor);
-#endif
-	
 	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+#endif
 	
 	return Qnil;
 }

@@ -657,6 +657,39 @@ Selector = Sus::Shared("a selector") do
 	end
 	
 	with "#process_wait" do
+		it "returns false when interrupted before the process terminates" do
+			unless selector.method(:process_wait).source_location.nil?
+				skip "A native selector is required!"
+			end
+			
+			input, output = IO.pipe
+			pid = Process.spawn("cat", in: input, out: File::NULL)
+			input.close
+			input = nil
+			result = :unset
+			
+			fiber = Fiber.new do
+				result = selector.process_wait(Fiber.current, pid, 0)
+			end
+			
+			fiber.transfer
+			fiber.transfer
+			
+			while fiber.alive?
+				selector.select(1)
+			end
+			
+			expect(result).to be == false
+		ensure
+			input&.close
+			output&.close
+			
+			if pid
+				Process.kill(:KILL, pid) rescue nil
+				Process.wait(pid) rescue nil
+			end
+		end
+		
 		it "can wait for a process which has terminated already" do
 			result = nil
 			events = []
