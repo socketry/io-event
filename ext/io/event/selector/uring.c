@@ -59,6 +59,9 @@ struct IO_Event_Selector_URing
 	
 	struct IO_Event_Array completions;
 	struct IO_Event_List free_list;
+
+	// Test hook for exercising SQE acquisition failures deterministically.
+	int test_sqe_error;
 };
 
 struct IO_Event_Selector_URing_Completion;
@@ -316,6 +319,7 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 	selector->completions.element_initialize = IO_Event_Selector_URing_Completion_initialize;
 	selector->completions.element_free = IO_Event_Selector_URing_Completion_free;
 	IO_Event_Array_initialize(&selector->completions, IO_EVENT_ARRAY_DEFAULT_COUNT, sizeof(struct IO_Event_Selector_URing_Completion));
+	selector->test_sqe_error = 0;
 	
 	return instance;
 }
@@ -546,6 +550,12 @@ void io_uring_submit_pending(struct IO_Event_Selector_URing *selector) {
 }
 
 struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
+	if (selector->test_sqe_error) {
+		int error = selector->test_sqe_error;
+		selector->test_sqe_error = 0;
+		rb_syserr_fail(error, "io_get_sqe:test failure");
+	}
+
 	struct io_uring_sqe *sqe = io_uring_get_sqe(&selector->ring);
 	
 	while (sqe == NULL) {
@@ -1760,6 +1770,31 @@ static int IO_Event_Selector_URing_supported_p(void) {
 	return 1;
 }
 
+static VALUE IO_Event_Selector_URing_test_fail_next_sqe(VALUE self, VALUE _error) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+
+	selector->test_sqe_error = NUM2INT(_error);
+
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_URing_test_pending_completions(VALUE self) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+
+	size_t pending = 0;
+	for (size_t index = 0; index < selector->completions.limit; index += 1) {
+		struct IO_Event_Selector_URing_Completion *completion = selector->completions.base[index];
+
+		if (completion && (completion->waiting || completion->operation_pending || completion->cancellation_pending)) {
+			pending += 1;
+		}
+	}
+
+	return SIZET2NUM(pending);
+}
+
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	if (!IO_Event_Selector_URing_supported_p()) {
 		return;
@@ -1803,4 +1838,7 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
+
+	rb_define_private_method(IO_Event_Selector_URing, "test_fail_next_sqe", IO_Event_Selector_URing_test_fail_next_sqe, 1);
+	rb_define_private_method(IO_Event_Selector_URing, "test_pending_completions", IO_Event_Selector_URing_test_pending_completions, 0);
 }
