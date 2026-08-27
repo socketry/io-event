@@ -325,16 +325,43 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 typedef int (*io_uring_queue_init_function)(unsigned entries, struct io_uring *ring, unsigned flags);
 
 static int IO_Event_Selector_URing_queue_init_with(unsigned entries, struct io_uring *ring, unsigned int flags, io_uring_queue_init_function queue_init) {
-	int result = queue_init(entries, ring, flags);
+	while (true) {
+		int result = queue_init(entries, ring, flags);
+		if (result != -EINVAL) return result;
+
+		unsigned int fallback = flags;
+
+		// DEFER_TASKRUN and TASKRUN_FLAG form the newest optional optimization
+		// group and must be removed together to preserve their flag dependencies.
+#ifdef IORING_SETUP_DEFER_TASKRUN
+		fallback &= ~IORING_SETUP_DEFER_TASKRUN;
+#endif
+#ifdef IORING_SETUP_TASKRUN_FLAG
+		fallback &= ~IORING_SETUP_TASKRUN_FLAG;
+#endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
+
+#ifdef IORING_SETUP_SINGLE_ISSUER
+		fallback &= ~IORING_SETUP_SINGLE_ISSUER;
+#endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
 
 #ifdef IORING_SETUP_SUBMIT_ALL
-	if (result == -EINVAL) {
-		flags &= ~IORING_SETUP_SUBMIT_ALL;
-		result = queue_init(entries, ring, flags);
-	}
+		fallback &= ~IORING_SETUP_SUBMIT_ALL;
 #endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
 
-	return result;
+		return result;
+	}
 }
 
 VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
