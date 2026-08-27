@@ -81,6 +81,7 @@ struct IO_Event_Selector_URing_Completion
 	struct IO_Event_List list;
 	
 	struct IO_Event_Selector_URing_Waiting *waiting;
+	bool operation_pending;
 	bool cancellation_pending;
 };
 
@@ -207,10 +208,12 @@ struct IO_Event_Selector_URing_Completion * IO_Event_Selector_URing_Completion_a
 	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_acquire(%p, limit=%ld)\n", (void*)completion, selector->completions.limit);
 	
 	assert(completion->waiting == NULL);
+	assert(!completion->operation_pending);
 	assert(!completion->cancellation_pending);
 	
 	waiting->completion = completion;
 	completion->waiting = waiting;
+	completion->operation_pending = true;
 	
 	return completion;
 }
@@ -230,6 +233,7 @@ inline static
 void IO_Event_Selector_URing_Completion_recycle(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
 {
 	assert(completion->waiting == NULL);
+	assert(!completion->operation_pending);
 	assert(!completion->cancellation_pending);
 	
 	IO_Event_List_prepend(&selector->free_list, &completion->list);
@@ -239,6 +243,9 @@ inline static
 void IO_Event_Selector_URing_Completion_complete(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
 {
 	if (DEBUG_COMPLETION) fprintf(stderr, "IO_Event_Selector_URing_Completion_complete(%p)\n", (void*)completion);
+	
+	assert(completion->operation_pending);
+	completion->operation_pending = false;
 	
 	IO_Event_Selector_URing_Completion_cancel(completion);
 	
@@ -257,7 +264,7 @@ void IO_Event_Selector_URing_Completion_cancellation_complete(struct IO_Event_Se
 	assert(completion->cancellation_pending);
 	completion->cancellation_pending = false;
 	
-	if (completion->waiting == NULL) {
+	if (!completion->operation_pending) {
 		IO_Event_Selector_URing_Completion_recycle(selector, completion);
 	}
 }
@@ -283,6 +290,7 @@ void IO_Event_Selector_URing_Completion_initialize(void *element)
 	IO_Event_List_initialize(&completion->list);
 	completion->list.type = &IO_Event_Selector_URing_Completion_Type;
 	completion->waiting = NULL;
+	completion->operation_pending = false;
 	completion->cancellation_pending = false;
 }
 
