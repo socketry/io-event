@@ -506,6 +506,7 @@ int io_uring_submit_all_with(struct IO_Event_Selector_URing *selector, bool yiel
 		
 		if (result == -EBUSY || result == -EAGAIN) {
 			if (yield) IO_Event_Selector_yield(&selector->backend);
+			return result;
 		} else if (result < 0) {
 			rb_syserr_fail(-result, "io_uring_submit_all:io_uring_submit");
 			return result;
