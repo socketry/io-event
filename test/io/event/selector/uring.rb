@@ -14,19 +14,19 @@ describe IO::Event::Selector::URing do
 			selector = subject.new(Fiber.current)
 			input, output = IO.pipe
 			error = false
-
+			
 			selector.send(:test_fail_next_sqe, Errno::EIO::Errno)
-
+			
 			begin
 				selector.io_wait(Fiber.current, input, IO::READABLE)
 			rescue Errno::EIO
 				error = true
 			end
-
+			
 			pending = selector.send(:test_pending_completions)
 			exit!(error && pending == 0 ? 0 : 1)
 		end
-
+		
 		_, status = Process.wait2(pid)
 		expect(status).to be(:success?)
 	end
