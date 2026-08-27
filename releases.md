@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.21.1
 
   - Fix the `URing` completion free-list empty check so its sole entry can be reused instead of unnecessarily allocating a new completion.
   - Keep cancelled `URing` completion records allocated until both the operation and cancellation completions have been processed.
