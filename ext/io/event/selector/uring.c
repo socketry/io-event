@@ -322,6 +322,48 @@ VALUE IO_Event_Selector_URing_allocate(VALUE self) {
 
 #pragma mark - Methods
 
+typedef int (*io_uring_queue_init_function)(unsigned entries, struct io_uring *ring, unsigned flags);
+
+static int IO_Event_Selector_URing_queue_init_with(unsigned entries, struct io_uring *ring, unsigned int flags, io_uring_queue_init_function queue_init) {
+	while (true) {
+		int result = queue_init(entries, ring, flags);
+		if (result != -EINVAL) return result;
+
+		unsigned int fallback = flags;
+
+		// DEFER_TASKRUN and TASKRUN_FLAG form the newest optional optimization
+		// group and must be removed together to preserve their flag dependencies.
+#ifdef IORING_SETUP_DEFER_TASKRUN
+		fallback &= ~IORING_SETUP_DEFER_TASKRUN;
+#endif
+#ifdef IORING_SETUP_TASKRUN_FLAG
+		fallback &= ~IORING_SETUP_TASKRUN_FLAG;
+#endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
+
+#ifdef IORING_SETUP_SINGLE_ISSUER
+		fallback &= ~IORING_SETUP_SINGLE_ISSUER;
+#endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
+
+#ifdef IORING_SETUP_SUBMIT_ALL
+		fallback &= ~IORING_SETUP_SUBMIT_ALL;
+#endif
+		if (fallback != flags) {
+			flags = fallback;
+			continue;
+		}
+
+		return result;
+	}
+}
+
 VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
@@ -353,16 +395,7 @@ VALUE IO_Event_Selector_URing_initialize(VALUE self, VALUE loop) {
 	flags |= IORING_SETUP_SUBMIT_ALL;
 #endif
 	
-	int result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
-	
-#ifdef IORING_SETUP_SUBMIT_ALL
-	if (result == -EINVAL) {
-		// IORING_SETUP_SUBMIT_ALL was added in Linux 5.18; retry without it.
-		if (DEBUG) fprintf(stderr, "IO_Event_Selector_URing_initialize: no IORING_SETUP_SUBMIT_ALL\n");
-		flags &= ~IORING_SETUP_SUBMIT_ALL;
-		result = io_uring_queue_init(URING_ENTRIES, &selector->ring, flags);
-	}
-#endif
+	int result = IO_Event_Selector_URing_queue_init_with(URING_ENTRIES, &selector->ring, flags, io_uring_queue_init);
 	
 	if (result < 0) {
 		rb_syserr_fail(-result, "IO_Event_Selector_URing_initialize:io_uring_queue_init");
@@ -1740,14 +1773,7 @@ static int IO_Event_Selector_URing_supported_p(void) {
 #ifdef IORING_SETUP_SUBMIT_ALL
 	flags |= IORING_SETUP_SUBMIT_ALL;
 #endif
-	int result = io_uring_queue_init(32, &ring, flags);
-	
-#ifdef IORING_SETUP_SUBMIT_ALL
-	if (result == -EINVAL) {
-		flags &= ~IORING_SETUP_SUBMIT_ALL;
-		result = io_uring_queue_init(32, &ring, flags);
-	}
-#endif
+	int result = IO_Event_Selector_URing_queue_init_with(32, &ring, flags, io_uring_queue_init);
 	
 	if (result < 0) {
 		rb_warn("io_uring_queue_init() was available at compile time but failed at run time: %s\n", strerror(-result));
@@ -1758,6 +1784,58 @@ static int IO_Event_Selector_URing_supported_p(void) {
 	io_uring_queue_exit(&ring);
 	
 	return 1;
+}
+
+static unsigned int IO_Event_Selector_URing_test_queue_init_calls = 0;
+
+static int IO_Event_Selector_URing_test_queue_init(unsigned entries, struct io_uring *ring, unsigned flags) {
+	(void)entries;
+	(void)ring;
+
+	IO_Event_Selector_URing_test_queue_init_calls += 1;
+
+	unsigned int unsupported = 0;
+#ifdef IORING_SETUP_SINGLE_ISSUER
+	unsupported |= IORING_SETUP_SINGLE_ISSUER;
+#endif
+#ifdef IORING_SETUP_DEFER_TASKRUN
+	unsupported |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+#ifdef IORING_SETUP_TASKRUN_FLAG
+	unsupported |= IORING_SETUP_TASKRUN_FLAG;
+#endif
+
+	return flags & unsupported ? -EINVAL : 0;
+}
+
+static VALUE IO_Event_Selector_URing_test_setup_flag_fallback(VALUE self) {
+	(void)self;
+
+	unsigned int flags = 0;
+	unsigned int unsupported = 0;
+#ifdef IORING_SETUP_SINGLE_ISSUER
+	flags |= IORING_SETUP_SINGLE_ISSUER;
+	unsupported |= IORING_SETUP_SINGLE_ISSUER;
+#endif
+#ifdef IORING_SETUP_DEFER_TASKRUN
+	flags |= IORING_SETUP_DEFER_TASKRUN;
+	unsupported |= IORING_SETUP_DEFER_TASKRUN;
+#endif
+#ifdef IORING_SETUP_TASKRUN_FLAG
+	flags |= IORING_SETUP_TASKRUN_FLAG;
+	unsupported |= IORING_SETUP_TASKRUN_FLAG;
+#endif
+#ifdef IORING_SETUP_SUBMIT_ALL
+	flags |= IORING_SETUP_SUBMIT_ALL;
+#endif
+
+	if (unsupported == 0) return Qnil;
+
+	struct io_uring ring;
+	IO_Event_Selector_URing_test_queue_init_calls = 0;
+	int result = IO_Event_Selector_URing_queue_init_with(32, &ring, flags, IO_Event_Selector_URing_test_queue_init);
+
+	return rb_ary_new_from_args(2, INT2NUM(result), UINT2NUM(IO_Event_Selector_URing_test_queue_init_calls));
 }
 
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
@@ -1803,4 +1881,6 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
+
+	rb_define_singleton_method(IO_Event_Selector_URing, "test_setup_flag_fallback", IO_Event_Selector_URing_test_setup_flag_fallback, 0);
 }
