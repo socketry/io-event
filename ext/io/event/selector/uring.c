@@ -213,9 +213,16 @@ struct IO_Event_Selector_URing_Completion * IO_Event_Selector_URing_Completion_a
 	
 	waiting->completion = completion;
 	completion->waiting = waiting;
-	completion->operation_pending = true;
+	// The operation is not pending until an SQE has been prepared successfully.
 	
 	return completion;
+}
+
+inline static
+void IO_Event_Selector_URing_Completion_submit(struct IO_Event_Selector_URing_Completion *completion)
+{
+	assert(!completion->operation_pending);
+	completion->operation_pending = true;
 }
 
 inline static
@@ -237,6 +244,16 @@ void IO_Event_Selector_URing_Completion_recycle(struct IO_Event_Selector_URing *
 	assert(!completion->cancellation_pending);
 	
 	IO_Event_List_prepend(&selector->free_list, &completion->list);
+}
+
+inline static
+void IO_Event_Selector_URing_Completion_abandon(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
+{
+	assert(!completion->operation_pending);
+	assert(!completion->cancellation_pending);
+
+	IO_Event_Selector_URing_Completion_cancel(completion);
+	IO_Event_Selector_URing_Completion_recycle(selector, completion);
 }
 
 inline static
@@ -558,14 +575,32 @@ struct io_uring_sqe * io_get_sqe(struct IO_Event_Selector_URing *selector) {
 	return sqe;
 }
 
+static VALUE IO_Event_Selector_URing_get_sqe_protected(VALUE _selector) {
+	struct IO_Event_Selector_URing *selector = (struct IO_Event_Selector_URing *)(uintptr_t)_selector;
+
+	return (VALUE)(uintptr_t)io_get_sqe(selector);
+}
+
+static struct io_uring_sqe * IO_Event_Selector_URing_Completion_get_sqe(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion) {
+	int state = 0;
+	VALUE result = rb_protect(IO_Event_Selector_URing_get_sqe_protected, (VALUE)selector, &state);
+
+	if (state) {
+		IO_Event_Selector_URing_Completion_abandon(selector, completion);
+		rb_jump_tag(state);
+	}
+
+	return (struct io_uring_sqe *)(uintptr_t)result;
+}
+
 static
 void IO_Event_Selector_URing_Completion_cancel_async(struct IO_Event_Selector_URing *selector, struct IO_Event_Selector_URing_Completion *completion)
 {
 	if (completion->cancellation_pending) return;
 	
-	completion->cancellation_pending = true;
-	
 	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	completion->cancellation_pending = true;
+
 	io_uring_prep_cancel(sqe, completion, 0);
 	io_uring_sqe_set_data64(sqe, IO_Event_Selector_URing_Completion_cancellation_data(completion));
 	io_uring_submit_pending(selector);
@@ -781,7 +816,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 #endif
 	};
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	struct io_uring_sqe *sqe = IO_Event_Selector_URing_Completion_get_sqe(selector, completion);
 	
 #ifdef IO_EVENT_SELECTOR_URING_USE_WAITID
 	id_t id;
@@ -799,6 +834,7 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	io_uring_prep_poll_add(sqe, descriptor, POLLIN|POLLHUP|POLLERR);
 #endif
 	io_uring_sqe_set_data(sqe, completion);
+	IO_Event_Selector_URing_Completion_submit(completion);
 	io_uring_submit_pending(selector);
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
@@ -890,9 +926,10 @@ VALUE IO_Event_Selector_URing_io_wait(VALUE self, VALUE fiber, VALUE io, VALUE e
 	
 	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	struct io_uring_sqe *sqe = IO_Event_Selector_URing_Completion_get_sqe(selector, completion);
 	io_uring_prep_poll_add(sqe, descriptor, flags);
 	io_uring_sqe_set_data(sqe, completion);
+	IO_Event_Selector_URing_Completion_submit(completion);
 	// If we are going to wait, we assume that we are waiting for a while:
 	io_uring_submit_pending(selector);
 	
@@ -944,9 +981,11 @@ io_read_submit(VALUE _arguments)
 	
 	if (DEBUG) fprintf(stderr, "io_read_submit:io_uring_prep_read(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	struct IO_Event_Selector_URing_Completion *completion = arguments->waiting->completion;
+	struct io_uring_sqe *sqe = IO_Event_Selector_URing_Completion_get_sqe(selector, completion);
 	io_uring_prep_read(sqe, arguments->descriptor, arguments->buffer, arguments->length, arguments->offset);
-	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
+	io_uring_sqe_set_data(sqe, completion);
+	IO_Event_Selector_URing_Completion_submit(completion);
 	io_uring_submit_pending(selector);
 	
 	IO_Event_Selector_loop_yield(&selector->backend);
@@ -1211,9 +1250,11 @@ io_write_submit(VALUE _argument)
 	
 	if (DEBUG) fprintf(stderr, "io_write_submit:io_uring_prep_write(waiting=%p, completion=%p, descriptor=%d, buffer=%p, length=%ld)\n", (void*)arguments->waiting, (void*)arguments->waiting->completion, arguments->descriptor, arguments->buffer, arguments->length);
 	
-	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	struct IO_Event_Selector_URing_Completion *completion = arguments->waiting->completion;
+	struct io_uring_sqe *sqe = IO_Event_Selector_URing_Completion_get_sqe(selector, completion);
 	io_uring_prep_write(sqe, arguments->descriptor, arguments->buffer, arguments->length, arguments->offset);
-	io_uring_sqe_set_data(sqe, arguments->waiting->completion);
+	io_uring_sqe_set_data(sqe, completion);
+	IO_Event_Selector_URing_Completion_submit(completion);
 	io_uring_submit_pending(selector);
 	
 	IO_Event_Selector_loop_yield(&selector->backend);
