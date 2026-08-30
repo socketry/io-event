@@ -3,6 +3,7 @@
 
 #include "uring.h"
 #include "selector.h"
+#include "../futex.h"
 #include "../list.h"
 #include "../array.h"
 
@@ -803,6 +804,144 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+
+#pragma mark - Futex Wait
+
+struct futex_wait_arguments {
+	struct IO_Event_Selector_URing *selector;
+	struct IO_Event_Selector_URing_Waiting *waiting;
+};
+
+static VALUE futex_wait_ensure(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	
+	if (arguments->waiting->completion) {
+		struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
+		io_uring_prep_cancel(sqe, (void *)arguments->waiting->completion, 0);
+		io_uring_sqe_set_data(sqe, NULL);
+		io_uring_submit_now(arguments->selector);
+	}
+	
+	IO_Event_Selector_URing_Waiting_cancel(arguments->waiting);
+	return Qnil;
+}
+
+static VALUE futex_wait_transfer(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	
+	int32_t result = arguments->waiting->result;
+	if (result == 0) {
+		return Qtrue;
+	} else if (result == -EAGAIN) {
+		return Qfalse;
+	} else if (result < 0) {
+		rb_syserr_fail(-result, "futex_wait_transfer:io_uring_futex_wait");
+	}
+	
+	return Qfalse;
+}
+
+static VALUE IO_Event_Selector_URing_futex_wait(VALUE self, VALUE fiber, VALUE futex, VALUE expected_value) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
+	struct futex_wait_arguments arguments = {
+		.selector = selector,
+		.waiting = &waiting,
+	};
+	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_futex_wait(
+		sqe,
+		IO_Event_Futex_address(futex),
+		NUM2UINT(expected_value),
+		FUTEX_BITSET_MATCH_ANY,
+		FUTEX2_SIZE_U32,
+		0
+	);
+	io_uring_sqe_set_data(sqe, completion);
+	io_uring_submit_pending(selector);
+	
+	VALUE result = rb_ensure(futex_wait_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(futex);
+	return result;
+}
+
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+
+static VALUE futex_waitv_transfer(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	
+	int32_t result = arguments->waiting->result;
+	if (result >= 0) {
+		return INT2NUM(result);
+	} else if (result == -EAGAIN) {
+		return Qnil;
+	} else {
+		rb_syserr_fail(-result, "futex_waitv_transfer:io_uring_futex_waitv");
+	}
+	
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_URing_futex_waitv(VALUE self, VALUE fiber, VALUE entries) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	entries = rb_Array(entries);
+	long count = RARRAY_LEN(entries);
+	if (count < 1 || count > FUTEX_WAITV_MAX) {
+		rb_raise(rb_eArgError, "Futex vector must contain between 1 and %d entries!", FUTEX_WAITV_MAX);
+	}
+	
+	struct futex_waitv *vector = ALLOCA_N(struct futex_waitv, count);
+	for (long index = 0; index < count; index++) {
+		VALUE entry = rb_Array(RARRAY_AREF(entries, index));
+		if (RARRAY_LEN(entry) != 2) {
+			rb_raise(rb_eArgError, "Each futex vector entry must contain a futex and its expected value!");
+		}
+		
+		VALUE futex = RARRAY_AREF(entry, 0);
+		vector[index].val = NUM2UINT(RARRAY_AREF(entry, 1));
+		vector[index].uaddr = (uintptr_t)IO_Event_Futex_address(futex);
+		vector[index].flags = FUTEX_32;
+		vector[index].__reserved = 0;
+	}
+	
+	struct IO_Event_Selector_URing_Waiting waiting = {
+		.fiber = fiber,
+	};
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(selector, &waiting);
+	struct futex_wait_arguments arguments = {
+		.selector = selector,
+		.waiting = &waiting,
+	};
+	
+	struct io_uring_sqe *sqe = io_get_sqe(selector);
+	io_uring_prep_futex_waitv(sqe, vector, count, 0);
+	io_uring_sqe_set_data(sqe, completion);
+	io_uring_submit_pending(selector);
+	
+	VALUE result = rb_ensure(futex_waitv_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(entries);
+	return result;
+}
+
+#endif
+
+#endif
 
 #pragma mark - IO#wait
 
@@ -1724,6 +1863,9 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 #pragma mark - Native Methods
 
+static int IO_Event_Selector_URing_futex_supported = 0;
+static int IO_Event_Selector_URing_futex_waitv_supported = 0;
+
 static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
 	
@@ -1754,6 +1896,17 @@ static int IO_Event_Selector_URing_supported_p(void) {
 		
 		return 0;
 	}
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+	struct io_uring_probe *probe = io_uring_get_probe_ring(&ring);
+	if (probe) {
+		IO_Event_Selector_URing_futex_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAIT);
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+		IO_Event_Selector_URing_futex_waitv_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAITV);
+#endif
+		io_uring_free_probe(probe);
+	}
+#endif
 	
 	io_uring_queue_exit(&ring);
 	
@@ -1803,4 +1956,16 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+	if (IO_Event_Selector_URing_futex_supported) {
+		rb_define_method(IO_Event_Selector_URing, "futex_wait", IO_Event_Selector_URing_futex_wait, 3);
+		
+#ifdef HAVE_IO_URING_PREP_FUTEX_WAITV
+		if (IO_Event_Selector_URing_futex_waitv_supported) {
+			rb_define_method(IO_Event_Selector_URing, "futex_waitv", IO_Event_Selector_URing_futex_waitv, 2);
+		}
+#endif
+	}
+#endif
 }

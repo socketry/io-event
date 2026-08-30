@@ -19,6 +19,18 @@ module IO::Event
 					log("Closing file descriptor #{descriptor}")
 					@selector.io_close(descriptor)
 				end
+				
+				# Wait for a futex value to change, forwarded to the underlying selector.
+				def futex_wait(fiber, futex, expected)
+					log("Waiting for futex #{futex.inspect} with value #{expected}")
+					@selector.futex_wait(fiber, futex, expected)
+				end
+				
+				# Wait for any futex value to change, forwarded to the underlying selector.
+				def futex_waitv(fiber, entries)
+					log("Waiting for futex vector #{entries.inspect}")
+					@selector.futex_waitv(fiber, entries)
+				end
 			end
 			
 			# Wrap the given selector with debugging.

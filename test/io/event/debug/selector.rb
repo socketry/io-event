@@ -93,6 +93,16 @@ class FakeSelector
 		:calls_io_close
 	end
 	
+	def futex_wait(fiber, futex, expected)
+		@calls << [:futex_wait, fiber, futex, expected]
+		:calls_futex_wait
+	end
+	
+	def futex_waitv(fiber, entries)
+		@calls << [:futex_waitv, fiber, entries]
+		:calls_futex_waitv
+	end
+	
 	def select(duration = nil)
 		@calls << [:select, duration]
 		:calls_select
@@ -153,6 +163,8 @@ describe IO::Event::Debug::Selector do
 		end
 		expect(selector.io_close(input.fileno)).to be == :calls_io_close
 		expect(selector.respond_to?(:io_close)).to be == true
+		expect(selector.futex_wait(fiber, :futex, 1)).to be == :calls_futex_wait
+		expect(selector.futex_waitv(fiber, [[:futex, 1]])).to be == :calls_futex_waitv
 		expect(selector.select(0)).to be == :calls_select
 	ensure
 		input&.close

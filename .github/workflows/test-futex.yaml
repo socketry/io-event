@@ -1,0 +1,33 @@
+name: Test Futex
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-26.04
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install liburing with futex support
+      run: sudo apt-get update && sudo apt-get install -y liburing-dev
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ruby
+        bundler-cache: true
+
+    - name: Run futex tests
+      timeout-minutes: 5
+      env:
+        RUBYLIB: lib:ext
+      run: |
+        cd ext
+        bundle exec ruby extconf.rb
+        make
+        cd ..
+        bundle exec ruby -e 'require "io/event"; abort "IO::Event::Futex.wait_any is unavailable!" unless defined?(IO::Event::Futex) && IO::Event::Futex.respond_to?(:wait_any); selector = IO::Event::Selector::URing.new(Fiber.current); abort "futex_waitv is unavailable!" unless selector.respond_to?(:futex_waitv)'
+        bundle exec sus test/io/event/futex.rb
