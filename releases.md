@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Reject non-finite timer times (`NaN` and positive or negative infinity), preventing invalid heap ordering and permanently retained timer handles.
+
 ## v1.21.1
 
   - Fix the `URing` completion free-list empty check so its sole entry can be reused instead of unnecessarily allocating a new completion.
