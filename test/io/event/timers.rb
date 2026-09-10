@@ -178,6 +178,22 @@ describe IO::Event::Timers do
 			end.to raise_exception(NoMethodError, message: be =~ /to_f/)
 		end
 		
+		it "raises an error if given a non-finite offset" do
+			[Float::NAN, Float::INFINITY, -Float::INFINITY].each do |offset|
+				expect do
+					timers.after(offset){}
+				end.to raise_exception(ArgumentError, message: be =~ /must be finite/)
+			end
+		end
+		
+		it "raises an error if given a non-finite time" do
+			[Float::NAN, Float::INFINITY, -Float::INFINITY].each do |time|
+				expect do
+					timers.schedule(time, proc{})
+				end.to raise_exception(ArgumentError, message: be =~ /must be finite/)
+			end
+		end
+		
 		it "converts the offset to a float" do
 			fired = false
 			

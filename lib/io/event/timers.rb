@@ -97,6 +97,10 @@ class IO
 			# @parameter time [Float] The time at which the block should be called, relative to {#now}.
 			# @parameter block [Proc] The block to call.
 			def schedule(time, block)
+				unless time.finite?
+					raise ArgumentError, "Timer time must be finite: #{time.inspect}"
+				end
+				
 				handle = Handle.new(time, block)
 				
 				@scheduled << handle
