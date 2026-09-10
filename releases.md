@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.22.0
 
   - Reject non-finite timer times (`NaN` and positive or negative infinity), preventing invalid heap ordering and permanently retained timer handles.
 

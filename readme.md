@@ -18,6 +18,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.22.0
+
+  - Reject non-finite timer times (`NaN` and positive or negative infinity), preventing invalid heap ordering and permanently retained timer handles.
+
 ### v1.21.1
 
   - Fix the `URing` completion free-list empty check so its sole entry can be reused instead of unnecessarily allocating a new completion.
@@ -55,10 +59,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.18.0
 
   - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.
-
-### v1.17.0
-
-  - Report inherited selector objects as closed after fork, and avoid closing descriptors they no longer own.
 
 ## Contributing
 
