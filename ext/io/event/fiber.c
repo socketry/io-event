@@ -10,7 +10,10 @@ VALUE IO_Event_Fiber_transfer(VALUE fiber, int argc, VALUE *argv) {
 #ifdef HAVE__RB_FIBER_TRANSFER
 	if (RTEST(rb_obj_is_fiber(fiber))) {
 		if (RTEST(rb_fiber_alive_p(fiber))) {
-			return rb_fiber_transfer(fiber, argc, argv);
+			VALUE result = rb_fiber_transfer(fiber, argc, argv);
+			// Workaround for https://bugs.ruby-lang.org/issues/22196
+			RB_GC_GUARD(fiber);
+			return result;
 		}
 		
 		// If it's a fiber, but dead, we are done.
