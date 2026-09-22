@@ -75,6 +75,47 @@ Queue = Sus::Shared("queue") do
 			expect(sequence).to be == [:select, :yield, :select, :resume]
 		end
 		
+		it "terminates flush when the newest entry is removed out of band" do
+			sequence = []
+			count = 0
+			
+			# This fiber re-queues itself on every iteration, so the queue is never empty:
+			busy = Fiber.new do
+				while true
+					count += 1
+					selector.push(busy)
+					selector.transfer
+				end
+			end
+			
+			yielding = Fiber.new do
+				selector.push(busy)
+				
+				# Simulate a stale internal entry, e.g. from `Fiber::Scheduler#unblock` racing a timeout:
+				selector.push(yielding)
+				
+				# Yielding adds a stack-allocated entry to the head of the queue, which is removed when the fiber is resumed:
+				sequence << :yield
+				selector.yield
+				sequence << :resumed
+			end
+			
+			selector.push(yielding)
+			selector.select(0)
+			expect(sequence).to be == [:yield]
+			
+			# The stale entry resumes `yielding`, which removes the newest entry from the queue while we are still flushing. The flush must still terminate. There were 3 entries when the flush started, so `busy` can run at most twice:
+			selector.select(0)
+			expect(sequence).to be == [:yield, :resumed]
+			expect(count).to be >= 1
+			expect(count).to be <= 2
+			
+			# Only `busy` remains in the queue, so it runs exactly once more:
+			previous = count
+			selector.select(0)
+			expect(count).to be == previous + 1
+		end
+		
 		it "can push a fiber into the queue while processing queue" do
 			sequence = []
 			

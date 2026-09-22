@@ -358,22 +358,23 @@ int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
 {
 	int count = 0;
 	
-	// During iteration of the queue, the same item may be re-queued. If we don't handle this correctly, we may end up in an infinite loop. So, to avoid this situation, we keep note of the current head of the queue and break the loop if we reach the same item again.
+	// During iteration of the queue, the same item may be re-queued. If we don't handle this correctly, we may end up in an infinite loop. So, to avoid this situation, we process at most as many entries as were in the queue when the flush started.
 	
-	// Get the current tail and head of the queue:
-	struct IO_Event_Selector_Queue *waiting = backend->waiting;
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_ready_flush waiting = %p\n", waiting);
+	int limit = 0;
+	for (struct IO_Event_Selector_Queue *ready = backend->ready; ready; ready = ready->head) {
+		limit += 1;
+	}
+	
+	if (DEBUG) fprintf(stderr, "IO_Event_Selector_ready_flush limit = %d\n", limit);
 	
 	// Process from head to tail in order:
 	// During this, more items may be appended to tail.
-	while (backend->ready) {
+	while (backend->ready && count < limit) {
 		if (DEBUG) fprintf(stderr, "backend->ready = %p\n", backend->ready);
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
 		count += 1;
 		IO_Event_Selector_ready_pop(backend, ready);
-		
-		if (ready == waiting) break;
 	}
 	
 	return count;

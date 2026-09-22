@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Fix an infinite loop in the ready queue flush when a queued fiber is resumed out of band, e.g. by a stale `unblock` racing a timeout, while another fiber re-queues itself on every iteration.
+
 ## v1.22.0
 
   - Reject non-finite timer times (`NaN` and positive or negative infinity), preventing invalid heap ordering and permanently retained timer handles.
