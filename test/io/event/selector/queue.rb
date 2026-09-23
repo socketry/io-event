@@ -104,16 +104,45 @@ Queue = Sus::Shared("queue") do
 			selector.select(0)
 			expect(sequence).to be == [:yield]
 			
-			# The stale entry resumes `yielding`, which removes the newest entry from the queue while we are still flushing. The flush must still terminate. There were 3 entries when the flush started, so `busy` can run at most twice:
+			# The stale entry resumes `yielding`, which removes the newest entry from the queue while we are still flushing. The re-queued `busy` must be deferred to the next flush:
 			selector.select(0)
 			expect(sequence).to be == [:yield, :resumed]
-			expect(count).to be >= 1
-			expect(count).to be <= 2
+			expect(count).to be == 1
 			
 			# Only `busy` remains in the queue, so it runs exactly once more:
 			previous = count
 			selector.select(0)
 			expect(count).to be == previous + 1
+		end
+		
+		it "defers new entries when an earlier entry is removed out of band" do
+			sequence = []
+			yielding = nil
+			added = Fiber.new{sequence << :added}
+			
+			remover = Fiber.new do
+				sequence << :remover
+				selector.push(added)
+				yielding.transfer
+			end
+			
+			yielding = Fiber.new do
+				selector.push(remover)
+				selector.yield
+				sequence << :resumed
+			end
+			
+			selector.push(yielding)
+			selector.select(0)
+			selector.push(Fiber.new{sequence << :tail})
+			
+			# The initial queue is [remover, yielding, tail]. Resuming yielding
+			# removes its entry, but must not bring added into this flush.
+			selector.select(0)
+			expect(sequence).to be == [:remover, :resumed, :tail]
+			
+			selector.select(0)
+			expect(sequence).to be == [:remover, :resumed, :tail, :added]
 		end
 		
 		it "can push a fiber into the queue while processing queue" do
@@ -135,6 +164,78 @@ Queue = Sus::Shared("queue") do
 			
 			selector.select(0)
 			expect(sequence).to be == [:first, :second]
+		end
+	end
+	
+	with "#ready?" do
+		it "ignores flush placeholders but sees entries appended after them" do
+			states = []
+			
+			selector.push(Fiber.new do
+				states << selector.ready?
+				selector.push(Fiber.new{states << selector.ready?})
+				states << selector.ready?
+			end)
+			
+			expect(selector).to be(:ready?)
+			selector.select(0)
+			expect(states).to be == [false, true]
+			expect(selector).to be(:ready?)
+			
+			selector.select(0)
+			expect(states).to be == [false, true, false]
+			expect(selector).not.to be(:ready?)
+		end
+	end
+	
+	with "#select" do
+		it "preserves queued entries when a fiber raises during flush" do
+			sequence = []
+			
+			selector.push(Fiber.new do
+				selector.push(Fiber.new{sequence << :added})
+				raise Interrupt, "interrupted flush"
+			end)
+			selector.push(Fiber.new{sequence << :remaining})
+			
+			expect{selector.select(0)}.to raise_exception(Interrupt, message: be == "interrupted flush")
+			expect(selector).to be(:ready?)
+			
+			GC.start
+			selector.select(0)
+			expect(sequence).to be == [:remaining, :added]
+			expect(selector).not.to be(:ready?)
+		end
+		
+		it "leaves an empty queue when the only fiber raises during flush" do
+			selector.push(Fiber.new{raise "interrupted flush"})
+			
+			expect{selector.select(0)}.to raise_exception(RuntimeError, message: be == "interrupted flush")
+			expect(selector).not.to be(:ready?)
+			
+			sequence = []
+			selector.push(Fiber.new{sequence << :resumed})
+			selector.select(0)
+			expect(sequence).to be == [:resumed]
+			expect(selector).not.to be(:ready?)
+		end
+		
+		it "supports garbage collection while flushing the queue" do
+			sequence = []
+			
+			selector.push(Fiber.new do
+				if GC.respond_to?(:verify_compaction_references)
+					GC.verify_compaction_references(double_heap: true, toward: :empty)
+				else
+					GC.start
+				end
+				sequence << :collected
+			end)
+			selector.push(Fiber.new{sequence << :remaining})
+			
+			selector.select(0)
+			expect(sequence).to be == [:collected, :remaining]
+			expect(selector).not.to be(:ready?)
 		end
 	end
 	
@@ -252,5 +353,49 @@ IO::Event::Selector.constants.each do |name|
 		attr :selector
 		
 		it_behaves_like Queue
+		
+		unless klass == IO::Event::Selector::Select
+			it "preserves the outer flush boundary during a nested flush" do
+				sequence = []
+				event_selector = selector
+				callback = Object.new
+				callback.define_singleton_method(:alive?){true}
+				callback.define_singleton_method(:transfer) do
+					sequence << :outer
+					event_selector.push(Fiber.new{sequence << :added})
+					event_selector.select(0)
+					sequence << :returned
+				end
+				
+				selector.push(callback)
+				selector.push(Fiber.new{sequence << :inner})
+				selector.select(0)
+				expect(sequence).to be == [:outer, :inner, :returned]
+				
+				selector.select(0)
+				expect(sequence).to be == [:outer, :inner, :returned, :added]
+				expect(selector).not.to be(:ready?)
+			end
+			
+			it "ignores nested placeholders when checking readiness" do
+				states = []
+				event_selector = selector
+				callback = Object.new
+				callback.define_singleton_method(:alive?){true}
+				callback.define_singleton_method(:transfer){event_selector.select(0)}
+				
+				selector.push(callback)
+				selector.push(Fiber.new do
+					states << selector.ready?
+					selector.push(Fiber.new{})
+					states << selector.ready?
+				end)
+				
+				selector.select(0)
+				expect(states).to be == [false, true]
+				selector.select(0)
+				expect(selector).not.to be(:ready?)
+			end
+		end
 	end
 end

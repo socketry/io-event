@@ -77,6 +77,7 @@ void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
 enum IO_Event_Selector_Queue_Flags {
 	IO_EVENT_SELECTOR_QUEUE_FIBER = 1,
 	IO_EVENT_SELECTOR_QUEUE_INTERNAL = 2,
+	IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER = 4,
 };
 
 struct IO_Event_Selector_Queue {
@@ -106,6 +107,17 @@ struct IO_Event_Selector {
 };
 
 void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self, VALUE loop);
+
+// Whether the queue contains any entries other than flush placeholders.
+static inline
+int IO_Event_Selector_ready_p(struct IO_Event_Selector *backend) {
+	struct IO_Event_Selector_Queue *ready = backend->ready;
+	while (ready && (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER)) {
+		ready = ready->head;
+	}
+	
+	return ready != NULL;
+}
 
 static inline
 void IO_Event_Selector_mark(struct IO_Event_Selector *backend) {

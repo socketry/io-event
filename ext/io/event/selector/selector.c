@@ -354,28 +354,60 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 	IO_Event_Selector_loop_resume(backend, fiber, 0, NULL);
 }
 
-int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
+struct ready_flush_arguments {
+	struct IO_Event_Selector *backend;
+	struct IO_Event_Selector_Queue placeholder;
+	int count;
+};
+
+static VALUE ready_flush(VALUE _arguments)
 {
-	int count = 0;
+	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
+	struct IO_Event_Selector *backend = arguments->backend;
 	
-	// During iteration of the queue, the same item may be re-queued. If we don't handle this correctly, we may end up in an infinite loop. So, to avoid this situation, we process at most as many entries as were in the queue when the flush started.
-	
-	int limit = 0;
-	for (struct IO_Event_Selector_Queue *ready = backend->ready; ready; ready = ready->head) {
-		limit += 1;
-	}
-	
-	if (DEBUG) fprintf(stderr, "IO_Event_Selector_ready_flush limit = %d\n", limit);
-	
-	// Process from head to tail in order:
-	// During this, more items may be appended to tail.
-	while (backend->ready && count < limit) {
-		if (DEBUG) fprintf(stderr, "backend->ready = %p\n", backend->ready);
+	while (backend->ready) {
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
-		count += 1;
+		// A nested flush must also stop at the boundary of the outer flush.
+		if (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER) break;
+		
+		arguments->count += 1;
 		IO_Event_Selector_ready_pop(backend, ready);
 	}
 	
-	return count;
+	return Qnil;
+}
+
+static VALUE ready_flush_ensure(VALUE _arguments)
+{
+	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
+	
+	queue_pop(arguments->backend, &arguments->placeholder);
+	
+	return Qnil;
+}
+
+int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
+{
+	if (!backend->ready) return 0;
+	
+	struct ready_flush_arguments arguments = {
+		.backend = backend,
+		.placeholder = {
+			.head = NULL,
+			.tail = NULL,
+			.flags = IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER,
+			.fiber = Qnil,
+		},
+		.count = 0,
+	};
+	
+	// Keep a stable boundary even if queued entries are removed or re-queued.
+	// Entries appended after the placeholder are deferred to the next flush.
+	queue_push(backend, &arguments.placeholder);
+	
+	// Resuming a fiber can raise, so always unlink the stack-allocated placeholder.
+	rb_ensure(ready_flush, (VALUE)&arguments, ready_flush_ensure, (VALUE)&arguments);
+	
+	return arguments.count;
 }
