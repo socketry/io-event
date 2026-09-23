@@ -372,9 +372,15 @@ static VALUE IO_Event_Selector_ready_flush_begin(VALUE _arguments)
 	while (backend->ready) {
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
-		// Stop before dispatching any placeholder, including an outer flush's.
-		// A nested flush must not consume entries deferred by its caller.
-		if (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER) break;
+		// Each flush stops at its own placeholder. Entries beyond an outer
+		// placeholder may already have been queued when this flush started.
+		// Skip other placeholders without unlinking them: their owners still
+		// need them as boundaries and will remove them in their ensure callbacks.
+		while (ready && ready != &arguments->placeholder && (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER)) {
+			ready = ready->head;
+		}
+		
+		if (!ready || ready == &arguments->placeholder) break;
 		
 		// Resuming a fiber can unlink other entries, so read backend->ready again
 		// on the next iteration instead of retaining a neighbour pointer.

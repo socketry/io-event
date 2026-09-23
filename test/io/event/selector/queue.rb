@@ -355,14 +355,17 @@ IO::Event::Selector.constants.each do |name|
 		it_behaves_like Queue
 		
 		unless klass == IO::Event::Selector::Select
-			it "preserves the outer flush boundary during a nested flush" do
+			it "uses each nested flush's own boundary" do
 				sequence = []
 				event_selector = selector
 				callback = Object.new
 				callback.define_singleton_method(:alive?){true}
 				callback.define_singleton_method(:transfer) do
 					sequence << :outer
-					event_selector.push(Fiber.new{sequence << :added})
+					event_selector.push(Fiber.new do
+						sequence << :added
+						event_selector.push(Fiber.new{sequence << :deferred})
+					end)
 					event_selector.select(0)
 					sequence << :returned
 				end
@@ -370,10 +373,80 @@ IO::Event::Selector.constants.each do |name|
 				selector.push(callback)
 				selector.push(Fiber.new{sequence << :inner})
 				selector.select(0)
-				expect(sequence).to be == [:outer, :inner, :returned]
+				expect(sequence).to be == [:outer, :inner, :added, :returned]
+				expect(selector).to be(:ready?)
 				
 				selector.select(0)
-				expect(sequence).to be == [:outer, :inner, :returned, :added]
+				expect(sequence).to be == [:outer, :inner, :added, :returned, :deferred]
+				expect(selector).not.to be(:ready?)
+			end
+			
+			it "skips multiple outer placeholders without removing them" do
+				sequence = []
+				event_selector = selector
+				middle = Object.new
+				middle.define_singleton_method(:alive?){true}
+				middle.define_singleton_method(:transfer) do
+					sequence << :middle
+					event_selector.push(Fiber.new do
+						sequence << :inner
+						event_selector.push(Fiber.new{sequence << :deferred})
+					end)
+					# The inner flush must cross both the outer and middle placeholders:
+					event_selector.select(0)
+					sequence << :middle_returned
+				end
+				
+				outer = Object.new
+				outer.define_singleton_method(:alive?){true}
+				outer.define_singleton_method(:transfer) do
+					sequence << :outer
+					event_selector.push(middle)
+					event_selector.select(0)
+					sequence << :outer_returned
+				end
+				
+				selector.push(outer)
+				selector.select(0)
+				expect(sequence).to be == [:outer, :middle, :inner, :middle_returned, :outer_returned]
+				expect(selector).to be(:ready?)
+				
+				selector.select(0)
+				expect(sequence).to be == [:outer, :middle, :inner, :middle_returned, :outer_returned, :deferred]
+				expect(selector).not.to be(:ready?)
+			end
+			
+			it "preserves the outer placeholder when a nested flush raises" do
+				sequence = []
+				event_selector = selector
+				callback = Object.new
+				callback.define_singleton_method(:alive?){true}
+				callback.define_singleton_method(:transfer) do
+					sequence << :outer
+					event_selector.push(Fiber.new do
+						sequence << :raised
+						event_selector.push(Fiber.new{sequence << :deferred})
+						raise "interrupted nested flush"
+					end)
+					event_selector.push(Fiber.new{sequence << :remaining})
+					
+					begin
+						event_selector.select(0)
+					rescue RuntimeError
+						sequence << :rescued
+					end
+					
+					GC.start
+				end
+				
+				selector.push(callback)
+				selector.push(Fiber.new{sequence << :initial})
+				selector.select(0)
+				expect(sequence).to be == [:outer, :initial, :raised, :rescued]
+				expect(selector).to be(:ready?)
+				
+				selector.select(0)
+				expect(sequence).to be == [:outer, :initial, :raised, :rescued, :remaining, :deferred]
 				expect(selector).not.to be(:ready?)
 			end
 			
