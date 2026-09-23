@@ -369,6 +369,14 @@ static VALUE IO_Event_Selector_ready_flush_begin(VALUE _arguments)
 	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
 	struct IO_Event_Selector *backend = arguments->backend;
 	
+	// rb_ensure has installed cleanup before entering this callback. Link the
+	// placeholder before any operation that can raise or yield.
+	// Saving the last existing entry is unsafe: another fiber can remove it.
+	// Counting entries instead can let newly queued work replace removed entries.
+	// This placeholder stays linked until its owning flush finishes, preserving:
+	//   existing entries -> placeholder -> newly queued entries
+	queue_push(backend, &arguments->placeholder);
+	
 	while (backend->ready) {
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
@@ -417,12 +425,6 @@ int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
 		},
 		.count = 0,
 	};
-	
-	// Saving the last existing entry is unsafe: another fiber can remove it.
-	// Counting entries instead can let newly queued work replace removed entries.
-	// This placeholder stays linked until its owning flush finishes, preserving:
-	//   existing entries -> placeholder -> newly queued entries
-	queue_push(backend, &arguments.placeholder);
 	
 	// Always unlink the placeholder on normal return or exception, before the
 	// arguments leave scope, so the queue cannot retain a pointer into this stack.
