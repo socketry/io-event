@@ -364,7 +364,7 @@ struct ready_flush_arguments {
 
 // rb_ensure requires VALUE(VALUE) callbacks. IO_Event_Selector_ready_flush wraps
 // this loop and returns the count stored in the shared arguments.
-static VALUE IO_Event_Selector_ready_flush_internal(VALUE _arguments)
+static VALUE IO_Event_Selector_ready_flush_begin(VALUE _arguments)
 {
 	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
 	struct IO_Event_Selector *backend = arguments->backend;
@@ -420,7 +420,7 @@ int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
 	
 	// Always unlink the placeholder on normal return or exception, before the
 	// arguments leave scope, so the queue cannot retain a pointer into this stack.
-	rb_ensure(IO_Event_Selector_ready_flush_internal, (VALUE)&arguments, IO_Event_Selector_ready_flush_ensure, (VALUE)&arguments);
+	rb_ensure(IO_Event_Selector_ready_flush_begin, (VALUE)&arguments, IO_Event_Selector_ready_flush_ensure, (VALUE)&arguments);
 	
 	return arguments.count;
 }
