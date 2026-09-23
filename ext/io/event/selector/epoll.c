@@ -437,7 +437,7 @@ VALUE IO_Event_Selector_EPoll_ready_p(VALUE self) {
 	struct IO_Event_Selector_EPoll *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_EPoll, &IO_Event_Selector_EPoll_Type, selector);
 	
-	return selector->backend.ready ? Qtrue : Qfalse;
+	return IO_Event_Selector_ready_p(&selector->backend) ? Qtrue : Qfalse;
 }
 
 struct process_wait_arguments {
@@ -1101,7 +1101,7 @@ VALUE IO_Event_Selector_EPoll_select(VALUE self, VALUE duration) {
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !result && !selector->backend.ready) {
+	if (!ready && !result && !IO_Event_Selector_ready_p(&selector->backend)) {
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
 		if (select_blocking_allowed(arguments.timeout)) {

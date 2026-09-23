@@ -463,7 +463,7 @@ VALUE IO_Event_Selector_URing_ready_p(VALUE self) {
 	struct IO_Event_Selector_URing *selector = NULL;
 	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
 	
-	return selector->backend.ready ? Qtrue : Qfalse;
+	return IO_Event_Selector_ready_p(&selector->backend) ? Qtrue : Qfalse;
 }
 
 #pragma mark - Submission Queue
@@ -1677,7 +1677,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 	// 2. Didn't process any events from non-blocking select (above), and
 	// 3. There are no items in the ready list,
 	// then we can perform a blocking select.
-	if (!ready && !completed && !selector->backend.ready) {
+	if (!ready && !completed && !IO_Event_Selector_ready_p(&selector->backend)) {
 		// We might need to wait for events:
 		struct select_arguments arguments = {
 			.selector = selector,
@@ -1687,7 +1687,7 @@ VALUE IO_Event_Selector_URing_select(VALUE self, VALUE duration) {
 		
 		arguments.timeout = make_timeout(duration, &arguments.storage);
 		
-		if (!selector->backend.ready && select_blocking_allowed(arguments.timeout)) {
+		if (!IO_Event_Selector_ready_p(&selector->backend) && select_blocking_allowed(arguments.timeout)) {
 			struct timespec start_time;
 			IO_Event_Time_current(&start_time);
 			
