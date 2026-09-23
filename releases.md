@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.22.1
 
   - Fix an infinite loop in the ready queue flush when a queued fiber is resumed out of band, e.g. by a stale `unblock` racing a timeout, while another fiber re-queues itself on every iteration.
   - Preserve each ready queue flush's boundary with its own placeholder so newly queued fibers are deferred even when earlier entries are removed. Nested native flushes skip other placeholders, processing work queued before their own boundary. Native selectors ignore placeholders when checking readiness and remove them if a fiber raises.

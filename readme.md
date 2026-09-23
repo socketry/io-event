@@ -18,6 +18,11 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### v1.22.1
+
+  - Fix an infinite loop in the ready queue flush when a queued fiber is resumed out of band, e.g. by a stale `unblock` racing a timeout, while another fiber re-queues itself on every iteration.
+  - Preserve each ready queue flush's boundary with its own placeholder so newly queued fibers are deferred even when earlier entries are removed. Nested native flushes skip other placeholders, processing work queued before their own boundary. Native selectors ignore placeholders when checking readiness and remove them if a fiber raises.
+
 ### v1.22.0
 
   - Reject non-finite timer times (`NaN` and positive or negative infinity), preventing invalid heap ordering and permanently retained timer handles.
@@ -55,10 +60,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 
   - Use `io_uring_prep_waitid` for `process_wait` in the `URing` selector (Linux 6.7+), waiting for child exit directly in the ring instead of polling on a `pidfd`. The child is reaped via `rb_process_status_wait` (using `WEXITED | WNOWAIT`) to construct a correct `Process::Status`, and `process_wait(-1, ...)` / `process_wait(0, ...)` are now supported.
   - Support waiting for any child or a process group (`pid <= 0`) on all selectors. The `EPoll` (`pidfd_open`) and `KQueue` (`EVFILT_PROC`) selectors can only watch a specific process, so these cases now fall back to a blocking wait on a dedicated thread; joining it is fiber-scheduler aware, so the reactor keeps running.
-
-### v1.18.0
-
-  - **Fixed**: Avoid entering a blocking native selector wait when an interrupt is already pending for the current thread.
 
 ## Contributing
 
