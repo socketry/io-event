@@ -354,13 +354,17 @@ void IO_Event_Selector_ready_pop(struct IO_Event_Selector *backend, struct IO_Ev
 	IO_Event_Selector_loop_resume(backend, fiber, 0, NULL);
 }
 
+// State shared by the rb_ensure body and cleanup callbacks. Each flush owns a
+// distinct placeholder on its C stack, including when flushes are nested.
 struct ready_flush_arguments {
 	struct IO_Event_Selector *backend;
 	struct IO_Event_Selector_Queue placeholder;
 	int count;
 };
 
-static VALUE ready_flush(VALUE _arguments)
+// rb_ensure requires VALUE(VALUE) callbacks. IO_Event_Selector_ready_flush wraps
+// this loop and returns the count stored in the shared arguments.
+static VALUE IO_Event_Selector_ready_flush_internal(VALUE _arguments)
 {
 	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
 	struct IO_Event_Selector *backend = arguments->backend;
@@ -368,9 +372,12 @@ static VALUE ready_flush(VALUE _arguments)
 	while (backend->ready) {
 		struct IO_Event_Selector_Queue *ready = backend->ready;
 		
-		// A nested flush must also stop at the boundary of the outer flush.
+		// Stop before dispatching any placeholder, including an outer flush's.
+		// A nested flush must not consume entries deferred by its caller.
 		if (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER) break;
 		
+		// Resuming a fiber can unlink other entries, so read backend->ready again
+		// on the next iteration instead of retaining a neighbour pointer.
 		arguments->count += 1;
 		IO_Event_Selector_ready_pop(backend, ready);
 	}
@@ -378,10 +385,12 @@ static VALUE ready_flush(VALUE _arguments)
 	return Qnil;
 }
 
-static VALUE ready_flush_ensure(VALUE _arguments)
+static VALUE IO_Event_Selector_ready_flush_ensure(VALUE _arguments)
 {
 	struct ready_flush_arguments *arguments = (struct ready_flush_arguments *)_arguments;
 	
+	// Only the owning flush removes this placeholder, exactly once. Unlinking
+	// it reconnects its neighbours without removing any other placeholders.
 	queue_pop(arguments->backend, &arguments->placeholder);
 	
 	return Qnil;
@@ -397,17 +406,21 @@ int IO_Event_Selector_ready_flush(struct IO_Event_Selector *backend)
 			.head = NULL,
 			.tail = NULL,
 			.flags = IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER,
+			// Queue marking and compaction visit every node, including this one.
 			.fiber = Qnil,
 		},
 		.count = 0,
 	};
 	
-	// Keep a stable boundary even if queued entries are removed or re-queued.
-	// Entries appended after the placeholder are deferred to the next flush.
+	// Saving the last existing entry is unsafe: another fiber can remove it.
+	// Counting entries instead can let newly queued work replace removed entries.
+	// This placeholder stays linked until its owning flush finishes, preserving:
+	//   existing entries -> placeholder -> newly queued entries
 	queue_push(backend, &arguments.placeholder);
 	
-	// Resuming a fiber can raise, so always unlink the stack-allocated placeholder.
-	rb_ensure(ready_flush, (VALUE)&arguments, ready_flush_ensure, (VALUE)&arguments);
+	// Always unlink the placeholder on normal return or exception, before the
+	// arguments leave scope, so the queue cannot retain a pointer into this stack.
+	rb_ensure(IO_Event_Selector_ready_flush_internal, (VALUE)&arguments, IO_Event_Selector_ready_flush_ensure, (VALUE)&arguments);
 	
 	return arguments.count;
 }

@@ -77,6 +77,7 @@ void IO_Event_Selector_nonblock_restore(int file_descriptor, int flags);
 enum IO_Event_Selector_Queue_Flags {
 	IO_EVENT_SELECTOR_QUEUE_FIBER = 1,
 	IO_EVENT_SELECTOR_QUEUE_INTERNAL = 2,
+	// A stack-allocated flush boundary; never dispatched or freed as a fiber entry.
 	IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER = 4,
 };
 
@@ -112,6 +113,8 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 static inline
 int IO_Event_Selector_ready_p(struct IO_Event_Selector *backend) {
 	struct IO_Event_Selector_Queue *ready = backend->ready;
+	// Nested flushes can leave several adjacent placeholders at the front.
+	// Look past them for real entries, including work deferred to the next flush.
 	while (ready && (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER)) {
 		ready = ready->head;
 	}
