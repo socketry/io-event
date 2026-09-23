@@ -113,8 +113,7 @@ void IO_Event_Selector_initialize(struct IO_Event_Selector *backend, VALUE self,
 static inline
 int IO_Event_Selector_ready_p(struct IO_Event_Selector *backend) {
 	struct IO_Event_Selector_Queue *ready = backend->ready;
-	// Nested flushes can leave several adjacent placeholders at the front.
-	// Look past them for real entries, including work deferred to the next flush.
+	// Nested flushes can leave several adjacent placeholders at the front. Look past them for real entries, including work deferred to the next flush.
 	while (ready && (ready->flags & IO_EVENT_SELECTOR_QUEUE_PLACEHOLDER)) {
 		ready = ready->head;
 	}

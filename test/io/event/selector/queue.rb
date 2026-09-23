@@ -136,8 +136,7 @@ Queue = Sus::Shared("queue") do
 			selector.select(0)
 			selector.push(Fiber.new{sequence << :tail})
 			
-			# The initial queue is [remover, yielding, tail]. Resuming yielding
-			# removes its entry, but must not bring added into this flush.
+			# The initial queue is [remover, yielding, tail]. Resuming yielding removes its entry, but must not bring added into this flush.
 			selector.select(0)
 			expect(sequence).to be == [:remover, :resumed, :tail]
 			
