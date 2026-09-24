@@ -89,13 +89,9 @@ describe IO::Event::Selector::Select do
 	end
 	
 	with "#io_write (legacy IO::Buffer)" do
-		before do
-			if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
-				skip "Requires the legacy minimum-length write loop"
-			end
-		end
-		
 		it "advances the offset after a partial write until the minimum is reached" do
+			skip "Requires the legacy minimum-length write loop" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
 			input, output = IO.pipe
 			buffer = IO::Buffer.new(8)
 			writes = []
@@ -118,6 +114,8 @@ describe IO::Event::Selector::Select do
 		end
 		
 		it "stops on a zero-byte write and returns the bytes already written" do
+			skip "Requires the legacy minimum-length write loop" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
 			input, output = IO.pipe
 			buffer = IO::Buffer.new(8)
 			writes = []
