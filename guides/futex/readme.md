@@ -203,13 +203,13 @@ Allocation locks cannot protect against an external owner releasing memory or an
 
 ## Running the Tests
 
-From a project checkout, run the same task used by the dedicated Linux CI job:
+The Futex tests are included in the ordinary test suite. From a project checkout:
 
 ```shell
-bundle exec bake test_futex
+bundle exec bake test
 ```
 
-This builds the extension, requires native vector waits and both URing futex-wait methods, and runs the Futex tests. Missing support is an error rather than a skipped test suite. The ordinary test suite remains usable on platforms without Futex support.
+This builds the extension and runs all tests. The Linux/Ruby-head CI matrix entry uses Ubuntu 26.04 and its packaged `liburing-dev` to exercise Futex support. Futex tests are conditional on the available APIs, so the suite also runs on older Ruby versions and platforms without Futex support.
 
 ## Further Reading
 
