@@ -88,6 +88,55 @@ describe IO::Event::Selector::Select do
 		end
 	end
 	
+	with "#io_write (legacy IO::Buffer)" do
+		it "advances the offset after a partial write until the minimum is reached" do
+			skip "Requires the legacy minimum-length write loop" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
+			input, output = IO.pipe
+			buffer = IO::Buffer.new(8)
+			writes = []
+			results = [2, 2]
+			
+			# Force short writes without depending on the pipe's capacity:
+			mock(buffer) do |mock|
+				mock.replace(:write) do |io, length, offset|
+					writes << [io, length, offset]
+					results.shift or raise "Unexpected write!"
+				end
+			end
+			
+			expect(selector.io_write(Fiber.current, output, buffer, 4, 1)).to be == 4
+			expect(writes).to be == [[output, 0, 1], [output, 0, 3]]
+		ensure
+			input&.close
+			output&.close
+			buffer&.free
+		end
+		
+		it "stops on a zero-byte write and returns the bytes already written" do
+			skip "Requires the legacy minimum-length write loop" if defined?(IO::Buffer::VERSION) && IO::Buffer::VERSION >= 3
+			
+			input, output = IO.pipe
+			buffer = IO::Buffer.new(8)
+			writes = []
+			results = [2, 0]
+			
+			mock(buffer) do |mock|
+				mock.replace(:write) do |io, length, offset|
+					writes << [io, length, offset]
+					results.shift or raise "Unexpected write!"
+				end
+			end
+			
+			expect(selector.io_write(Fiber.current, output, buffer, 4, 1)).to be == 2
+			expect(writes).to be == [[output, 0, 1], [output, 0, 3]]
+		ensure
+			input&.close
+			output&.close
+			buffer&.free
+		end
+	end
+	
 	with "#select" do
 		it "dispatches priority events" do
 			server = TCPServer.new("127.0.0.1", 0)
