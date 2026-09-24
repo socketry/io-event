@@ -22,12 +22,4 @@ jobs:
 
     - name: Run futex tests
       timeout-minutes: 5
-      env:
-        RUBYLIB: lib:ext
-      run: |
-        cd ext
-        bundle exec ruby extconf.rb
-        make
-        cd ..
-        bundle exec ruby -e 'require "io/event"; abort "IO::Event::Futex.wait_any is unavailable!" unless defined?(IO::Event::Futex) && IO::Event::Futex.respond_to?(:wait_any); selector = IO::Event::Selector::URing.new(Fiber.current); abort "futex_waitv is unavailable!" unless selector.respond_to?(:futex_waitv)'
-        bundle exec sus test/io/event/futex.rb
+      run: bundle exec bake test_futex

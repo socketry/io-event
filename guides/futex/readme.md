@@ -201,6 +201,16 @@ URing cancellation drains the original kernel operation before releasing its ret
 
 Allocation locks cannot protect against an external owner releasing memory or another process truncating a mapped file. The application must preserve the underlying storage for every process that can still access it.
 
+## Running the Tests
+
+From a project checkout, run the same task used by the dedicated Linux CI job:
+
+```shell
+bundle exec bake test_futex
+```
+
+This builds the extension, requires native vector waits and both URing futex-wait methods, and runs the Futex tests. Missing support is an error rather than a skipped test suite. The ordinary test suite remains usable on platforms without Futex support.
+
 ## Further Reading
 
 The Linux [futex overview](https://man7.org/linux/man-pages/man2/futex.2.html), [FUTEX_WAIT](https://man7.org/linux/man-pages/man2/FUTEX_WAIT.2const.html), and [FUTEX_WAKE](https://man7.org/linux/man-pages/man2/FUTEX_WAKE.2const.html) documentation describe the underlying shared-memory and notification semantics.
