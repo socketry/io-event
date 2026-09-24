@@ -226,6 +226,10 @@ describe IO::Event::Futex do
 	end
 	
 	with "#wait" do
+		it "requires an explicit expected value" do
+			expect{futex.wait}.to raise_exception(ArgumentError)
+		end
+		
 		it "cannot be closed during a blocking wait" do
 			instance = futex
 			thread = Thread.new{instance.wait(0)}
@@ -343,9 +347,10 @@ describe IO::Event::Futex do
 			thread&.join
 		end
 		
-		it "does not wait without a scheduler when the value has changed" do
-			futex.value = 1
-			expect(futex.wait(0)).to be == false
+		it "does not wait for a notification published after the snapshot" do
+			expected = futex.value
+			futex.signal
+			expect(futex.wait(expected)).to be == false
 		end
 		
 		it "waits asynchronously for a signal" do

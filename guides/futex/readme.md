@@ -84,7 +84,7 @@ Publish application state before notifying consumers. A futex does not make othe
 
 ## Waiting Without Missing Notifications
 
-`futex.wait(expected)` asks the kernel to wait only if the word still equals `expected`. Comparing the word and beginning the wait is atomic with respect to futex operations. If the value has already changed, the call returns `false` without sleeping; a successful wake returns `true`.
+`futex.wait(expected)` requires an explicit expected value and asks the kernel to wait only if the word still equals it. Comparing the word and beginning the wait is atomic with respect to futex operations. If the value has already changed, the call returns `false` without sleeping; a successful wake returns `true`. Omitting `expected` raises `ArgumentError`.
 
 Always recheck application state after a wait. Wake-ups can be spurious, another consumer may have taken the available work, and waking a waiter does not guarantee FIFO ordering or ownership. System errors raise exceptions. Neither wait API currently accepts a timeout argument.
 
@@ -95,7 +95,20 @@ When the word is a notification counter for separate application state, the cons
 3. If no work is available, wait using the saved counter value.
 4. Repeat after the wait returns.
 
-The producer publishes work before incrementing the counter and waking consumers. If a producer publishes between steps 2 and 3, the changed counter prevents the consumer from sleeping. Reading the counter *after* checking for work would lose this protection. Likewise, `wait` without an argument snapshots the word at the time of the call, so it is not a substitute for passing the earlier value.
+The producer publishes work before incrementing the counter and waking consumers. If a producer publishes between steps 2 and 3, the changed counter prevents the consumer from sleeping.
+
+### Why the Expected Value Is Required
+
+Reading the counter *after* checking for work can miss a notification:
+
+1. The consumer finds the queue empty. The notification counter is `0`.
+2. The producer adds work and signals, changing the counter to `1`. Nobody is waiting yet.
+3. The consumer reads the counter and gets `1`.
+4. The consumer calls `wait(1)`. Since the counter is still `1`, it sleeps despite available work. Without another notification, it can remain asleep indefinitely.
+
+An argument-free `wait` would hide step 3 inside the method. Requiring `expected` makes the snapshot explicit: the consumer should capture `0` before checking the queue, then call `wait(0)`. In the same sequence, the kernel sees that the counter is now `1` and returns immediately. If the consumer starts waiting before the producer signals, the signal wakes it instead.
+
+The required argument does not enforce the ordering by itself. Calling `wait(futex.value)` after checking for work has the same race. The intended sequence is **snapshot, check state, then wait using that snapshot**, followed by another state check after the wait returns.
 
 ### Producer and Consumer
 

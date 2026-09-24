@@ -417,14 +417,7 @@ static VALUE IO_Event_Futex_blocking_waitv(VALUE entries) {
 
 #endif
 
-static VALUE IO_Event_Futex_wait(int argc, VALUE *argv, VALUE self) {
-	VALUE expected_value;
-	rb_scan_args(argc, argv, "01", &expected_value);
-
-	if (argc == 0) {
-		expected_value = IO_Event_Futex_value(self);
-	}
-
+static VALUE IO_Event_Futex_wait(VALUE self, VALUE expected_value) {
 	VALUE scheduler = rb_fiber_scheduler_current();
 	if (NIL_P(scheduler)) {
 		return IO_Event_Futex_blocking_wait(self, expected_value);
@@ -474,7 +467,7 @@ void Init_IO_Event_Futex(VALUE IO_Event) {
 	rb_define_method(IO_Event_Futex, "compare_exchange", IO_Event_Futex_compare_exchange, 2);
 	rb_define_method(IO_Event_Futex, "wake", IO_Event_Futex_wake, -1);
 	rb_define_method(IO_Event_Futex, "signal", IO_Event_Futex_signal, -1);
-	rb_define_method(IO_Event_Futex, "wait", IO_Event_Futex_wait, -1);
+	rb_define_method(IO_Event_Futex, "wait", IO_Event_Futex_wait, 1);
 
 #ifdef IO_EVENT_FUTEX_WAITV
 	rb_define_const(IO_Event_Futex, "WAITV_LIMIT", INT2NUM(FUTEX_WAITV_MAX));
