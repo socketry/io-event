@@ -6,6 +6,14 @@
 require "io/event"
 require "io/event/test_scheduler"
 
+unless RUBY_PLATFORM.include?("linux") && Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.1")
+	describe IO::Event do
+		it "does not expose Futex without Linux and counted buffer locks" do
+			expect(subject).not.to be(:const_defined?, :Futex, false)
+		end
+	end
+end
+
 return unless defined?(IO::Event::Futex)
 
 describe IO::Event::Futex do
@@ -32,6 +40,125 @@ describe IO::Event::Futex do
 		end
 		
 		selector
+	end
+	
+	with "buffer lifetime" do
+		it "locks the allocation until closed" do
+			instance = subject.new(buffer)
+			expect(buffer).to be(:locked?)
+			expect{buffer.free}.to raise_exception(IO::Buffer::LockedError)
+			expect{buffer.resize(16)}.to raise_exception(IO::Buffer::LockedError)
+			instance.close
+			expect(instance).to be(:closed?)
+			expect(buffer).not.to be(:locked?)
+			buffer.free
+		end
+		
+		it "owns one independent lock per futex" do
+			first = subject.new(buffer)
+			second = subject.new(buffer, offset: 4)
+			first.close
+			first.close
+			expect(buffer).to be(:locked?)
+			expect(second.increment).to be == 1
+			second.close
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "locks the root allocation when bound to a slice" do
+			instance = subject.new(buffer.slice(4, 4))
+			expect{buffer.free}.to raise_exception(IO::Buffer::LockedError)
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "does not leak a lock when initialization fails" do
+			expect{subject.new(buffer, offset: 1)}.to raise_exception(ArgumentError)
+			expect{subject.new(buffer, offset: 8)}.to raise_exception(RangeError)
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "does not allow reinitialization or copying" do
+			instance = subject.new(buffer)
+			expect{instance.send(:initialize, buffer)}.to raise_exception(RuntimeError)
+			expect{instance.dup}.to raise_exception(TypeError)
+			expect{instance.clone}.to raise_exception(TypeError)
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "does not unlock the original when rejected copies are collected" do
+			instance = subject.new(buffer)
+			Thread.new do
+				expect{instance.dup}.to raise_exception(TypeError)
+				expect{instance.clone}.to raise_exception(TypeError)
+			end.join
+			3.times{GC.start(full_mark: true, immediate_sweep: true)}
+			expect(buffer).to be(:locked?)
+			expect(instance.increment).to be == 1
+			instance.close
+		end
+		
+		it "releases locks when futexes are collected" do
+			# A separate thread removes conservative C-stack references before GC:
+			Thread.new{subject.new(buffer); nil}.join
+			10.times do
+				GC.start(full_mark: true, immediate_sweep: true)
+				break unless buffer.locked?
+			end
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "does not unlock another futex when a closed instance is collected" do
+			instance = subject.new(buffer)
+			Thread.new{subject.new(buffer, offset: 4).close}.join
+			3.times{GC.start(full_mark: true, immediate_sweep: true)}
+			expect(buffer).to be(:locked?)
+			expect(instance.increment).to be == 1
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		end
+		
+		it "retains the buffer across compaction" do
+			instance = subject.new(buffer)
+			GC.verify_compaction_references(double_heap: true, toward: :empty)
+			expect(instance.increment).to be == 1
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		end
+	end
+	
+	with "closed or uninitialized futexes" do
+		[
+			[:value], [:value=, 1], [:increment], [:decrement],
+			[:compare_exchange, 0, 1], [:wake], [:signal], [:wait, 0]
+		].each do |arguments|
+			it "rejects #{arguments.first} after close", unique: "closed #{arguments.first}" do
+				futex.close
+				expect{futex.public_send(*arguments)}.to raise_exception(IOError)
+			end
+			
+			it "rejects #{arguments.first} before initialization", unique: "uninitialized #{arguments.first}" do
+				expect{subject.allocate.public_send(*arguments)}.to raise_exception(IOError)
+			end
+		end
+	end
+	
+	with "argument coercion" do
+		it "rechecks the futex after numeric conversion closes it" do
+			instance = futex
+			value = Object.new
+			value.define_singleton_method(:to_int) do
+				instance.close
+				1
+			end
+			expect{instance.value = value}.to raise_exception(IOError)
+		end
+		
+		it "validates the wake count before changing the value" do
+			expect{futex.signal(-1)}.to raise_exception(ArgumentError)
+			expect(futex.value).to be == 0
+		end
 	end
 	
 	with "#value" do
@@ -99,6 +226,111 @@ describe IO::Event::Futex do
 	end
 	
 	with "#wait" do
+		it "cannot be closed during a blocking wait" do
+			instance = futex
+			thread = Thread.new{instance.wait(0)}
+			Thread.pass while thread.status == "run"
+			expect{instance.close}.to raise_exception(IOError)
+			instance.signal
+			thread.join
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		ensure
+			thread&.kill&.join
+		end
+		
+		it "releases a blocking wait when its thread is interrupted" do
+			instance = futex
+			thread = Thread.new{instance.wait(0)}
+			Thread.pass while thread.status == "run"
+			thread.kill.join
+			instance.close
+			expect(buffer).not.to be(:locked?)
+		ensure
+			thread&.kill&.join
+		end
+		
+		it "cannot be closed while an asynchronous wait is pending" do
+			selector = uring_selector
+			fiber = Fiber.new{selector.futex_wait(Fiber.current, futex, 0)}
+			fiber.transfer
+			expect{futex.close}.to raise_exception(IOError)
+			futex.signal
+			10.times do
+				selector.select(0.1)
+				break unless fiber.alive?
+			end
+			expect(fiber).not.to be(:alive?)
+			futex.close
+			expect(buffer).not.to be(:locked?)
+		ensure
+			selector&.close
+		end
+		
+		it "drains cancellation before allowing close" do
+			selector = uring_selector
+			error = RuntimeError.new("cancel futex")
+			caught = nil
+			fiber = Fiber.new do
+				selector.futex_wait(Fiber.current, futex, 0)
+			rescue RuntimeError => exception
+				caught = exception
+			end
+			fiber.transfer
+			selector.select(0)
+			fiber.raise(error)
+			expect{futex.close}.to raise_exception(IOError) if fiber.alive?
+			10.times do
+				selector.select(0.1)
+				break unless fiber.alive?
+			end
+			expect(caught).to be_equal(error)
+			expect(fiber).not.to be(:alive?)
+			futex.close
+			expect(buffer).not.to be(:locked?)
+			# Drain the cancellation CQE as well as the original operation:
+			selector.select(0)
+		ensure
+			selector&.close
+		end
+		
+		it "does not report an out-of-band resume as a notification" do
+			selector = uring_selector
+			result = :pending
+			fiber = Fiber.new{result = selector.futex_wait(Fiber.current, futex, 0)}
+			fiber.transfer
+			selector.select(0)
+			fiber.transfer
+			10.times do
+				selector.select(0.1)
+				break unless fiber.alive?
+			end
+			expect(result).to be == false
+			futex.close
+		ensure
+			selector&.close
+		end
+		
+		it "keeps the selector usable after invalid arguments" do
+			selector = uring_selector
+			fiber = Fiber.new do
+				expect{selector.futex_wait(Fiber.current, futex, Object.new)}.to raise_exception(TypeError)
+				expect{selector.futex_wait(Fiber.current, Object.new, 0)}.to raise_exception(TypeError)
+				GC.start
+				futex.value = 1
+				expect(selector.futex_wait(Fiber.current, futex, 0)).to be == false
+			end
+			fiber.transfer
+			10.times do
+				selector.select(0.1)
+				break unless fiber.alive?
+			end
+			expect(fiber).not.to be(:alive?)
+			futex.close
+		ensure
+			selector&.close
+		end
+		
 		it "waits without blocking other Ruby threads when no scheduler is installed" do
 			thread = Thread.new do
 				sleep 0.01
@@ -182,6 +414,74 @@ describe IO::Event::Futex do
 	
 	if IO::Event::Futex.respond_to?(:wait_any)
 		with ".wait_any" do
+			it "releases earlier entries when a later entry is invalid" do
+				expect{subject.wait_any([[futex, 0], [Object.new, 0]])}.to raise_exception(TypeError)
+				futex.close
+				expect(buffer).not.to be(:locked?)
+			end
+			
+			it "protects every futex during a blocking vector wait" do
+				first = subject.new(buffer)
+				second = subject.new(buffer, offset: 4)
+				thread = Thread.new{subject.wait_any([[first, 0], [second, 0]])}
+				Thread.pass while thread.status == "run"
+				expect{first.close}.to raise_exception(IOError)
+				expect{second.close}.to raise_exception(IOError)
+				thread.kill.join
+				first.close
+				second.close
+				expect(buffer).not.to be(:locked?)
+			ensure
+				thread&.kill&.join
+			end
+			
+			it "retains its own entries until vector cancellation completes" do
+				selector = waitv_selector
+				first = subject.new(buffer)
+				second = subject.new(buffer, offset: 4)
+				entries = [[first, 0], [second, 0]]
+				caught = nil
+				error = RuntimeError.new("cancel vector")
+				fiber = Fiber.new do
+					selector.futex_waitv(Fiber.current, entries)
+				rescue RuntimeError => exception
+					caught = exception
+				end
+				fiber.transfer
+				entries.clear
+				GC.verify_compaction_references(double_heap: true, toward: :empty)
+				expect{first.close}.to raise_exception(IOError)
+				expect{second.close}.to raise_exception(IOError)
+				selector.select(0)
+				fiber.raise(error)
+				10.times do
+					selector.select(0.1)
+					break unless fiber.alive?
+				end
+				expect(caught).to be_equal(error)
+				expect(fiber).not.to be(:alive?)
+				first.close
+				second.close
+				expect(buffer).not.to be(:locked?)
+				selector.select(0)
+			ensure
+				selector&.close
+			end
+			
+			it "keeps the selector usable after partial vector setup fails" do
+				selector = waitv_selector
+				fiber = Fiber.new do
+					expect{selector.futex_waitv(Fiber.current, [[futex, 0], [Object.new, 0]])}.to raise_exception(TypeError)
+					futex.close
+				end
+				fiber.transfer
+				GC.start
+				selector.select(0)
+				expect(buffer).not.to be(:locked?)
+			ensure
+				selector&.close
+			end
+			
 			it "exposes the maximum number of wait entries" do
 				expect(subject::WAITV_LIMIT).to be == 128
 			end

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-  - Add `IO::Event::Futex` on Linux systems, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory.
+  - Add `IO::Event::Futex` on Linux with Ruby 4.1+, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory. Futexes retain a counted allocation lock until explicitly closed or finalized; pending waits prevent closing until completion or cancellation has finished.
 
 ## v1.22.1
 
