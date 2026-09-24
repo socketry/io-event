@@ -201,16 +201,6 @@ URing cancellation drains the original kernel operation before releasing its ret
 
 Allocation locks cannot protect against an external owner releasing memory or another process truncating a mapped file. The application must preserve the underlying storage for every process that can still access it.
 
-## Running the Tests
-
-The Futex tests are included in the ordinary test suite. From a project checkout:
-
-```shell
-bundle exec bake test
-```
-
-This builds the extension and runs all tests. The Linux/Ruby-head CI matrix entry uses Ubuntu 26.04 and its packaged `liburing-dev` to exercise Futex support. Futex tests are conditional on the available APIs, so the suite also runs on older Ruby versions and platforms without Futex support.
-
 ## Further Reading
 
 The Linux [futex overview](https://man7.org/linux/man-pages/man2/futex.2.html), [FUTEX_WAIT](https://man7.org/linux/man-pages/man2/FUTEX_WAIT.2const.html), and [FUTEX_WAKE](https://man7.org/linux/man-pages/man2/FUTEX_WAKE.2const.html) documentation describe the underlying shared-memory and notification semantics.
