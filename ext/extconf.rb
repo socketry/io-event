@@ -31,9 +31,16 @@ $VPATH << "$(srcdir)/io/event/selector"
 
 have_func("rb_ext_ractor_safe")
 have_func("&rb_fiber_transfer")
+have_io_buffer = have_header("ruby/io/buffer.h")
+
+if RUBY_PLATFORM.include?("linux") && have_io_buffer && have_header("linux/futex.h") && have_header("sys/syscall.h")
+	$srcs << "io/event/futex.c"
+end
 
 if have_library("uring") and have_header("liburing.h")
 	have_func("io_uring_prep_waitid", "liburing.h")
+	have_func("io_uring_prep_futex_wait", "liburing.h")
+	have_func("io_uring_prep_futex_waitv", "liburing.h")
 	$srcs << "io/event/selector/uring.c"
 end
 
@@ -56,8 +63,6 @@ have_func("&rb_process_status_wait")
 have_func("rb_fiber_current")
 have_func("&rb_fiber_raise")
 have_func("epoll_pwait2(0, 0, 0, 0, 0)", "sys/epoll.h") if enable_config("epoll_pwait2", true)
-
-have_header("ruby/io/buffer.h")
 
 # Feature detection for blocking operation support
 if have_func("rb_fiber_scheduler_blocking_operation_extract")

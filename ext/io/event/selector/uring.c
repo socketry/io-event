@@ -3,6 +3,7 @@
 
 #include "uring.h"
 #include "selector.h"
+#include "../futex.h"
 #include "../list.h"
 #include "../array.h"
 
@@ -803,6 +804,190 @@ VALUE IO_Event_Selector_URing_process_wait(VALUE self, VALUE fiber, VALUE _pid, 
 	
 	return rb_ensure(process_wait_transfer, (VALUE)&process_wait_arguments, process_wait_ensure, (VALUE)&process_wait_arguments);
 }
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+
+#pragma mark - Futex Wait
+
+struct futex_wait_arguments {
+	struct IO_Event_Selector_URing *selector;
+	struct IO_Event_Selector_URing_Waiting waiting;
+	VALUE futex;
+	uint32_t expected;
+	bool acquired;
+	bool submitted;
+};
+
+static VALUE futex_wait_cancel(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	if (arguments->submitted) {
+		// Drain the original operation before releasing its futex. The shared
+		// helper tracks cancellation CQEs to prevent premature completion reuse.
+		IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, &arguments->waiting);
+	} else if (arguments->waiting.completion) {
+		// Setup failed before an SQE referred to this completion.
+		IO_Event_Selector_URing_Completion_complete(arguments->selector, arguments->waiting.completion);
+	}
+	return Qnil;
+}
+
+static VALUE futex_wait_release(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	if (arguments->acquired) {
+		IO_Event_Futex_release(arguments->futex);
+		arguments->acquired = false;
+	}
+	return Qnil;
+}
+
+static VALUE futex_wait_ensure(VALUE _arguments) {
+	return rb_ensure(futex_wait_cancel, _arguments, futex_wait_release, _arguments);
+}
+
+static VALUE futex_wait_transfer(VALUE _arguments) {
+	struct futex_wait_arguments *arguments = (struct futex_wait_arguments *)_arguments;
+	uint32_t *address = IO_Event_Futex_acquire(arguments->futex);
+	arguments->acquired = true;
+
+	// Arguments have been coerced and the futex is now held open. From here
+	// on, the enclosing ensure owns all completion and cancellation cleanup.
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(arguments->selector, &arguments->waiting);
+	struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
+	io_uring_prep_futex_wait(sqe, address, arguments->expected, FUTEX_BITSET_MATCH_ANY, FUTEX2_SIZE_U32, 0);
+	io_uring_sqe_set_data(sqe, completion);
+	arguments->submitted = true;
+	io_uring_submit_pending(arguments->selector);
+
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	if (arguments->waiting.completion) {
+		// An out-of-band resume is not a successful futex notification.
+		IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, &arguments->waiting);
+	}
+
+	int32_t result = arguments->waiting.result;
+	if (result >= 0) {
+		return Qtrue;
+	} else if (result == -EAGAIN || result == -ECANCELED) {
+		return Qfalse;
+	} else {
+		rb_syserr_fail(-result, "futex_wait_transfer:io_uring_futex_wait");
+	}
+	
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_URing_futex_wait(VALUE self, VALUE fiber, VALUE futex, VALUE expected_value) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	struct futex_wait_arguments arguments = {
+		.selector = selector,
+		.waiting = {.fiber = fiber},
+		.futex = futex,
+		.expected = NUM2UINT(expected_value),
+	};
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	VALUE result = rb_ensure(futex_wait_transfer, (VALUE)&arguments, futex_wait_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(futex);
+	return result;
+}
+
+#if defined(IO_EVENT_FUTEX_WAITV) && defined(HAVE_IO_URING_PREP_FUTEX_WAITV)
+
+#pragma mark - Futex Vector Wait
+
+struct futex_waitv_arguments {
+	struct IO_Event_Selector_URing *selector;
+	struct IO_Event_Selector_URing_Waiting waiting;
+	VALUE futexes;
+	struct futex_waitv *vector;
+	long count;
+	long acquired;
+	bool submitted;
+};
+
+static VALUE futex_waitv_cancel(VALUE _arguments) {
+	struct futex_waitv_arguments *arguments = (struct futex_waitv_arguments *)_arguments;
+	if (arguments->submitted) {
+		// Drain the original operation before releasing its futex references or
+		// stack-backed wait vector. The shared helper also tracks cancellation
+		// CQEs so the completion record cannot be reused prematurely.
+		IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, &arguments->waiting);
+	} else if (arguments->waiting.completion) {
+		// Setup failed before an SQE referred to this completion.
+		IO_Event_Selector_URing_Completion_complete(arguments->selector, arguments->waiting.completion);
+	}
+	return Qnil;
+}
+
+static VALUE futex_waitv_release(VALUE _arguments) {
+	struct futex_waitv_arguments *arguments = (struct futex_waitv_arguments *)_arguments;
+	while (arguments->acquired) {
+		IO_Event_Futex_release(RARRAY_AREF(arguments->futexes, --arguments->acquired));
+	}
+	return Qnil;
+}
+
+static VALUE futex_waitv_ensure(VALUE _arguments) {
+	return rb_ensure(futex_waitv_cancel, _arguments, futex_waitv_release, _arguments);
+}
+
+static VALUE futex_waitv_transfer(VALUE _arguments) {
+	struct futex_waitv_arguments *arguments = (struct futex_waitv_arguments *)_arguments;
+	while (arguments->acquired < arguments->count) {
+		long index = arguments->acquired;
+		arguments->vector[index].uaddr = (uintptr_t)IO_Event_Futex_acquire(RARRAY_AREF(arguments->futexes, index));
+		arguments->acquired += 1;
+	}
+
+	// Arguments have been coerced and every futex is now held open. The
+	// enclosing ensure also releases entries if acquisition fails partway.
+	struct IO_Event_Selector_URing_Completion *completion = IO_Event_Selector_URing_Completion_acquire(arguments->selector, &arguments->waiting);
+	struct io_uring_sqe *sqe = io_get_sqe(arguments->selector);
+	io_uring_prep_futex_waitv(sqe, arguments->vector, arguments->count, 0);
+	io_uring_sqe_set_data(sqe, completion);
+	arguments->submitted = true;
+	io_uring_submit_pending(arguments->selector);
+
+	IO_Event_Selector_loop_yield(&arguments->selector->backend);
+	if (arguments->waiting.completion) {
+		// An out-of-band resume is not a successful futex notification.
+		IO_Event_Selector_URing_Waiting_cancel_and_wait(arguments->selector, &arguments->waiting);
+	}
+
+	int32_t result = arguments->waiting.result;
+	if (result >= 0) {
+		return INT2NUM(result);
+	} else if (result == -EAGAIN || result == -ECANCELED) {
+		return Qnil;
+	} else {
+		rb_syserr_fail(-result, "futex_waitv_transfer:io_uring_futex_waitv");
+	}
+
+	return Qnil;
+}
+
+static VALUE IO_Event_Selector_URing_futex_waitv(VALUE self, VALUE fiber, VALUE entries) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+	
+	struct futex_waitv vector[FUTEX_WAITV_MAX];
+	VALUE futexes = IO_Event_Futex_prepare_waitv(entries, vector);
+	struct futex_waitv_arguments arguments = {
+		.selector = selector,
+		.waiting = {.fiber = fiber},
+		.futexes = futexes,
+		.vector = vector,
+		.count = RARRAY_LEN(futexes),
+	};
+	RB_OBJ_WRITTEN(self, Qundef, fiber);
+	VALUE result = rb_ensure(futex_waitv_transfer, (VALUE)&arguments, futex_waitv_ensure, (VALUE)&arguments);
+	RB_GC_GUARD(futexes);
+	return result;
+}
+
+#endif
+
+#endif
 
 #pragma mark - IO#wait
 
@@ -1724,6 +1909,9 @@ VALUE IO_Event_Selector_URing_wakeup(VALUE self) {
 
 #pragma mark - Native Methods
 
+static int IO_Event_Selector_URing_futex_supported = 0;
+static int IO_Event_Selector_URing_futex_waitv_supported = 0;
+
 static int IO_Event_Selector_URing_supported_p(void) {
 	struct io_uring ring;
 	
@@ -1754,6 +1942,17 @@ static int IO_Event_Selector_URing_supported_p(void) {
 		
 		return 0;
 	}
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+	struct io_uring_probe *probe = io_uring_get_probe_ring(&ring);
+	if (probe) {
+		IO_Event_Selector_URing_futex_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAIT);
+#if defined(IO_EVENT_FUTEX_WAITV) && defined(HAVE_IO_URING_PREP_FUTEX_WAITV)
+		IO_Event_Selector_URing_futex_waitv_supported = io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAITV);
+#endif
+		io_uring_free_probe(probe);
+	}
+#endif
 	
 	io_uring_queue_exit(&ring);
 	
@@ -1803,4 +2002,16 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
+
+#if defined(IO_EVENT_FUTEX) && defined(HAVE_IO_URING_PREP_FUTEX_WAIT)
+	if (IO_Event_Selector_URing_futex_supported) {
+		rb_define_method(IO_Event_Selector_URing, "futex_wait", IO_Event_Selector_URing_futex_wait, 3);
+		
+#if defined(IO_EVENT_FUTEX_WAITV) && defined(HAVE_IO_URING_PREP_FUTEX_WAITV)
+		if (IO_Event_Selector_URing_futex_waitv_supported) {
+			rb_define_method(IO_Event_Selector_URing, "futex_waitv", IO_Event_Selector_URing_futex_waitv, 2);
+		}
+#endif
+	}
+#endif
 }

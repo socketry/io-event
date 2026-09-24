@@ -8,15 +8,15 @@ permissions:
 jobs:
   test:
     name: ${{matrix.ruby}} on ${{matrix.os}}
-    runs-on: ${{matrix.os}}-latest
+    runs-on: ${{matrix.os}}
     continue-on-error: ${{matrix.experimental}}
     
     strategy:
       matrix:
         os:
-          - ubuntu
-          - macos
-          - windows
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
         
         ruby:
           - "3.3"
@@ -26,13 +26,15 @@ jobs:
         experimental: [false]
         
         include:
-          - os: ubuntu
+          - os: ubuntu-latest
             ruby: truffleruby
             experimental: true
-          - os: ubuntu
+          - os: ubuntu-latest
             ruby: jruby
             experimental: true
-          - os: ubuntu
+          # Use newer packaged liburing for Futex coverage on Ruby head.
+          # Switch back to ubuntu-latest after its 26.04 rollout (2026-11-19).
+          - os: ubuntu-26.04
             ruby: head
             experimental: true
     
@@ -44,8 +46,8 @@ jobs:
         bundler-cache: true
     
     - name: Install packages (Ubuntu)
-      if: matrix.os == 'ubuntu'
-      run: sudo apt-get install -y liburing-dev
+      if: startsWith(matrix.os, 'ubuntu-')
+      run: sudo apt-get update && sudo apt-get install -y liburing-dev
     
     - name: Run tests
       timeout-minutes: 10

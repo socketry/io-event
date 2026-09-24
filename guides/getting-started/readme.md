@@ -76,6 +76,12 @@ puts "[main] Done"
 # [main] Done
 ```
 
+## Shared-Memory Notifications
+
+On Linux with Ruby 4.1 or later, `IO::Event::Futex` provides atomic operations and notifications on an aligned 32-bit word in an `IO::Buffer`. It supports blocking thread waits and optional asynchronous waits through the URing selector.
+
+See the [Futex Notifications guide](../futex/index) for capability detection, shared-memory setup, wait/recheck examples, vector waits, and buffer lifetime management.
+
 ## Debugging
 
 The {ruby IO::Event::Debug::Selector} class adds extra validations and checks at the expense of performance. It can also log all operations. You can use this by setting the following environment variables:

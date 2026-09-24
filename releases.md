@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Add `IO::Event::Futex` on Linux with Ruby 4.1+, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory. Futexes retain a counted allocation lock until explicitly closed or finalized; pending waits prevent closing until completion or cancellation has finished.
+
 ## v1.22.1
 
   - Fix an infinite loop in the ready queue flush when a queued fiber is resumed out of band, e.g. by a stale `unblock` racing a timeout, while another fiber re-queues itself on every iteration.

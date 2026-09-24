@@ -3,6 +3,7 @@
 
 #include "event.h"
 #include "fiber.h"
+#include "futex.h"
 #include "selector/selector.h"
 
 void Init_IO_Event(void)
@@ -14,6 +15,10 @@ void Init_IO_Event(void)
 	VALUE IO_Event = rb_define_module_under(rb_cIO, "Event");
 	
 	Init_IO_Event_Fiber(IO_Event);
+
+	#ifdef IO_EVENT_FUTEX
+	Init_IO_Event_Futex(IO_Event);
+	#endif
 
 	#ifdef HAVE_IO_EVENT_WORKER_POOL
 	Init_IO_Event_WorkerPool(IO_Event);
