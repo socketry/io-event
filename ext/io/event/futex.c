@@ -213,7 +213,11 @@ static VALUE IO_Event_Futex_wake(int argc, VALUE *argv, VALUE self) {
 	int count = NIL_P(count_value) ? 1 : NUM2INT(count_value);
 	if (count < 0) rb_raise(rb_eArgError, "Wake count must be non-negative!");
 
-	int result = syscall(SYS_futex, IO_Event_Futex_address(self), FUTEX_WAKE, count, NULL, NULL, 0);
+	uint32_t *address = IO_Event_Futex_address(self);
+	// Legacy FUTEX_WAKE can wake one waiter even when count is zero.
+	if (count == 0) return INT2NUM(0);
+
+	int result = syscall(SYS_futex, address, FUTEX_WAKE, count, NULL, NULL, 0);
 	if (result < 0) rb_sys_fail("IO_Event_Futex_wake:futex");
 	return INT2NUM(result);
 }
@@ -225,6 +229,9 @@ static VALUE IO_Event_Futex_signal(int argc, VALUE *argv, VALUE self) {
 	int count = NIL_P(count_value) ? 1 : NUM2INT(count_value);
 	if (count < 0) rb_raise(rb_eArgError, "Wake count must be non-negative!");
 	uint32_t *address = IO_Event_Futex_address(self);
+	// A zero-count signal neither changes the word nor wakes any waiters.
+	if (count == 0) return UINT2NUM(__atomic_load_n(address, __ATOMIC_ACQUIRE));
+
 	uint32_t value = __atomic_add_fetch(address, 1, __ATOMIC_ACQ_REL);
 	int result = syscall(SYS_futex, address, FUTEX_WAKE, count, NULL, NULL, 0);
 	if (result < 0) rb_sys_fail("IO_Event_Futex_signal:futex");

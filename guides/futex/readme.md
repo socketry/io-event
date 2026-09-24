@@ -74,11 +74,13 @@ Initialize the shared words once, before peers attach. Attaching peers must not 
 | `decrement(amount = 1)` | Subtracts `amount` and returns the new value. |
 | `compare_exchange(expected, desired)` | Stores `desired` only if the word equals `expected`; returns whether it succeeded. |
 | `wake(count = 1)` | Wakes at most `count` waiters without changing the word; returns the number woken. |
-| `signal(count = 1)` | Increments the word by one, then wakes at most `count` waiters; returns the new word value. |
+| `signal(count = 1)` | For a positive count, increments the word by one, then wakes at most `count` waiters; returns the word value. |
 
 Loads use acquire ordering, stores use release ordering, and read-modify-write operations use acquire-release ordering. A failed compare-and-exchange uses acquire ordering. Arithmetic wraps modulo `2**32`; a notification counter is not an indefinitely increasing event history.
 
-Only `wake` and `signal` notify sleeping waiters. Assignment, increment, decrement, and compare-and-exchange do not wake them. `signal` performs an atomic increment followed by a wake syscall, not one indivisible increment-and-wake operation. Its argument is the waiter count, not the increment amount. Wake counts must be nonnegative integers that fit in a C `int`.
+Only `wake` and `signal` notify sleeping waiters. Assignment, increment, decrement, and compare-and-exchange do not wake them. For a positive count, `signal` performs an atomic increment followed by a wake syscall, not one indivisible increment-and-wake operation. Its argument is the waiter count, not the increment amount. Wake counts must be nonnegative integers that fit in a C `int`.
+
+Both `wake(0)` and `signal(0)` are no-ops: they leave the word and waiters unchanged. `wake(0)` returns `0`; `signal(0)` returns the current word value. Closed or uninitialized futexes still raise `IOError`.
 
 Publish application state before notifying consumers. A futex does not make other memory accesses atomic or provide a queue's synchronization. Use atomic operations or another suitable synchronization protocol for that state, and do not mix concurrent non-atomic buffer accesses with atomic accesses to the futex word.
 

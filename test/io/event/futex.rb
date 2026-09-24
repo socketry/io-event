@@ -123,14 +123,14 @@ describe IO::Event::Futex do
 	with "closed or uninitialized futexes" do
 		[
 			[:value], [:value=, 1], [:increment], [:decrement],
-			[:compare_exchange, 0, 1], [:wake], [:signal], [:wait, 0]
+			[:compare_exchange, 0, 1], [:wake], [:wake, 0], [:signal], [:signal, 0], [:wait, 0]
 		].each do |arguments|
-			it "rejects #{arguments.first} after close", unique: "closed #{arguments.first}" do
+			it "rejects #{arguments.inspect} after close", unique: "closed #{arguments.inspect}" do
 				futex.close
 				expect{futex.public_send(*arguments)}.to raise_exception(IOError)
 			end
 			
-			it "rejects #{arguments.first} before initialization", unique: "uninitialized #{arguments.first}" do
+			it "rejects #{arguments.inspect} before initialization", unique: "uninitialized #{arguments.inspect}" do
 				expect{subject.allocate.public_send(*arguments)}.to raise_exception(IOError)
 			end
 		end
@@ -157,6 +157,22 @@ describe IO::Event::Futex do
 		it "stores and loads the value atomically" do
 			futex.value = 42
 			expect(futex.value).to be == 42
+		end
+	end
+	
+	with "zero-count notifications" do
+		[:wake, :signal].each do |operation|
+			it "leaves the word and waiters unchanged for #{operation}(0)", unique: operation.to_s do
+				futex.value = 7
+				thread = Thread.new{futex.wait(7)}
+				Thread.pass while thread.status == "run"
+				
+				expect(futex.public_send(operation, 0)).to be == (operation == :wake ? 0 : 7)
+				expect(futex.value).to be == 7
+				expect(thread.join(0.02)).to be_nil
+			ensure
+				thread&.kill&.join
+			end
 		end
 	end
 	
