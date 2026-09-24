@@ -495,15 +495,18 @@ void IO_Event_Selector_URing_dump_completion_queue(struct IO_Event_Selector_URin
 }
 
 // Flush the submission queue, optionally yielding if unsuccessful.
+typedef int (*io_uring_submit_function)(struct io_uring *ring);
+
 static
-int io_uring_submit_all(struct IO_Event_Selector_URing *selector, bool yield) {
+int io_uring_submit_all_with(struct IO_Event_Selector_URing *selector, bool yield, io_uring_submit_function submit) {
 	struct io_uring *ring = &selector->ring;
 
 	while (io_uring_sq_ready(ring) > 0) {
-		int result = io_uring_submit(&selector->ring);
+		int result = submit(&selector->ring);
 		
 		if (result == -EBUSY || result == -EAGAIN) {
 			if (yield) IO_Event_Selector_yield(&selector->backend);
+			return result;
 		} else if (result < 0) {
 			rb_syserr_fail(-result, "io_uring_submit_all:io_uring_submit");
 			return result;
@@ -512,6 +515,11 @@ int io_uring_submit_all(struct IO_Event_Selector_URing *selector, bool yield) {
 
 	if (DEBUG) IO_Event_Selector_URing_dump_completion_queue(selector);
 	return 0;
+}
+
+static
+int io_uring_submit_all(struct IO_Event_Selector_URing *selector, bool yield) {
+	return io_uring_submit_all_with(selector, yield, io_uring_submit);
 }
 
 // Flush the submission queue if pending operations are present.
@@ -1760,6 +1768,32 @@ static int IO_Event_Selector_URing_supported_p(void) {
 	return 1;
 }
 
+static int IO_Event_Selector_URing_test_submission_count = 0;
+
+static int IO_Event_Selector_URing_test_submission_backpressure(struct io_uring *ring) {
+	(void)ring;
+
+	if (++IO_Event_Selector_URing_test_submission_count > 1) {
+		rb_raise(rb_eRuntimeError, "submission was retried before processing completions");
+	}
+
+	return -EAGAIN;
+}
+
+static VALUE IO_Event_Selector_URing_test_submission_backpressure_p(VALUE self) {
+	struct IO_Event_Selector_URing *selector = NULL;
+	TypedData_Get_Struct(self, struct IO_Event_Selector_URing, &IO_Event_Selector_URing_Type, selector);
+
+	if (!io_uring_get_sqe(&selector->ring)) {
+		rb_raise(rb_eRuntimeError, "could not prepare test submission");
+	}
+
+	IO_Event_Selector_URing_test_submission_count = 0;
+	int result = io_uring_submit_all_with(selector, false, IO_Event_Selector_URing_test_submission_backpressure);
+
+	return rb_ary_new_from_args(2, INT2NUM(result), INT2NUM(IO_Event_Selector_URing_test_submission_count));
+}
+
 void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	if (!IO_Event_Selector_URing_supported_p()) {
 		return;
@@ -1803,4 +1837,6 @@ void Init_IO_Event_Selector_URing(VALUE IO_Event_Selector) {
 	rb_define_method(IO_Event_Selector_URing, "io_close", IO_Event_Selector_URing_io_close, 1);
 	
 	rb_define_method(IO_Event_Selector_URing, "process_wait", IO_Event_Selector_URing_process_wait, 3);
+
+	rb_define_private_method(IO_Event_Selector_URing, "test_submission_backpressure", IO_Event_Selector_URing_test_submission_backpressure_p, 0);
 }
