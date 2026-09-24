@@ -13,6 +13,7 @@ The initial proof-of-concept [Async](https://github.com/socketry/async) was buil
 Please see the [project documentation](https://socketry.github.io/io-event/) for more details.
 
   - [Getting Started](https://socketry.github.io/io-event/guides/getting-started/index) - This guide explains how to use `io-event` for non-blocking IO.
+  - [Futex Notifications](https://socketry.github.io/io-event/guides/futex/index) - This guide explains shared-memory notifications, capability detection, and safe waiting patterns.
 
 ## Releases
 

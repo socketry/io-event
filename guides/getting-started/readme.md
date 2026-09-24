@@ -78,29 +78,9 @@ puts "[main] Done"
 
 ## Shared-Memory Notifications
 
-On Linux with Ruby 4.1 or later, `IO::Event::Futex` provides atomic operations and notifications on an aligned 32-bit word in an `IO::Buffer`:
+On Linux with Ruby 4.1 or later, `IO::Event::Futex` provides atomic operations and notifications on an aligned 32-bit word in an `IO::Buffer`. It supports blocking thread waits and optional asynchronous waits through the URing selector.
 
-```ruby
-buffer = IO::Buffer.new(8)
-first = IO::Event::Futex.new(buffer)
-second = IO::Event::Futex.new(buffer, offset: 4)
-
-first.signal # Increment the word and wake one waiter.
-first.close
-# The allocation remains locked while second still refers to it:
-second.close
-buffer.free
-```
-
-Each futex owns one counted allocation lock, preventing the backing buffer from being freed, resized, or transferred while its address is retained. Slices lock their root allocation. `close` is idempotent and `closed?` reports whether the futex has been released. Operations on closed or uninitialized futexes raise `IOError`; futexes cannot be copied or reinitialized.
-
-A C-backed finalizer releases the lock if the futex is collected without being closed. Prefer explicit `close` for deterministic release. For externally managed memory, the external owner must also keep the storage alive for the entire binding. A finalizer must not indirectly retain its futex through application references attached to the buffer.
-
-`wait(expected)` waits while the word equals `expected`. `IO::Event::Futex.wait_any([[first, expected], ...])` waits on up to `IO::Event::Futex::WAITV_LIMIT` words. Wake-ups are notifications, not ownership of a permit: always recheck application state in a loop. Changing a word alone does not wake waiters; use `signal` or `wake`.
-
-Without a fiber scheduler, waits release the GVL and block the calling thread. With a scheduler, it must implement the optional `futex_wait` or `futex_waitv` hook. The URing selector exposes these methods only when liburing and the running kernel support the corresponding operations; check `respond_to?` before selecting a notification mechanism. An unsupported scheduler raises `NotImplementedError` rather than blocking its event loop.
-
-Closing a futex with pending waits raises `IOError`. Cancel and finish those waits first. Asynchronous cancellation drains the original operation before releasing its references, and vector waits retain a private snapshot of the supplied futexes.
+See the [Futex Notifications guide](../futex/index) for capability detection, shared-memory setup, wait/recheck examples, vector waits, and buffer lifetime management.
 
 ## Debugging
 
