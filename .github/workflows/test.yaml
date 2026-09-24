@@ -50,3 +50,22 @@ jobs:
     - name: Run tests
       timeout-minutes: 10
       run: bundle exec bake test
+
+  futex:
+    name: Futex on Linux (head)
+    runs-on: ubuntu-26.04
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install liburing with futex support
+      run: sudo apt-get update && sudo apt-get install -y liburing-dev
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: head
+        bundler-cache: true
+
+    - name: Run futex tests
+      timeout-minutes: 5
+      run: bundle exec bake test_futex
