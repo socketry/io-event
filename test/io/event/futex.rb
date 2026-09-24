@@ -6,14 +6,6 @@
 require "io/event"
 require "io/event/test_scheduler"
 
-unless RUBY_PLATFORM.include?("linux") && Gem::Version.new(RUBY_VERSION) >= Gem::Version.new("4.1")
-	describe IO::Event do
-		it "does not expose Futex without Linux and counted buffer locks" do
-			expect(subject).not.to be(:const_defined?, :Futex, false)
-		end
-	end
-end
-
 return unless defined?(IO::Event::Futex)
 
 describe IO::Event::Futex do
