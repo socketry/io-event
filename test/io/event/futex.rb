@@ -479,6 +479,48 @@ describe IO::Event::Futex do
 				selector&.close
 			end
 			
+			it "returns nil for an out-of-band vector resume" do
+				selector = waitv_selector
+				first = subject.new(buffer)
+				second = subject.new(buffer, offset: 4)
+				result = :pending
+				fiber = Fiber.new{result = selector.futex_waitv(Fiber.current, [[first, 0], [second, 0]])}
+				fiber.transfer
+				selector.select(0)
+				fiber.transfer
+				10.times do
+					selector.select(0.1)
+					break unless fiber.alive?
+				end
+				expect(result).to be_nil
+				expect(fiber).not.to be(:alive?)
+				first.close
+				second.close
+				expect(buffer).not.to be(:locked?)
+				selector.select(0)
+			ensure
+				selector&.close
+			end
+			
+			it "returns index zero for a single-entry vector notification" do
+				selector = waitv_selector
+				result = nil
+				fiber = Fiber.new{result = selector.futex_waitv(Fiber.current, [[futex, 0]])}
+				fiber.transfer
+				thread = Thread.new do
+					sleep 0.01
+					futex.signal
+				end
+				selector.select(1)
+				thread.join
+				expect(result).to be == 0
+				futex.close
+				expect(buffer).not.to be(:locked?)
+			ensure
+				selector&.close
+				thread&.join
+			end
+			
 			it "exposes the maximum number of wait entries" do
 				expect(subject::WAITV_LIMIT).to be == 128
 			end
