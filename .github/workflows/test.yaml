@@ -32,6 +32,8 @@ jobs:
           - os: ubuntu-latest
             ruby: jruby
             experimental: true
+          # Use newer packaged liburing for Futex coverage on Ruby head.
+          # Switch back to ubuntu-latest after its 26.04 rollout (2026-11-19).
           - os: ubuntu-26.04
             ruby: head
             experimental: true
