@@ -44,14 +44,14 @@ module IO::Event
 					log = File.open(log_path, "w")
 				end
 				
-				return self.new(selector, log: log)
+				return self.new(selector, log: log, close_log: true)
 			end
 			
 			# Initialize the debug selector with the given selector and optional log.
 			#
 			# @parameter selector [Selector] The selector to wrap.
 			# @parameter log [IO] The log to write debug messages to.
-			def initialize(selector, log: nil)
+			def initialize(selector, log: nil, close_log: false)
 				@selector = selector
 				
 				@readable = {}
@@ -63,6 +63,7 @@ module IO::Event
 				end
 				
 				@log = log
+				@close_log = close_log
 				
 				install_optional_forwarders(selector)
 			end
@@ -117,10 +118,12 @@ module IO::Event
 					Kernel::raise "Selector already closed!"
 				end
 				
+				@log&.flush
+				@log&.close if @close_log
+				@log = nil
+				
 				@selector.close
 				@selector = nil
-				
-				@log&.flush
 			end
 			
 			# @returns [Boolean] Whether the wrapped selector is closed.

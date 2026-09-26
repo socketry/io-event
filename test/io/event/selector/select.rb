@@ -59,6 +59,8 @@ describe IO::Event::Selector::Select do
 	
 	with "#io_select" do
 		it "delegates to IO.select from a worker thread" do
+			skip_if_ruby_platform(/mswin|mingw|cygwin/)
+			
 			input, output = IO.pipe
 			output.write(".")
 			
