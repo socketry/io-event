@@ -7,6 +7,7 @@
 
 #include <ruby/thread.h>
 #include <ruby/fiber/scheduler.h>
+#include <ruby/st.h>
 
 #include <pthread.h>
 #include <stdbool.h>
@@ -37,13 +38,22 @@ struct IO_Event_WorkerPool_Worker {
 
 // Work item structure
 struct IO_Event_WorkerPool_Work {
+	struct IO_Event_WorkerPool *pool;
+	
 	rb_fiber_scheduler_blocking_operation_t *blocking_operation;
 	
+	// Set by the worker (holding the GVL) before it unblocks the waiting fiber, exactly once:
 	bool completed;
+	
+	// Set when a wakeup of the waiting fiber has been attributed to this work's completion. See `worker_pool_work_wakeup`.
+	bool woken;
 	
 	VALUE scheduler;
 	VALUE blocker;
 	VALUE fiber;
+	
+	// The work the same fiber was already waiting for when this work was submitted, if any. This happens when the scheduler's `block` hook performs a blocking operation before the fiber suspends, e.g. a GC finalizer that unlinks a file.
+	struct IO_Event_WorkerPool_Work *outer;
 	
 	struct IO_Event_WorkerPool_Work *next;
 };
@@ -64,6 +74,9 @@ struct IO_Event_WorkerPool {
 	size_t completed_count;
 	size_t cancelled_count;
 	
+	// Maps each fiber waiting in `call` to the innermost work it is waiting for (protected by the GVL):
+	st_table *waiting;
+	
 	bool shutdown;
 };
 
@@ -83,6 +96,11 @@ static void worker_pool_free(void *ptr) {
 		// Note: We don't free worker structures or wait for threads during GC
 		// as this can cause deadlocks. The Ruby GC will handle the thread objects.
 		// Workers will see the shutdown flag and exit cleanly.
+		
+		if (pool->waiting) {
+			st_free_table(pool->waiting);
+			pool->waiting = NULL;
+		}
 	}
 }
 
@@ -110,7 +128,9 @@ static void worker_pool_compact(void *ptr)
 
 // Size functions for Ruby GC
 static size_t worker_pool_size(const void *ptr) {
-	return sizeof(struct IO_Event_WorkerPool);
+	const struct IO_Event_WorkerPool *pool = (const struct IO_Event_WorkerPool *)ptr;
+	
+	return sizeof(struct IO_Event_WorkerPool) + (pool->waiting ? st_memsize(pool->waiting) : 0);
 }
 
 // Ruby TypedData structures
@@ -315,21 +335,28 @@ static VALUE worker_pool_work_block(VALUE _work) {
 	return Qnil;
 }
 
+// Account for the waiting fiber being resumed without an exception.
+//
+// Each completed work unblocks its fiber exactly once, but wakeups are addressed to the fiber, not to the work. If the fiber re-enters `call` while waiting for outer work, the outer work's wakeup can resume the nested wait instead, so attribute the wakeup to the innermost work (starting from `work`) which has completed but not yet been woken. If there is no such work, the wakeup is spurious (e.g. a stale `unblock`) and is ignored.
+static void worker_pool_work_wakeup(struct IO_Event_WorkerPool_Work *work) {
+	for (; work; work = work->outer) {
+		if (work->completed && !work->woken) {
+			work->woken = true;
+			return;
+		}
+	}
+}
+
 static VALUE worker_pool_work_wait(VALUE _work) {
 	struct IO_Event_WorkerPool_Work *work = (void*)_work;
-
-	while (true) {
+	
+	// Only an exception or other non-local exit cancels the work (see `worker_pool_work_ensure`). Any other wakeup was either for this work, for outer work (re-issued when this call returns), or spurious, so keep waiting:
+	while (!work->woken) {
 		worker_pool_work_block(_work);
-		if (DEBUG) fprintf(stderr, "-- worker_pool_work_wait:work completed=%d\n", work->completed);
-		
-		if (work->completed) {
-			break;
-		}
-		
-		if (DEBUG) fprintf(stderr, "worker_pool_work_wait:rb_fiber_scheduler_blocking_operation_cancel\n");
-		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
+		worker_pool_work_wakeup(work);
+		if (DEBUG) fprintf(stderr, "-- worker_pool_work_wait:work completed=%d woken=%d\n", work->completed, work->woken);
 	}
-
+	
 	return Qtrue;
 }
 
@@ -348,9 +375,28 @@ static VALUE worker_pool_work_ensure(VALUE _work) {
 			// Ignore errors raised while waiting for cancellation to complete. rb_ensure
 			// will restore and rethrow the original control-flow state after this returns.
 			rb_set_errinfo(Qnil);
+		} else {
+			worker_pool_work_wakeup(work);
 		}
 	}
-
+	
+	// This work is no longer being waited for:
+	st_data_t fiber = (st_data_t)work->fiber;
+	if (work->outer) {
+		st_insert(work->pool->waiting, fiber, (st_data_t)work->outer);
+	} else {
+		st_delete(work->pool->waiting, &fiber, NULL);
+	}
+	
+	// If we consumed the wakeup for outer work, the fiber won't be resumed again for it, so re-issue it:
+	for (struct IO_Event_WorkerPool_Work *outer = work->outer; outer; outer = outer->outer) {
+		if (outer->woken) {
+			if (DEBUG) fprintf(stderr, "worker_pool_work_ensure:rb_fiber_scheduler_unblock outer=%p\n", outer);
+			outer->woken = false;
+			rb_fiber_scheduler_unblock(outer->scheduler, outer->blocker, outer->fiber);
+		}
+	}
+	
 	return Qnil;
 }
 
@@ -382,14 +428,24 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 	
 	// Create work item
 	struct IO_Event_WorkerPool_Work work = {
+		.pool = pool,
 		.blocking_operation = blocking_operation,
 		.completed = false,
+		.woken = false,
 		.scheduler = scheduler,
 		.blocker = self,
 		.fiber = fiber,
+		.outer = NULL,
 		.next = NULL
 	};
-		
+	
+	// Track the work this fiber is waiting for, so that a nested call can account for its wakeup:
+	st_data_t outer = 0;
+	if (st_lookup(pool->waiting, (st_data_t)fiber, &outer)) {
+		work.outer = (struct IO_Event_WorkerPool_Work *)outer;
+	}
+	st_insert(pool->waiting, (st_data_t)fiber, (st_data_t)&work);
+	
 	// Enqueue work:
 	pthread_mutex_lock(&pool->mutex);
 	enqueue_work(pool, &work);
@@ -408,6 +464,8 @@ static VALUE worker_pool_allocate(VALUE klass) {
 	
 	// Initialize to NULL/zero so we can detect uninitialized pools
 	memset(pool, 0, sizeof(struct IO_Event_WorkerPool));
+	
+	pool->waiting = st_init_numtable();
 	
 	return self;
 }
