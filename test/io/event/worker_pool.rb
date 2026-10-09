@@ -324,4 +324,69 @@ describe IO::Event::WorkerPool do
 			expect(rescued).to be == true
 		end
 	end
+	
+	with "scheduler that re-enters the worker pool from block" do
+		# Ruby can run GC finalizers inside the scheduler's `block` hook, before the fiber suspends. If a finalizer performs an offloaded blocking operation (e.g. `File.unlink` from a `Tempfile` finalizer), the same fiber calls `WorkerPool#call` again while its outer wait is still in progress. This scheduler simulates that deterministically by performing one nested blocking operation from inside the first worker pool `block`.
+		class ReentrantBlockScheduler < IO::Event::TestScheduler
+			attr_reader :nested_result
+			
+			def block(blocker, timeout = nil)
+				# Simulate a finalizer that performs an offloaded blocking operation, exactly once:
+				if blocker.is_a?(IO::Event::WorkerPool) and !@reentered
+					@reentered = true
+					@nested_result = IO::Event::WorkerPool.busy(duration: 0.01)
+				end
+				
+				super
+			end
+		end
+		
+		class WaitTimeout < StandardError
+		end
+		
+		it "wakes the outer operation and runs the nested operation" do
+			result = nil
+			nested_result = nil
+			
+			Thread.new do
+				# A single worker guarantees that the nested operation queues behind the outer one:
+				scheduler = ReentrantBlockScheduler.new(maximum_worker_count: 1)
+				Fiber.set_scheduler(scheduler)
+				
+				fiber = Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: 0.1)
+				end
+				
+				# Bound the outer wait so a lost wakeup fails the test instead of hanging it:
+				Fiber.schedule do
+					deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 2.0
+					
+					while result.nil? and Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+						sleep(0.01)
+					end
+					
+					Fiber.scheduler.fiber_interrupt(fiber, WaitTimeout) if result.nil?
+				end
+				
+				scheduler.run
+				nested_result = scheduler.nested_result
+			ensure
+				Fiber.set_scheduler(nil)
+				scheduler&.close
+			end.join
+			
+			# The nested operation should run to completion, rather than being cancelled when the outer operation's wakeup resumes the nested wait (depending on timing, the cancelled operation is either interrupted or skipped entirely):
+			expect(nested_result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+			
+			# The outer operation should complete without being interrupted by the timeout:
+			expect(result[:exception]).to be_nil
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+	end
 end
