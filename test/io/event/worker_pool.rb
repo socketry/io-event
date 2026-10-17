@@ -328,11 +328,12 @@ describe IO::Event::WorkerPool do
 	with "scheduler that re-enters the worker pool from block" do
 		# Ruby can run GC finalizers inside the scheduler's `block` hook, before the fiber suspends. If a finalizer performs an offloaded blocking operation (e.g. `File.unlink` from a `Tempfile` finalizer), the same fiber calls `WorkerPool#call` again while its outer wait is still in progress. This scheduler simulates that deterministically by performing nested blocking operations from inside the worker pool `block`, one per duration in `nested`, each from inside the previous one.
 		class ReentrantBlockScheduler < IO::Event::TestScheduler
-			def initialize(nested: [0.01], before_nested: nil, **options)
+			def initialize(nested: [0.01], before_nested: nil, propagate_nested_errors: true, **options)
 				super(**options)
 				
 				@nested = nested.dup
 				@before_nested = before_nested
+				@propagate_nested_errors = propagate_nested_errors
 				@nested_results = []
 			end
 			
@@ -352,7 +353,7 @@ describe IO::Event::WorkerPool do
 					@nested_results << result
 					
 					# `busy` rescues the exception that cancelled it, so propagate it to the outer wait:
-					raise result[:exception] if result[:exception]
+					raise result[:exception] if @propagate_nested_errors and result[:exception]
 				end
 				
 				super
@@ -365,15 +366,64 @@ describe IO::Event::WorkerPool do
 		class Stop < StandardError
 		end
 		
+		# Interrupt a nested wait after it consumes the outer completion's wakeup.
+		class InterruptedBlockScheduler < ReentrantBlockScheduler
+			def initialize(interrupt_before_block: false, **options)
+				# Finalizers swallow exceptions instead of propagating them to the outer wait:
+				super(propagate_nested_errors: false, **options)
+				
+				@interrupt_before_block = interrupt_before_block
+				@block_depth = 0
+				@interrupted = false
+				@unblocked = false
+				@resume_worker = Thread::Queue.new
+			end
+			
+			def unblock(blocker, fiber)
+				first_completion = blocker.is_a?(IO::Event::WorkerPool) && !@unblocked
+				@unblocked = true if first_completion
+				
+				super
+				
+				# Keep the single worker from completing the nested operation until its wait has been interrupted and entered cancellation cleanup:
+				@resume_worker.pop if first_completion
+			end
+			
+			def block(blocker, timeout = nil)
+				return super unless blocker.is_a?(IO::Event::WorkerPool)
+				
+				@block_depth += 1
+				begin
+					if @block_depth == 2
+						if @interrupt_before_block
+							@interrupt_before_block = false
+							raise Stop, "before suspension"
+						end
+						
+						@resume_worker.push(true) if @interrupted
+					end
+					
+					super
+					
+					if @block_depth == 2 and !@interrupted
+						@interrupted = true
+						raise Stop, "after resumption"
+					end
+				ensure
+					@block_depth -= 1
+				end
+			end
+		end
+		
 		# Run `busy(duration:)` in a fiber on a new `ReentrantBlockScheduler`, interrupting it with `WaitTimeout` if it hasn't finished within `timeout` seconds, so a lost wakeup fails the test instead of hanging it.
 		#
 		# @returns [Array(Hash, ReentrantBlockScheduler)] The result of the outer operation, and the scheduler.
-		def run_busy(duration:, timeout: 2.0, **options, &block)
+		def run_busy(duration:, timeout: 2.0, scheduler_class: ReentrantBlockScheduler, **options, &block)
 			result = nil
 			scheduler = nil
 			
 			Thread.new do
-				scheduler = ReentrantBlockScheduler.new(**options)
+				scheduler = scheduler_class.new(**options)
 				Fiber.set_scheduler(scheduler)
 				
 				fiber = Fiber.schedule do
@@ -522,6 +572,34 @@ describe IO::Event::WorkerPool do
 				completed_count: be == 2,
 				current_queue_size: be == 0
 			)
+		end
+		
+		with "an interrupted nested wait" do
+			[false, true].each do |interrupt_before_block|
+				with "interrupt_before_block=#{interrupt_before_block}", interrupt_before_block: interrupt_before_block do
+					it "preserves the outer wakeup when the nested exception is swallowed" do
+						result, scheduler = run_busy(
+							duration: 0.01,
+							nested: [2.0],
+							maximum_worker_count: 1,
+							scheduler_class: InterruptedBlockScheduler,
+							interrupt_before_block: interrupt_before_block
+						)
+						
+						# When cancellation starts before suspension, the second exception occurs in the drain loop and must not replace the original one:
+						expect(scheduler.nested_result).to have_keys(
+							result: be == :exception,
+							exception: be_a(Stop).and(have_attributes(message: be == (interrupt_before_block ? "before suspension" : "after resumption")))
+						)
+						
+						expect(result).to have_keys(
+							executed: be == true,
+							result: be == :completed,
+							statistics: have_keys(call_count: be == 2, completed_count: be == 2, current_queue_size: be == 0)
+						)
+					end
+				end
+			end
 		end
 	end
 	

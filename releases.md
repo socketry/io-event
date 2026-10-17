@@ -3,7 +3,7 @@
 ## Unreleased
 
   - Add `IO::Event::Futex` on Linux with Ruby 4.1+, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory. Futexes retain a counted allocation lock until explicitly closed or finalized; pending waits prevent closing until completion or cancellation has finished.
-  - Fix a lost wakeup in `IO::Event::WorkerPool` when the waiting fiber re-enters `WorkerPool#call` from inside the scheduler's `block` hook, e.g. a GC finalizer that closes or unlinks a `Tempfile`. The outer wait no longer hangs, and the nested operation is no longer cancelled. More generally, a wakeup without an exception no longer cancels the operation; only an exception or other non-local exit does.
+  - Fix a lost wakeup in `IO::Event::WorkerPool` when the waiting fiber re-enters `WorkerPool#call` from inside the scheduler's `block` hook, e.g. a GC finalizer that closes or unlinks a `Tempfile`. The outer wait no longer hangs, including when the nested wait is interrupted after resuming, and the nested operation is no longer cancelled by an unrelated wakeup. More generally, a wakeup without an exception no longer cancels the operation; only an exception or other non-local exit does.
 
 ## v1.22.1
 

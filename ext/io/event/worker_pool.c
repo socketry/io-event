@@ -335,9 +335,10 @@ static VALUE worker_pool_work_block(VALUE _work) {
 	return Qnil;
 }
 
-// Account for the waiting fiber being resumed without an exception.
+// Account for an exit from the scheduler's block hook, including an exceptional exit.
 //
 // Each completed work unblocks its fiber exactly once, but wakeups are addressed to the fiber, not to the work. If the fiber re-enters `call` while waiting for outer work, the outer work's wakeup can resume the nested wait instead, so attribute the wakeup to the innermost work (starting from `work`) which has completed but not yet been woken. If there is no such work, the wakeup is spurious (e.g. a stale `unblock`) and is ignored.
+// An exception may arrive after a completion wakeup has resumed the fiber. The scheduler doesn't tell us whether that wakeup was consumed, so account for it conservatively: replaying an unconsumed wakeup is preferable to leaving completed outer work blocked forever.
 static void worker_pool_work_wakeup(struct IO_Event_WorkerPool_Work *work) {
 	for (; work; work = work->outer) {
 		if (work->completed && !work->woken) {
@@ -362,7 +363,12 @@ static VALUE worker_pool_work_wait(VALUE _work) {
 
 static VALUE worker_pool_work_ensure(VALUE _work) {
 	struct IO_Event_WorkerPool_Work *work = (void*)_work;
-
+	
+	// A normal return from `worker_pool_work_wait` already accounted for its wakeup. An exceptional exit may have consumed a wakeup before reaching that accounting:
+	if (!work->woken) {
+		worker_pool_work_wakeup(work);
+	}
+	
 	while (!work->completed) {
 		if (DEBUG) fprintf(stderr, "worker_pool_work_ensure:rb_fiber_scheduler_blocking_operation_cancel\n");
 		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
@@ -375,9 +381,8 @@ static VALUE worker_pool_work_ensure(VALUE _work) {
 			// Ignore errors raised while waiting for cancellation to complete. rb_ensure
 			// will restore and rethrow the original control-flow state after this returns.
 			rb_set_errinfo(Qnil);
-		} else {
-			worker_pool_work_wakeup(work);
 		}
+		worker_pool_work_wakeup(work);
 	}
 	
 	// This work is no longer being waited for:
