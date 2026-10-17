@@ -9,6 +9,95 @@ require "io/event/test_scheduler"
 
 return unless defined?(IO::Event::WorkerPool)
 
+# Ruby can run GC finalizers inside the scheduler's `block` hook, before the fiber suspends. If a finalizer performs an offloaded blocking operation (e.g. `File.unlink` from a `Tempfile` finalizer), the same fiber calls `WorkerPool#call` again while its outer wait is still in progress. This scheduler simulates that deterministically by performing nested blocking operations from inside the worker pool `block`, one per duration in `nested`, each from inside the previous one.
+class ReentrantBlockScheduler < IO::Event::TestScheduler
+	def initialize(nested: [0.01], before_nested: nil, propagate_nested_errors: true, **options)
+		super(**options)
+		
+		@nested = nested.dup
+		@before_nested = before_nested
+		@propagate_nested_errors = propagate_nested_errors
+		@nested_results = []
+	end
+	
+	# @attribute [Array(Hash)] The results of the nested operations, innermost first.
+	attr_reader :nested_results
+	
+	def nested_result
+		@nested_results.first
+	end
+	
+	def block(blocker, timeout = nil)
+		# Simulate a finalizer that performs an offloaded blocking operation:
+		if blocker.is_a?(IO::Event::WorkerPool) and duration = @nested.shift
+			@before_nested&.call(self)
+			
+			result = IO::Event::WorkerPool.busy(duration: duration)
+			@nested_results << result
+			
+			# `busy` rescues the exception that cancelled it, so propagate it to the outer wait:
+			raise result[:exception] if @propagate_nested_errors and result[:exception]
+		end
+		
+		super
+	end
+end
+
+class WaitTimeout < StandardError
+end
+
+class Stop < StandardError
+end
+
+# Interrupt a nested wait after it consumes the outer completion's wakeup.
+class InterruptedBlockScheduler < ReentrantBlockScheduler
+	def initialize(interrupt_before_block: false, **options)
+		# Finalizers swallow exceptions instead of propagating them to the outer wait:
+		super(propagate_nested_errors: false, **options)
+		
+		@interrupt_before_block = interrupt_before_block
+		@block_depth = 0
+		@interrupted = false
+		@unblocked = false
+		@resume_worker = Thread::Queue.new
+	end
+	
+	def unblock(blocker, fiber)
+		first_completion = blocker.is_a?(IO::Event::WorkerPool) && !@unblocked
+		@unblocked = true if first_completion
+		
+		super
+		
+		# Keep the single worker from completing the nested operation until its wait has been interrupted and entered cancellation cleanup:
+		@resume_worker.pop if first_completion
+	end
+	
+	def block(blocker, timeout = nil)
+		return super unless blocker.is_a?(IO::Event::WorkerPool)
+		
+		@block_depth += 1
+		begin
+			if @block_depth == 2
+				if @interrupt_before_block
+					@interrupt_before_block = false
+					raise Stop, "before suspension"
+				end
+				
+				@resume_worker.push(true) if @interrupted
+			end
+			
+			super
+			
+			if @block_depth == 2 and !@interrupted
+				@interrupted = true
+				raise Stop, "after resumption"
+			end
+		ensure
+			@block_depth -= 1
+		end
+	end
+end
+
 describe IO::Event::WorkerPool do
 	with "an instance" do
 		let(:worker_pool) {subject.new}
@@ -322,6 +411,226 @@ describe IO::Event::WorkerPool do
 			
 			expect(result).to be == :expected
 			expect(rescued).to be == true
+		end
+	end
+	
+	with "scheduler that re-enters the worker pool from block" do
+		# Run `busy(duration:)` in a fiber on a new `ReentrantBlockScheduler`, interrupting it with `WaitTimeout` if it hasn't finished within `timeout` seconds, so a lost wakeup fails the test instead of hanging it.
+		#
+		# @returns [Array(Hash, ReentrantBlockScheduler)] The result of the outer operation, and the scheduler.
+		def run_busy(duration:, timeout: 2.0, scheduler_class: ReentrantBlockScheduler, **options, &block)
+			result = nil
+			scheduler = nil
+			
+			Thread.new do
+				scheduler = scheduler_class.new(**options)
+				Fiber.set_scheduler(scheduler)
+				
+				fiber = Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: duration)
+					result[:statistics] = scheduler.worker_pool.statistics
+				end
+				
+				Fiber.schedule do
+					deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+					
+					while result.nil? and Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+						sleep(0.01)
+					end
+					
+					Fiber.scheduler.fiber_interrupt(fiber, WaitTimeout) if result.nil?
+				end
+				
+				block&.call(fiber)
+				
+				scheduler.run
+			ensure
+				Fiber.set_scheduler(nil)
+				scheduler&.close
+			end.join
+			
+			return result, scheduler
+		end
+		
+		it "wakes the outer operation and runs the nested operation" do
+			# A single worker guarantees that the nested operation queues behind the outer one:
+			result, scheduler = run_busy(duration: 0.1, maximum_worker_count: 1)
+			
+			# The nested operation should run to completion, rather than being cancelled when the outer operation's wakeup resumes the nested wait (depending on timing, the cancelled operation is either interrupted or skipped entirely):
+			expect(scheduler.nested_result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+			
+			# The outer operation should complete without being interrupted by the timeout:
+			expect(result[:exception]).to be_nil
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+		
+		it "wakes the outer operation when it completed before the nested operation started" do
+			completed_count = nil
+			
+			before_nested = proc do |scheduler|
+				# Give the worker time to complete the outer operation and unblock the fiber:
+				deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 0.1
+				Thread.pass while Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+				
+				completed_count = scheduler.worker_pool.statistics[:completed_count]
+			end
+			
+			result, scheduler = run_busy(duration: 0.0, maximum_worker_count: 1, before_nested: before_nested)
+			
+			expect(completed_count).to be == 1
+			expect(scheduler.nested_result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+		
+		it "wakes the outer operation when the nested operation finishes first" do
+			# With two workers, the nested operation runs concurrently and finishes long before the outer one:
+			result, scheduler = run_busy(duration: 0.2, maximum_worker_count: 2, nested: [0.01])
+			
+			expect(scheduler.nested_result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+		
+		it "wakes every operation with two levels of nesting" do
+			result, scheduler = run_busy(duration: 0.05, maximum_worker_count: 1, nested: [0.02, 0.01])
+			
+			expect(scheduler.nested_results.size).to be == 2
+			scheduler.nested_results.each do |nested_result|
+				expect(nested_result).to have_keys(
+					executed: be == true,
+					result: be == :completed
+				)
+			end
+			
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+		
+		it "wakes every operation with two levels of nesting and multiple workers" do
+			result, scheduler = run_busy(duration: 0.05, maximum_worker_count: 3, nested: [0.1, 0.01])
+			
+			expect(scheduler.nested_results.size).to be == 2
+			scheduler.nested_results.each do |nested_result|
+				expect(nested_result).to have_keys(
+					executed: be == true,
+					result: be == :completed
+				)
+			end
+			
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
+		end
+		
+		it "cancels and drains both operations when interrupted while nested" do
+			start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+			
+			# With two workers, both operations are in flight when the exception is raised:
+			result, scheduler = run_busy(duration: 2.0, maximum_worker_count: 2, nested: [2.0]) do |fiber|
+				Fiber.schedule do
+					sleep(0.1)
+					Fiber.scheduler.fiber_interrupt(fiber, Stop)
+				end
+			end
+			
+			elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
+			
+			# The exception cancels the nested operation and then, propagating from `block`, the outer operation:
+			expect(scheduler.nested_result).to have_keys(
+				result: be == :exception,
+				exception: be_a(Stop)
+			)
+			expect(result).to have_keys(
+				result: be == :exception,
+				exception: be_a(Stop)
+			)
+			expect(elapsed).to be < 1.0
+			
+			# Both operations were finished by the workers before returning:
+			expect(result[:statistics]).to have_keys(
+				call_count: be == 2,
+				completed_count: be == 2,
+				current_queue_size: be == 0
+			)
+		end
+		
+		with "an interrupted nested wait" do
+			[false, true].each do |interrupt_before_block|
+				with "interrupt_before_block=#{interrupt_before_block}", interrupt_before_block: interrupt_before_block do
+					it "preserves the outer wakeup when the nested exception is swallowed" do
+						result, scheduler = run_busy(
+							duration: 0.01,
+							nested: [2.0],
+							maximum_worker_count: 1,
+							scheduler_class: InterruptedBlockScheduler,
+							interrupt_before_block: interrupt_before_block
+						)
+						
+						# When cancellation starts before suspension, the second exception occurs in the drain loop and must not replace the original one:
+						expect(scheduler.nested_result).to have_keys(
+							result: be == :exception,
+							exception: be_a(Stop).and(have_attributes(message: be == (interrupt_before_block ? "before suspension" : "after resumption")))
+						)
+						
+						expect(result).to have_keys(
+							executed: be == true,
+							result: be == :completed,
+							statistics: have_keys(call_count: be == 2, completed_count: be == 2, current_queue_size: be == 0)
+						)
+					end
+				end
+			end
+		end
+	end
+	
+	with "spurious wakeup" do
+		let(:scheduler) {IO::Event::TestScheduler.new}
+		
+		it "does not cancel the operation" do
+			result = nil
+			
+			Thread.new do
+				Fiber.set_scheduler(scheduler)
+				
+				fiber = Fiber.schedule do
+					result = IO::Event::WorkerPool.busy(duration: 0.1)
+				end
+				
+				# Resume the waiting fiber without an exception, e.g. a stale `unblock`:
+				Fiber.schedule do
+					Fiber.scheduler.unblock(nil, fiber)
+				end
+				
+				scheduler.run
+			ensure
+				Fiber.set_scheduler(nil)
+				scheduler.close
+			end.join
+			
+			expect(result).to have_keys(
+				executed: be == true,
+				result: be == :completed
+			)
 		end
 	end
 end
