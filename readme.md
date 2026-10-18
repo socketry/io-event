@@ -20,7 +20,7 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
-### Unreleased
+### v1.22.3
 
   - Sign releases with the shared Socketry certificate.
 

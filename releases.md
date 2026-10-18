@@ -1,6 +1,6 @@
 # Releases
 
-## Unreleased
+## v1.22.3
 
   - Sign releases with the shared Socketry certificate.
 
