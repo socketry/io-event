@@ -9,3 +9,7 @@ files:
 - path: getting-started.md
   title: Getting Started
   description: This guide explains how to use `io-event` for non-blocking IO.
+- path: futex.md
+  title: Futex Notifications
+  description: This guide explains how to use `IO::Event::Futex` to notify threads
+    or processes when shared state changes, without continuously polling it.

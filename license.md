@@ -20,6 +20,8 @@ Copyright, 2026, by Italo Brandão.
 Copyright, 2026, by Fletcher Dares.  
 Copyright, 2026, by Tavian Barnes.  
 Copyright, 2026, by Sharon Rosner.  
+Copyright, 2026, by Yuki Kikuchi.  
+Copyright, 2026, by Randy Stauner.  
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
