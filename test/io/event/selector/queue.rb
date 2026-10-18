@@ -2,6 +2,7 @@
 
 # Released under the MIT License.
 # Copyright, 2021-2024, by Samuel Williams.
+# Copyright, 2026, by Tavian Barnes.
 
 require "io/event"
 require "io/event/selector"

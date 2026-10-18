@@ -13,11 +13,17 @@ The initial proof-of-concept [Async](https://github.com/socketry/async) was buil
 Please see the [project documentation](https://socketry.github.io/io-event/) for more details.
 
   - [Getting Started](https://socketry.github.io/io-event/guides/getting-started/index) - This guide explains how to use `io-event` for non-blocking IO.
-  - [Futex Notifications](https://socketry.github.io/io-event/guides/futex/index) - This guide explains shared-memory notifications, capability detection, and safe waiting patterns.
+
+  - [Futex Notifications](https://socketry.github.io/io-event/guides/futex/index) - This guide explains how to use `IO::Event::Futex` to notify threads or processes when shared state changes, without continuously polling it.
 
 ## Releases
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
+
+### v1.22.2
+
+  - Prevent nested worker-pool waits by running `WorkerPool#call` in a `Fiber.blocking` scope. Blocking operations triggered inside scheduler callbacks, including finalizers, execute synchronously. Cancellation still drains submitted work, and spurious wakeups no longer cancel operations.
+  - Add `IO::Event::Futex` on Linux with Ruby 4.1+, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory. Futexes retain a counted allocation lock until explicitly closed or finalized; pending waits prevent closing until completion or cancellation has finished.
 
 ### v1.22.1
 
@@ -56,11 +62,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.19.1
 
   - Fix `Process.waitall` / `Process.detach` under the `URing` selector: when `io_uring`'s `waitid` reported an error (e.g. `ECHILD` when there are no more children), the `process_wait` hook raised instead of returning the error as a `Process::Status`, so callers that expect `waitpid` to *report* "no more children" rather than raise would fail.
-
-### v1.19.0
-
-  - Use `io_uring_prep_waitid` for `process_wait` in the `URing` selector (Linux 6.7+), waiting for child exit directly in the ring instead of polling on a `pidfd`. The child is reaped via `rb_process_status_wait` (using `WEXITED | WNOWAIT`) to construct a correct `Process::Status`, and `process_wait(-1, ...)` / `process_wait(0, ...)` are now supported.
-  - Support waiting for any child or a process group (`pid <= 0`) on all selectors. The `EPoll` (`pidfd_open`) and `KQueue` (`EVFILT_PROC`) selectors can only watch a specific process, so these cases now fall back to a blocking wait on a dedicated thread; joining it is fiber-scheduler aware, so the reactor keeps running.
 
 ## Contributing
 
