@@ -20,6 +20,10 @@ Please see the [project documentation](https://socketry.github.io/io-event/) for
 
 Please see the [project releases](https://socketry.github.io/io-event/releases/index) for all releases.
 
+### Unreleased
+
+  - Sign releases with the shared Socketry certificate.
+
 ### v1.22.2
 
   - Prevent nested worker-pool waits by running `WorkerPool#call` in a `Fiber.blocking` scope. Blocking operations triggered inside scheduler callbacks, including finalizers, execute synchronously. Cancellation still drains submitted work, and spurious wakeups no longer cancel operations.
@@ -58,10 +62,6 @@ Please see the [project releases](https://socketry.github.io/io-event/releases/i
 ### v1.19.2
 
   - Use `rb_process_status_for` when available to construct `URing` `process_wait` results directly from `waitid`, avoiding the extra reap syscall previously needed to build a `Process::Status`.
-
-### v1.19.1
-
-  - Fix `Process.waitall` / `Process.detach` under the `URing` selector: when `io_uring`'s `waitid` reported an error (e.g. `ECHILD` when there are no more children), the `process_wait` hook raised instead of returning the error as a `Process::Status`, so callers that expect `waitpid` to *report* "no more children" rather than raise would fail.
 
 ## Contributing
 
