@@ -1,5 +1,5 @@
 // Released under the MIT License.
-// Copyright, 2025, by Samuel Williams.
+// Copyright, 2025-2026, by Samuel Williams.
 
 #include "worker_pool.h"
 #include "worker_pool_test.h"
@@ -19,7 +19,9 @@ enum {
 };
 
 static VALUE IO_Event_WorkerPool;
+static VALUE rb_Fiber;
 static ID id_maximum_worker_count;
+static ID id_blocking;
 
 // Thread pool structure
 struct IO_Event_WorkerPool_Worker {
@@ -318,17 +320,11 @@ static VALUE worker_pool_work_block(VALUE _work) {
 static VALUE worker_pool_work_wait(VALUE _work) {
 	struct IO_Event_WorkerPool_Work *work = (void*)_work;
 
-	while (true) {
+	// A stale unblock is not cancellation. Only a non-local exit cancels work.
+	do {
 		worker_pool_work_block(_work);
 		if (DEBUG) fprintf(stderr, "-- worker_pool_work_wait:work completed=%d\n", work->completed);
-		
-		if (work->completed) {
-			break;
-		}
-		
-		if (DEBUG) fprintf(stderr, "worker_pool_work_wait:rb_fiber_scheduler_blocking_operation_cancel\n");
-		rb_fiber_scheduler_blocking_operation_cancel(work->blocking_operation);
-	}
+	} while (!work->completed);
 
 	return Qtrue;
 }
@@ -352,6 +348,21 @@ static VALUE worker_pool_work_ensure(VALUE _work) {
 	}
 
 	return Qnil;
+}
+
+static VALUE worker_pool_work_submit(RB_BLOCK_CALL_FUNC_ARGLIST(fiber, _work)) {
+	struct IO_Event_WorkerPool_Work *work = (void*)_work;
+	struct IO_Event_WorkerPool *pool;
+	TypedData_Get_Struct(work->blocker, struct IO_Event_WorkerPool, &IO_Event_WorkerPool_type, pool);
+	
+	pthread_mutex_lock(&pool->mutex);
+	enqueue_work(pool, work);
+	pthread_cond_signal(&pool->work_available);
+	pthread_mutex_unlock(&pool->mutex);
+	
+	// Keep cancellation and draining inside the blocking scope too. rb_ensure
+	// preserves the original exception or other non-local exit.
+	return rb_ensure(worker_pool_work_wait, _work, worker_pool_work_ensure, _work);
 }
 
 // Ruby method to submit work and wait for completion
@@ -389,17 +400,13 @@ static VALUE worker_pool_call(VALUE self, VALUE _blocking_operation) {
 		.fiber = fiber,
 		.next = NULL
 	};
-		
-	// Enqueue work:
-	pthread_mutex_lock(&pool->mutex);
-	enqueue_work(pool, &work);
-	pthread_cond_signal(&pool->work_available);
-	pthread_mutex_unlock(&pool->mutex);
 	
-	// Block the current fiber until work is completed. If blocking exits via an
-	// exception or another non-local jump, ensure the work is cancelled and fully
-	// drained before Ruby restores and rethrows the original control-flow state.
-	return rb_ensure(worker_pool_work_wait, (VALUE)&work, worker_pool_work_ensure, (VALUE)&work);
+	// A finalizer inside the scheduler's block hook must not offload another
+	// operation on this fiber and consume this work's wakeup. Fiber.blocking
+	// makes nested operations synchronous, while explicit fiber transfers still
+	// work and other fibers retain their own blocking state. Capture the scheduler
+	// above, before Fiber.blocking hides it from rb_fiber_scheduler_current().
+	return rb_block_call(rb_Fiber, id_blocking, 0, NULL, worker_pool_work_submit, (VALUE)&work);
 }
 
 static VALUE worker_pool_allocate(VALUE klass) {
@@ -495,6 +502,9 @@ static VALUE worker_pool_statistics(VALUE self) {
 void Init_IO_Event_WorkerPool(VALUE IO_Event) {
 	// Initialize symbols
 	id_maximum_worker_count = rb_intern("maximum_worker_count");
+	id_blocking = rb_intern("blocking");
+	rb_Fiber = rb_const_get(rb_cObject, rb_intern("Fiber"));
+	rb_global_variable(&rb_Fiber);
 	
 	IO_Event_WorkerPool = rb_define_class_under(IO_Event, "WorkerPool", rb_cObject);
 	rb_define_alloc_func(IO_Event_WorkerPool, worker_pool_allocate);

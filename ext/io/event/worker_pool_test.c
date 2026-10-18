@@ -18,6 +18,7 @@ struct BusyOperationData {
   int read_fd;
   int write_fd;
   volatile int cancelled;
+  volatile int executed;
   double duration;  // How long to wait (for testing)
   clock_t start_time;
   clock_t end_time;
@@ -28,6 +29,9 @@ struct BusyOperationData {
 // The actual blocking operation that can be cancelled
 static void* busy_blocking_operation(void *data) {
 	struct BusyOperationData *busy_data = (struct BusyOperationData*)data;
+	
+	// Record that the operation actually ran (a cancelled operation may be skipped entirely):
+	busy_data->executed = 1;
 	
 	// Use select() to wait for the pipe to become readable
 	fd_set read_fds;
@@ -143,6 +147,7 @@ static VALUE worker_pool_test_busy(int argc, VALUE *argv, VALUE self) {
 		.read_fd = pipe_fds[0],
 		.write_fd = pipe_fds[1],
 		.cancelled = 0,
+		.executed = 0,
 		.duration = duration,
 		.start_time = 0,
 		.end_time = 0,
@@ -165,6 +170,7 @@ static VALUE worker_pool_test_busy(int argc, VALUE *argv, VALUE self) {
 	VALUE result = rb_hash_new();
 	rb_hash_aset(result, ID2SYM(rb_intern("duration")), DBL2NUM(duration));
 	rb_hash_aset(result, ID2SYM(rb_intern("elapsed")), DBL2NUM(elapsed));
+	rb_hash_aset(result, ID2SYM(rb_intern("executed")), busy_data.executed ? Qtrue : Qfalse);
 	
 	// Determine result based on operation outcome
 	if (busy_data.exception != Qnil) {

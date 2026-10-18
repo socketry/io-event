@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+  - Prevent nested worker-pool waits by running `WorkerPool#call` in a `Fiber.blocking` scope. Blocking operations triggered inside scheduler callbacks, including finalizers, execute synchronously. Cancellation still drains submitted work, and spurious wakeups no longer cancel operations.
   - Add `IO::Event::Futex` on Linux with Ruby 4.1+, including atomic value operations and blocking and scheduler-aware single and vector waits over shared memory. Futexes retain a counted allocation lock until explicitly closed or finalized; pending waits prevent closing until completion or cancellation has finished.
 
 ## v1.22.1
