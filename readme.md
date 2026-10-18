@@ -83,11 +83,13 @@ bundle exec sus
 
 ### Making Releases
 
-To make a new release:
+To prepare a release pull request:
 
 ``` shell
-bundle exec bake gem:release:patch # or minor or major
+bundle exec bake gem:github:release:patch # or minor or major
 ```
+
+After review and merge, GitHub Actions publishes the release. See [bake-gem-github](https://github.com/socketry/bake-gem-github) for setup and release instructions.
 
 ### Developer Certificate of Origin
 

@@ -25,17 +25,11 @@ def before_test
 	self.build
 end
 
-# Update the project documentation with the new version number.
+# Update copyrights and project documentation for the new version.
 #
 # @parameter version [String] The new version number.
 def after_gem_release_version_increment(version)
+	context["modernize:license"].call
 	context["releases:update"].call(version)
 	context["utopia:project:update"].call
-end
-
-# Create a GitHub release for the given tag.
-#
-# @parameter tag [String] The tag to create a release for.
-def after_gem_release(tag:, **options)
-	context["releases:github:release"].call(tag)
 end
