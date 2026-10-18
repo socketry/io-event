@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Sign releases with the shared Socketry certificate.
+
 ## v1.22.2
 
   - Prevent nested worker-pool waits by running `WorkerPool#call` in a `Fiber.blocking` scope. Blocking operations triggered inside scheduler callbacks, including finalizers, execute synchronously. Cancellation still drains submitted work, and spurious wakeups no longer cancel operations.
