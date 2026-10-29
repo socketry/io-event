@@ -139,6 +139,8 @@ describe IO::Event::Selector::Select do
 	
 	with "#select" do
 		it "dispatches priority events" do
+			skip "Priority events are not supported on JRuby!" if RUBY_ENGINE == "jruby"
+			
 			server = TCPServer.new("127.0.0.1", 0)
 			client = TCPSocket.new("127.0.0.1", server.addr[1])
 			socket = server.accept
