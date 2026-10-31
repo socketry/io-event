@@ -104,6 +104,9 @@ module IO::Event
 			# Append the given fiber into the ready list.
 			def push(fiber)
 				@ready.push(fiber)
+				
+				# If the selector is currently blocked, wake it up so that the fiber is resumed promptly:
+				wakeup
 			end
 			
 			# Transfer to the given fiber and raise an exception. Put the current fiber into the ready list.
