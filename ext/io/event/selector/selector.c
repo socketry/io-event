@@ -134,6 +134,7 @@ static VALUE IO_Event_Selector_nonblock(VALUE class, VALUE io)
 
 static VALUE rb_IO_Event_Selector = Qnil;
 static ID id_process_wait;
+static ID id_wakeup;
 
 // Wait for a process when the selector cannot do so natively (e.g. `pid <= 0`: any child, or a process group). Delegates to the pure-Ruby `IO::Event::Selector.process_wait`, which performs a blocking wait on a separate thread; joining it is fiber-scheduler aware, so the reactor keeps running.
 VALUE IO_Event_Selector_process_wait(rb_pid_t pid, int flags) {
@@ -153,6 +154,7 @@ void Init_IO_Event_Selector(VALUE IO_Event_Selector) {
 	rb_IO_Event_Selector = IO_Event_Selector;
 	rb_gc_register_mark_object(rb_IO_Event_Selector);
 	id_process_wait = rb_intern("process_wait");
+	id_wakeup = rb_intern("wakeup");
 	
 #ifndef HAVE_RB_IO_DESCRIPTOR
 	id_fileno = rb_intern("fileno");
@@ -332,6 +334,11 @@ void IO_Event_Selector_ready_push(struct IO_Event_Selector *backend, VALUE fiber
 	RB_OBJ_WRITE(backend->self, &waiting->fiber, fiber);
 	
 	queue_push(backend, waiting);
+	
+	// If the selector is currently blocked in a system call, wake it up so that the queued fiber is processed promptly. Otherwise, the entry may wait for the next unrelated wakeup (which may never come).
+	if (backend->blocked) {
+		rb_funcall(backend->self, id_wakeup, 0);
+	}
 }
 
 static inline
