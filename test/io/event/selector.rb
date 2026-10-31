@@ -799,7 +799,7 @@ Selector = Sus::Shared("a selector") do
 		end
 		
 		it "reports termination by signal with a core dump" do
-			skip_if_ruby_platform(/darwin|mswin|mingw|cygwin/)
+			skip_if_ruby_platform(/darwin|mswin|mingw|cygwin|java/)
 			
 			command = ["ruby", "-e", "Process.kill(:ABRT, $$)"]
 			spawn_options = {out: File::NULL, err: File::NULL, rlimit_core: 0}
