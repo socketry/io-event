@@ -149,6 +149,26 @@ Selector = Sus::Shared("a selector") do
 				thread.join
 			end
 		end
+		
+		it "wakes up when a fiber is pushed from another thread" do
+			fiber = FakeFiber.new
+			main = Thread.current
+			
+			thread = Thread.new do
+				sleep(0.001) until main.status == "sleep"
+				selector.push(fiber)
+			end
+			
+			expect do
+				selector.select(5)
+			end.to have_duration(be < 1)
+			
+			selector.select(0)
+			
+			expect(fiber.count).to be == 1
+		ensure
+			thread.join
+		end
 	end
 	
 	with "#io_wait" do
