@@ -9,7 +9,9 @@ def build
 	
 	Dir.chdir(ext_path) do
 		system("ruby", "./extconf.rb", exception: true)
-		system("make", exception: true)
+		
+		# extconf.rb writes no Makefile on JRuby, which uses the pure Ruby selectors:
+		system("make", exception: true) if File.exist?("Makefile")
 	end
 end
 
@@ -17,7 +19,7 @@ def clean
 	ext_path = File.expand_path("ext", __dir__)
 	
 	Dir.chdir(ext_path) do
-		system("make clean")
+		system("make clean") if File.exist?("Makefile")
 	end
 end
 
