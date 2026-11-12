@@ -518,6 +518,38 @@ Selector = Sus::Shared("a selector") do
 			# expect(error).to be_nil
 		end
 		
+		it "does not keep reporting events after the io is closed while a duplicate remains open" do
+			duplicate = local.dup
+			
+			fiber = Fiber.new do
+				events << :wait_readable
+				selector.io_wait(Fiber.current, local, IO::READABLE)
+				
+				# Close the io before returning to the selector. The duplicate keeps the underlying file open, and the data is never read, so it remains readable:
+				events << :close_io
+				local.close
+			end
+			
+			events << :transfer
+			fiber.transfer
+			
+			remote.puts "Hello World"
+			
+			events << :select
+			selector.select(1)
+			
+			expect(events).to be == [
+				:transfer, :wait_readable, :select, :close_io
+			]
+			
+			# No fiber is waiting, so there should be nothing to report:
+			3.times do
+				expect(selector.select(0)).to be == 0
+			end
+		ensure
+			duplicate&.close
+		end
+		
 		it "does not lose events when an exception interrupts event handling" do
 			other_sockets = UNIXSocket.pair
 			raised = false

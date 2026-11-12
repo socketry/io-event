@@ -58,8 +58,11 @@ struct IO_Event_Selector_EPoll_Descriptor
 	// The union of all events we are waiting for:
 	enum IO_Event waiting_events;
 	
-	// The union of events we are registered for:
+	// The union of events the registration is currently armed for. Registrations are one-shot, so this is reset whenever an event is reported:
 	enum IO_Event registered_events;
+
+	// Whether the descriptor has been added to the epoll instance. This is only a hint, as the kernel silently removes the registration when the file description is closed:
+	int added;
 };
 
 static
@@ -189,7 +192,10 @@ uint32_t epoll_flags_from_events(int events)
 	
 	flags |= EPOLLHUP;
 	flags |= EPOLLERR;
-	
+
+	// A registration belongs to the open file description, not the descriptor number. If the descriptor is closed while a duplicate keeps the file description open, the registration remains but can no longer be removed. A level-triggered registration would then report events forever, so we have the kernel disarm it whenever it reports an event, and re-arm it while fibers are still waiting.
+	flags |= EPOLLONESHOT;
+
 	if (DEBUG) fprintf(stderr, "epoll_flags_from_events events=%d flags=%d\n", events, flags);
 	
 	return flags;
@@ -214,6 +220,13 @@ int events_from_epoll_flags(uint32_t flags)
 inline static
 int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *selector, VALUE io, int descriptor, struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor)
 {
+	if (epoll_descriptor->waiting_events == 0) {
+		// We are no longer interested in any events. There is nothing to remove: the registration is one-shot, so it is either already disarmed or will report at most one more event, and the kernel discards it when the file description is closed.
+		RB_OBJ_WRITE(selector->backend.self, &epoll_descriptor->io, 0);
+
+		return 0;
+	}
+
 	if (epoll_descriptor->io == io) {
 		if (epoll_descriptor->registered_events == epoll_descriptor->waiting_events) {
 			// All the events we are interested in are already registered.
@@ -224,33 +237,22 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 		epoll_descriptor->registered_events = 0;
 		RB_OBJ_WRITE(selector->backend.self, &epoll_descriptor->io, io);
 	}
-	
-	if (epoll_descriptor->waiting_events == 0) {
-		if (epoll_descriptor->registered_events) {
-			// We are no longer interested in any events.
-			epoll_ctl(selector->descriptor, EPOLL_CTL_DEL, descriptor, NULL);
-			epoll_descriptor->registered_events = 0;
-		}
-		
-		RB_OBJ_WRITE(selector->backend.self, &epoll_descriptor->io, 0);
-		
-		return 0;
-	}
-	
-	// We need to register for additional events:
+
+	// We need to register for additional events, or re-arm the registration:
 	struct epoll_event event = {
 		.events = epoll_flags_from_events(epoll_descriptor->waiting_events),
 		.data = {.fd = descriptor},
 	};
-	
+
 	int operation;
-	
-	if (epoll_descriptor->registered_events) {
+
+	if (epoll_descriptor->added) {
 		operation = EPOLL_CTL_MOD;
 	} else {
 		operation = EPOLL_CTL_ADD;
 	}
-	
+
+	// If the guess is wrong (e.g. the descriptor number was closed and reused), we retry with the other operation below:
 	int result = epoll_ctl(selector->descriptor, operation, descriptor, &event);
 	if (result == -1) {
 		if (errno == ENOENT) {
@@ -264,9 +266,31 @@ int IO_Event_Selector_EPoll_Descriptor_update(struct IO_Event_Selector_EPoll *se
 		}
 	}
 	
+	epoll_descriptor->added = 1;
 	epoll_descriptor->registered_events = epoll_descriptor->waiting_events;
-	
+
 	return 1;
+}
+
+// Re-arm a registration that the kernel disarmed when it reported an event that was not (completely) handled.
+static
+void IO_Event_Selector_EPoll_Descriptor_rearm(struct IO_Event_Selector_EPoll *selector, int descriptor)
+{
+	struct IO_Event_Selector_EPoll_Descriptor *epoll_descriptor = IO_Event_Selector_EPoll_Descriptor_lookup(selector, descriptor);
+
+	epoll_descriptor->registered_events = 0;
+
+	// The events may have been partially recomputed, so start again from the fibers that are still waiting:
+	epoll_descriptor->waiting_events = 0;
+
+	struct IO_Event_List *list = &epoll_descriptor->list;
+	for (struct IO_Event_List *node = list->tail; node != list; node = node->tail) {
+		if (node->type) {
+			epoll_descriptor->waiting_events |= ((struct IO_Event_Selector_EPoll_Waiting *)node)->events;
+		}
+	}
+
+	IO_Event_Selector_EPoll_Descriptor_update(selector, epoll_descriptor->io, descriptor, epoll_descriptor);
 }
 
 inline static
@@ -299,6 +323,7 @@ void IO_Event_Selector_EPoll_Descriptor_initialize(void *element)
 	epoll_descriptor->io = 0;
 	epoll_descriptor->waiting_events = 0;
 	epoll_descriptor->registered_events = 0;
+	epoll_descriptor->added = 0;
 }
 
 void IO_Event_Selector_EPoll_Descriptor_free(void *element)
@@ -907,6 +932,9 @@ struct select_arguments {
 	int result;
 	int error;
 	struct epoll_event events[EPOLL_MAX_EVENTS];
+
+	// The index of the event currently being handled:
+	int index;
 	
 	struct timespec * timeout;
 	struct timespec storage;
@@ -1005,9 +1033,12 @@ int IO_Event_Selector_EPoll_handle(struct IO_Event_Selector_EPoll *selector, con
 	struct IO_Event_List *list = &epoll_descriptor->list;
 	struct IO_Event_List *node = list->tail;
 	
+	// The registration is one-shot, so the kernel disarmed it when it reported this event:
+	epoll_descriptor->registered_events = 0;
+
 	// Reset the events back to 0 so that we can re-arm if necessary:
 	epoll_descriptor->waiting_events = 0;
-	
+
 	if (DEBUG) fprintf(stderr, "IO_Event_Selector_EPoll_handle: descriptor=%d, ready_events=%d epoll_descriptor=%p\n", descriptor, ready_events, epoll_descriptor);
 	
 	// It's possible (but unlikely) that the address of list will changing during iteration.
@@ -1046,8 +1077,8 @@ VALUE select_handle_events(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	struct IO_Event_Selector_EPoll *selector = arguments->selector;
 	
-	for (int i = 0; i < arguments->result; i += 1) {
-		const struct epoll_event *event = &arguments->events[i];
+	for (; arguments->index < arguments->result; arguments->index += 1) {
+		const struct epoll_event *event = &arguments->events[arguments->index];
 		if (DEBUG) fprintf(stderr, "-> fd=%d events=%d\n", event->data.fd, event->events);
 		
 		if (event->data.fd >= 0) {
@@ -1066,7 +1097,16 @@ VALUE select_handle_events_ensure(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	
 	IO_Event_List_free(&arguments->saved);
-	
+
+	// If an exception interrupted event handling, the kernel has still disarmed the registrations for the remaining events, so re-arm them or the fibers waiting on them would never be resumed:
+	for (; arguments->index < arguments->result; arguments->index += 1) {
+		int descriptor = arguments->events[arguments->index].data.fd;
+
+		if (descriptor >= 0) {
+			IO_Event_Selector_EPoll_Descriptor_rearm(arguments->selector, descriptor);
+		}
+	}
+
 	return Qnil;
 }
 
