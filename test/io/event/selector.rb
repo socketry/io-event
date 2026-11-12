@@ -517,6 +517,104 @@ Selector = Sus::Shared("a selector") do
 			# But other selectors are not capable of detecting this.
 			# expect(error).to be_nil
 		end
+		
+		it "does not keep reporting events after the io is closed while a duplicate remains open" do
+			duplicate = local.dup
+			
+			fiber = Fiber.new do
+				events << :wait_readable
+				selector.io_wait(Fiber.current, local, IO::READABLE)
+				
+				# Close the io before returning to the selector. The duplicate keeps the underlying file open, and the data is never read, so it remains readable:
+				events << :close_io
+				local.close
+			end
+			
+			events << :transfer
+			fiber.transfer
+			
+			remote.puts "Hello World"
+			
+			events << :select
+			selector.select(1)
+			
+			expect(events).to be == [
+				:transfer, :wait_readable, :select, :close_io
+			]
+			
+			# No fiber is waiting, so there should be nothing to report:
+			3.times do
+				expect(selector.select(0)).to be == 0
+			end
+		ensure
+			duplicate&.close
+		end
+		
+		it "does not lose events when an exception interrupts event handling" do
+			other_sockets = UNIXSocket.pair
+			raised = false
+			
+			fibers = [local, other_sockets.first].map do |io|
+				Fiber.new do
+					selector.io_wait(Fiber.current, io, IO::READABLE)
+					
+					# Whichever fiber is resumed first fails:
+					unless raised
+						raised = true
+						raise "Boom"
+					end
+					
+					events << :readable
+				end
+			end
+			
+			fibers.each(&:transfer)
+			
+			remote.puts "Hello World"
+			other_sockets.last.puts "Hello World"
+			
+			expect do
+				selector.select(1)
+			end.to raise_exception(RuntimeError, message: be =~ /Boom/)
+			
+			# The other fiber must still be resumed:
+			selector.select(1)
+			
+			expect(events).to be == [:readable]
+		ensure
+			other_sockets&.each(&:close)
+		end
+		
+		it "does not lose events for other fibers waiting on the same io when an exception interrupts event handling" do
+			raised = false
+			
+			fibers = 2.times.map do
+				Fiber.new do
+					selector.io_wait(Fiber.current, local, IO::READABLE)
+					
+					# Whichever fiber is resumed first fails:
+					unless raised
+						raised = true
+						raise "Boom"
+					end
+					
+					events << :readable
+				end
+			end
+			
+			fibers.each(&:transfer)
+			
+			remote.puts "Hello World"
+			
+			expect do
+				selector.select(1)
+			end.to raise_exception(RuntimeError, message: be =~ /Boom/)
+			
+			# The other fiber must still be resumed:
+			selector.select(1)
+			
+			expect(events).to be == [:readable]
+		end
 	end
 	
 	with "#io_read" do
@@ -730,6 +828,65 @@ Selector = Sus::Shared("a selector") do
 			
 			expect(events).to be == [:process_finished]
 			expect(result).to be(:success?)
+		end
+		
+		it "does not lose a process exit when an exception interrupts event handling" do
+			unless selector.method(:process_wait).source_location.nil?
+				skip "A native selector is required!"
+			end
+			
+			input, output = IO.pipe
+			done, exited = IO.pipe
+			raised = false
+			events = []
+			
+			# Both processes exit when the pipe is closed:
+			pids = 2.times.map do
+				Process.spawn("cat", in: input, out: exited)
+			end
+			
+			input.close
+			exited.close
+			
+			fibers = pids.map do |pid|
+				Fiber.new do
+					status = selector.process_wait(Fiber.current, pid, 0)
+					
+					# Whichever fiber is resumed first fails:
+					unless raised
+						raised = true
+						raise "Boom"
+					end
+					
+					events << status.success?
+				end
+			end
+			
+			fibers.each(&:transfer)
+			
+			output.close
+			
+			# Wait until both processes have exited, so that both are reported together:
+			done.read
+			sleep(0.01)
+			
+			expect do
+				selector.select(1)
+			end.to raise_exception(RuntimeError, message: be =~ /Boom/)
+			
+			# The other fiber must still be resumed:
+			selector.select(1)
+			
+			expect(events).to be == [true]
+		ensure
+			[input, output, done, exited].each do |io|
+				io&.close
+			end
+			
+			pids&.each do |pid|
+				Process.kill(:KILL, pid) rescue nil
+				Process.wait(pid) rescue nil
+			end
 		end
 		
 		it "can wait for two processes sequentially" do
