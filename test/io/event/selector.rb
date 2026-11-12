@@ -552,6 +552,37 @@ Selector = Sus::Shared("a selector") do
 		ensure
 			other_sockets&.each(&:close)
 		end
+		
+		it "does not lose events for other fibers waiting on the same io when an exception interrupts event handling" do
+			raised = false
+			
+			fibers = 2.times.map do
+				Fiber.new do
+					selector.io_wait(Fiber.current, local, IO::READABLE)
+					
+					# Whichever fiber is resumed first fails:
+					unless raised
+						raised = true
+						raise "Boom"
+					end
+					
+					events << :readable
+				end
+			end
+			
+			fibers.each(&:transfer)
+			
+			remote.puts "Hello World"
+			
+			expect do
+				selector.select(1)
+			end.to raise_exception(RuntimeError, message: be =~ /Boom/)
+			
+			# The other fiber must still be resumed:
+			selector.select(1)
+			
+			expect(events).to be == [:readable]
+		end
 	end
 	
 	with "#io_read" do

@@ -140,7 +140,14 @@ module IO::Event
 								reactivate.call(self)
 							else
 								self.fiber = nil
-								fiber.transfer(revents)
+								
+								begin
+									fiber.transfer(revents)
+								rescue ::Exception
+									# The fibers after this one have not been resumed, so keep them waiting:
+									tail&.retain(&reactivate)
+									raise
+								end
 							end
 						else
 							self.fiber = nil
@@ -148,6 +155,16 @@ module IO::Event
 					end
 					
 					tail&.dispatch(events, &reactivate)
+				end
+				
+				# Keep this waiter and those after it waiting, by calling the given block for each of them. Used when event handling is interrupted before they could be dispatched.
+				def retain(&reactivate)
+					# We capture the tail here, because calling reactivate might modify it:
+					tail = self.tail
+					
+					reactivate.call(self) if self.alive?
+					
+					tail&.retain(&reactivate)
 				end
 				
 				# Clear the waiting fiber so it will not be resumed.
