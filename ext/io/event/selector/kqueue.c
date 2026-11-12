@@ -915,6 +915,9 @@ struct select_arguments {
 	struct timespec storage;
 	struct timespec *timeout;
 	
+	// The index of the event currently being handled:
+	int index;
+	
 	struct IO_Event_List saved;
 };
 
@@ -1005,6 +1008,43 @@ int IO_Event_Selector_KQueue_handle(struct IO_Event_Selector_KQueue *selector, u
 	return IO_Event_Selector_KQueue_Descriptor_update(selector, identifier, kqueue_descriptor);
 }
 
+// Recover an event that was reported but not (completely) handled. Registrations are one-shot, so the kernel has already removed the one that reported this event, and the fibers waiting for it would otherwise never be resumed.
+static
+void IO_Event_Selector_KQueue_recover(struct IO_Event_Selector_KQueue *selector, struct kevent *event)
+{
+	struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = event->udata;
+	enum IO_Event events = events_from_kevent_filter(event->filter);
+	
+	// Discard any readiness that was recorded but not handled, as it will be reported again:
+	kqueue_descriptor->ready_events = 0;
+	kqueue_descriptor->registered_events &= ~events;
+	
+	// The events may have been partially recomputed, so start again from the fibers that are still waiting:
+	kqueue_descriptor->waiting_events = 0;
+	
+	struct IO_Event_List *list = &kqueue_descriptor->list;
+	for (struct IO_Event_List *node = list->tail; node != list; node = node->tail) {
+		// Skip placeholders:
+		if (!node->type) continue;
+		
+		struct IO_Event_Selector_KQueue_Waiting *waiting = (struct IO_Event_Selector_KQueue_Waiting *)node;
+		
+		// Skip fibers that have already been resumed or scheduled:
+		if (waiting->ready) continue;
+		
+		if (events & waiting->events & IO_EVENT_EXIT) {
+			// The kernel reports a process exit once, and registering for a process that has already exited can fail with ESRCH, so the fiber is resumed by the next call to select instead:
+			waiting->ready = IO_EVENT_EXIT;
+			IO_Event_Selector_ready_push(&selector->backend, waiting->fiber);
+		} else {
+			kqueue_descriptor->waiting_events |= waiting->events;
+		}
+	}
+	
+	// Registering again makes the kernel report the readiness again, if it still applies:
+	IO_Event_Selector_KQueue_Descriptor_update(selector, event->ident, kqueue_descriptor);
+}
+
 static
 VALUE select_handle_events(VALUE _arguments)
 {
@@ -1018,10 +1058,12 @@ VALUE select_handle_events(VALUE _arguments)
 		}
 	}
 	
-	for (int i = 0; i < arguments->result; i += 1) {
-		if (arguments->events[i].udata) {
-			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = arguments->events[i].udata;
-			IO_Event_Selector_KQueue_handle(selector, arguments->events[i].ident, kqueue_descriptor, &arguments->saved);
+	for (; arguments->index < arguments->result; arguments->index += 1) {
+		struct kevent *event = &arguments->events[arguments->index];
+		
+		if (event->udata) {
+			struct IO_Event_Selector_KQueue_Descriptor *kqueue_descriptor = event->udata;
+			IO_Event_Selector_KQueue_handle(selector, event->ident, kqueue_descriptor, &arguments->saved);
 		} else {
 #ifdef IO_EVENT_SELECTOR_KQUEUE_USE_INTERRUPT
 			IO_Event_Interrupt_clear(&selector->interrupt);
@@ -1038,6 +1080,15 @@ VALUE select_handle_events_ensure(VALUE _arguments)
 	struct select_arguments *arguments = (struct select_arguments *)_arguments;
 	
 	IO_Event_List_free(&arguments->saved);
+	
+	// If an exception interrupted event handling, the kernel has still removed the one-shot registrations for the remaining events, so recover them or the fibers waiting on them would never be resumed:
+	for (; arguments->index < arguments->result; arguments->index += 1) {
+		struct kevent *event = &arguments->events[arguments->index];
+		
+		if (event->udata) {
+			IO_Event_Selector_KQueue_recover(arguments->selector, event);
+		}
+	}
 	
 	return Qnil;
 }

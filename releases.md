@@ -1,5 +1,9 @@
 # Releases
 
+## Unreleased
+
+  - Fix the `KQueue` selector losing events when an exception interrupts event handling, e.g. a resumed fiber fails or the event loop is interrupted. The one-shot registrations of the events that were reported but not yet handled are now restored, so the fibers waiting for them are still resumed.
+
 ## v1.22.3
 
   - Sign releases with the shared Socketry certificate.
